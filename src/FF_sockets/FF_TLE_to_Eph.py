@@ -1,4 +1,5 @@
-import socket, time, os, io, subprocess
+import socket, time, os, subprocess, struct
+import numpy as np
 from object_definitions.Orbit_def import Orbit
 from object_definitions.Constants_def import Constants
 
@@ -21,7 +22,6 @@ def FF_TLE_to_Eph(satObj, GNSS_const, integrationStep, simDuration, no_GNSS_R_sa
         print("Warning: Filepath to TLE file not found")
         return Tuple(None, None)
 
-    mission_Plan  = Constants.FFmissionPlanTLE_EPH
     eph_file_path = os.path.join(Constants.tle_eph_folder_path, f"ephemeris_satID_{satID}.e")
 
     """
@@ -89,7 +89,6 @@ def FF_TLE_to_Eph(satObj, GNSS_const, integrationStep, simDuration, no_GNSS_R_sa
 #    subprocess.run(command_string, shell=True)
     subprocess.Popen(command_string, shell=True)
 
-    print("REACHED HERE.")
     """
     ==========================================
     = Wait for FreeFlyer response/connect    =
@@ -128,139 +127,146 @@ def FF_TLE_to_Eph(satObj, GNSS_const, integrationStep, simDuration, no_GNSS_R_sa
 
     """
     ==========================================
-    = Create write/read buffer               =
-    = and Data interchange with FF client    =
+    = Create write/read buffer and           =
+    = interchange (send) data with FF client =
     ==========================================
     """
     str_to_FF = f"{satID} {tle_file_path} {eph_file_path} {GNSS_const}"
 
-    # Create write buffer (equivalent to DataOutputStream in Java)
+    ############################
+    # Send String to FreeFlyer #
+    ############################
     with socket_client_1.makefile('wb') as output_stream:
-        output_stream.write(str_to_FF.encode('utf-8') + b'\0')  # Null-terminate the message
-        output_stream.flush()                                   # Ensure that the data is sent
-        print(f"Message string sent to FreeFlyer:")
+        try:
+            output_stream.write(str_to_FF.encode('utf-8') + b'\0')  # Null-terminate the message
+            #output_stream.flush()                                   # Ensure that the data is sent
+            print(f"Message string sent to FreeFlyer:")
+        except Exception as err:
+            print(f"Error: Unable to send string to FreeFlyer. {err}")
 
-    # Send [showGUI, integrationStep, simDuration, no_GNSS_R_sat] as an array to FreeFlyer
-    
+    output_array = [np.float64(showGUI), np.float64(integrationStep), np.float64(simDuration), np.float64(no_GNSS_R_sat)]
+    array_size   = [1, np.float64(len(output_array))]
 
+    ############################
+    # Send output array size   #
+    ############################
 
+    with socket_client_1.makefile('wb') as output_stream:
+        try:
+            for value in array_size:
+                output_stream.write(struct.pack('>d', value)) # '>d' is big-endian double precision (This is required for FreeFlyer)
+            output_stream.flush()
+        except Exception as err:
+            print(f"Error: Unable to send array size to FreeFlyer. {err}") 
 
+    #############################
+    # Send output array details #
+    #############################
+    with socket_client_1.makefile('wb') as output_stream:
+        try:
+            for value in output_array:
+                output_stream.write(struct.pack('>d', value)) # '>d' is big-endian double precision (This is required for FreeFlyer)
+        except Exception as err:
+            print(f"Error: Unable to send array details to FreeFlyer. {err}")
 
+    """
+    ============================================
+    = Wait for FF Instances to finish running  =
+    =   and receive all the FreeFlyer data     =
+    ============================================
+    """
+    print("'  Waiting for responses from FreeFlyer instance before continuing... \n'")
 
+    # Connect to the FreeFlyer socket or use an existing socket connection
+    raw_data          = []
+    stringResponse    = []
+    dblResponse       = []
+    arrResponse       = []
+    bigArrResponse    = []
+    stringArrResponse = []
 
-
-    # CARRY ON FROM HERE
-    # Create read buffer (equivalent to DataInputStream in Java)
     with socket_client_2.makefile('rb') as input_stream:
-        pass
-#    input_stream = socket_client_2.makefile('rb')   # For binary input (read)
+        print("  Waiting for responses from FreeFlyer instance before continuing... ")
+        while True:
+            # Read a line of input from the stream
+            line = input_stream.readline().decode('utf-8').strip()  # Decodes to string and removes any newline characters
+            raw_data.append(line)
+            # Check if the received line matches the termination code and break the loop if it does
+            if line == terminationCode:
+                print("- All data received. -")
+                break
 
-    # Create buffered reader (similar to BufferedReader in Java)
-    # In Python, we can use the `io` module for buffered reading
-    input_reader = io.BufferedReader(input_stream)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#CARRY ON FROM HERE
-    # Socket setup
-    portNum        = []
-    server_sockets = []
-    client_sockets = []
-    for i in range(2):
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.bind(('localhost', 0))
-        server_socket.listen(1)
-        portNum.append(server_socket.getsockname()[1])
-        server_sockets.append(server_socket)
-
-    # FreeFlyer connection
-    print(f'Waiting for FreeFlyer connection on ports {portNum[0]} and {portNum[1]}...')
-
-    for i in range(2):
-        client_socket, _ = server_sockets[i].accept()
-        client_sockets.append(client_socket)
-        print(f'Socket {i + 1} connected.')
-
-    # Create write/read buffer
-    outputStream = client_sockets[0].makefile('wb')
-    inputStream = client_sockets[1].makefile('rb')
-
-    # Data interchange with FreeFlyer client
-    str_to_FF = f"{satID} {tle_file_path} {eph_file_path} {GNSS_const}"
-    outputStream.write(f"{str_to_FF}\0".encode())  # Send the data with null terminator
-    outputStream.flush()
-
-    # Send output array details
-    outputArray = [int(showGUI), integrationStep, simDuration, no_GNSS_R_sat]
-    for value in outputArray:
-        outputStream.write(value.to_bytes(8, 'little'))
-    outputStream.flush()
-
-    # Wait for data from FreeFlyer
-    print("Waiting for responses from FreeFlyer instance before continuing...")
-    rawData = []
-    while True:
-        data = inputStream.readline().decode()
-        if data.strip() == terminationCode:
+    """
+    ============================================
+    = Parse the FreeFlyer data                 =
+    ============================================
+    """
+    idx        = 0
+    str_idx    = 0
+    dbl_idx    = 0
+    arr_idx    = 0
+    bigArr_idx = 0
+    strArr_idx = 0
+    while idx < len(raw_data):
+        line = raw_data[idx]
+        if line == terminationCode:
+            print("All data parsed.")
             break
-        rawData.append(data.strip())
+        else:
+            # Check the identifier and read the next line accordingly
+            if line == "STR":
+                stringResponse.append(raw_data[idx + 1])
+                str_idx += 1
+            elif line == "DBL":
+                dblResponse.append(float(raw_data[idx + 1]))
+                dbl_idx += 1
+            elif line == "ARR":
+                arrResponse.append([float(x) for x in raw_data[idx + 1].split()])
+                arr_idx += 1
+            elif line == "bigARR":
+                bigArrResponse.append([float(x) for x in raw_data[idx + 1].split()])
+                bigArr_idx += 1
+            elif line == "strARR":
+                stringArrResponse.append(raw_data[idx + 1])
+                strArr_idx += 1
+            else:
+                print(f"Unknown data type: {line}")
 
-    print("All data received. Processing data...")
+            # Increment index by 2 to skip to the next identifier
+            idx += 2
 
-    # Process received data
-    stringResponse, dblResponse, arrResponse, bigArrResponse, stringArrResponse = [], [], [], [], []
-    i = 0
-    while i < len(rawData):
-        if rawData[i] == "STR":
-            stringResponse.append(rawData[i + 1])
-            i += 1
-        elif rawData[i] == "DBL":
-            dblResponse.append(float(rawData[i + 1]))
-            i += 1
-        elif rawData[i] == "ARR":
-            arrResponse.append([float(x) for x in rawData[i + 1].split()])
-            i += 1
-        elif rawData[i] == "bigARR":
-            bigArrResponse.append([float(x) for x in rawData[i + 1].split()])
-            i += 1
-        elif rawData[i] == "strARR":
-            stringArrResponse.append(rawData[i + 1])
-            i += 1
-        i += 1
 
-    # Decode and display results
-    success = False
-    ephemeris_file = None
-    if arrResponse and arrResponse[0][0] == 1 and len(stringArrResponse) == 1:
+    """
+    ============================================
+    = Get path to Ephemiris file               =
+    ============================================
+    """
+    # arrResponse[0][0] == 1 FreeFlyer has executed mission plan successfully
+    # arrResponse[0][0] == 0 FreeFlyer has NOT executed mission plan successfully
+    ephemeris_file_path = None
+    success             = False
+    if arrResponse[0][0] == 1 and len(stringArrResponse) == 1:
         file_name = os.path.basename(stringArrResponse[0])
         if "ephemeris" in file_name:
-            ephemeris_file = stringArrResponse[0]
-            success = True
-            print("Ephemeris file received from FreeFlyer:", ephemeris_file)
+            ephemeris_file_path = stringArrResponse[0]
+            success             = True
+            print("Ephemeris file received from FreeFlyer:", ephemeris_file_path)
         else:
             print("Ephemeris file was NOT received from FreeFlyer.")
 
+    """
+    ============================================
+    = Close the sockets                        =
+    ============================================
+    """
+    # CARRY ON FROM HERE
     # Close all connections
-    for sock in server_sockets:
+    for sock in socket_server:
         sock.close()
-    for sock in client_sockets:
-        sock.close()
-    
-    if diary:
-        diary.close()
 
-    return Tuple(success, eph_file_path) if success else Tuple(None, None)
+    """
+    ============================================
+    = Return ephemiris file path               =
+    ============================================
+    """
+    return (success, ephemeris_file_path) if success else (None, None)

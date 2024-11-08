@@ -112,7 +112,7 @@ class Satellite:
         tle_str = f"{line0_str}\n{line1_str}\n{line2_str}"
 
         # Write to file
-        self.__write_tle_to_file(tle_str)
+        self.__write_new_tle_file(tle_str)
 
     def tle_exists(self):
         """Check if the TLE file exists."""
@@ -138,7 +138,7 @@ class Satellite:
         value        = abs(value)                                     # Absolute value
         sci_notation = f"{value:.4e}"
         #sci_notation = f"{value:.4e}".split("e")                      # Scientific notation
-        
+
         # Split the scientific notation into mantissa and exponent parts
         parts        = sci_notation.split("e")
         matissa      = parts[0].replace(".", "")[:5]
@@ -156,7 +156,7 @@ class Satellite:
 
         return tle_str
 
-    def __write_tle_to_file(self, tle_str):
+    def __write_new_tle_file(self, tle_str):
         """
         =========================================================================
         Write the TLE object passed in "tle_str" to a file

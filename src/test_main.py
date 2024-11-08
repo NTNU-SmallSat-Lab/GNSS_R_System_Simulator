@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import os
 from object_definitions.Reflection_def import Reflection
 from object_definitions.Orbit_def      import Orbit
 from object_definitions.Constants_def  import Constants
@@ -52,8 +53,7 @@ def testObjOrbit() -> bool:
     if not (isinstance(orbit_withEpoch, Orbit) and orbit_withEpoch.epoch == '24304.21246528'):
         passed = 0
     return passed
-
-def testObjSatellite():
+def testObjSatellite() -> bool:
     passed        = 1
     start_time    = datetime(2024, 10, 31, 5, 5, 57, tzinfo=timezone.utc)
     apogee        = 421e3 + Constants.R_earth
@@ -101,7 +101,8 @@ def testObjSatellite():
     return passed
 
 # FreeFlyer connection "socket" => Send TLE to FF
-def testFreeFlyerConnection():
+def testFreeFlyerConnection() -> bool:
+    passed = 1
     show_FF_GUI        = True
     GNSS_Constellation = 'GPS'
     sat_1 = Satellite(
@@ -116,7 +117,7 @@ def testFreeFlyerConnection():
     )
 
     # Call the function to send TLE to FreeFlyer
-    FF_TLE_to_Eph(
+    (success1, eph_file_path1) = FF_TLE_to_Eph(
         sat_1,               # Satellite object            [Satellite]
         GNSS_Constellation,  # GNSS constellation name     [GPS, GLONASS, GALILEO, BEIDOU]
         20,                  # integration step size       [sec]
@@ -124,6 +125,27 @@ def testFreeFlyerConnection():
         1,                   # Number of GNSS-R satellites [-]
         show_FF_GUI          # Show FreeFlyer GUI          [True/False]
     )
+
+    if not success1:
+        passed = 0
+    if not (eph_file_path1 == os.path.join(Constants.tle_eph_folder_path, f"ephemeris_satID_{sat_1.satID}.e")):
+        passed = 0
+
+
+    (success2, eph_file_path2) = FF_TLE_to_Eph(
+        sat_1,               # Satellite object            [Satellite]
+        'GPS',               # GNSS constellation name     [GPS, GLONASS, GALILEO, BEIDOU]
+        20,                  # integration step size       [sec]
+        1,                   # Simulation duration         [days]
+        1,                   # Number of GNSS-R satellites [-]
+        False                # Show FreeFlyer GUI          [True/False]
+    )
+
+    if not success2:
+        passed = 0
+    if not (eph_file_path2 == os.path.join(Constants.tle_eph_folder_path, f"ephemeris_satID_{sat_1.satID}.e")):
+        passed = 0
+    return passed
 
 def update_test_results(passed: bool, function) -> None:
     if passed:
@@ -137,3 +159,5 @@ if __name__ == '__main__':
     passed = passed & testObjOrbit()
     passed = passed & testObjSatellite()
     passed = passed & testFreeFlyerConnection()
+    if passed:
+        print("All tests passed")
