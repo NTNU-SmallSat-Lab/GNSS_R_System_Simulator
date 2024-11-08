@@ -75,9 +75,6 @@ def FF_TLE_to_Eph(satObj, GNSS_const, integrationStep, simDuration, no_GNSS_R_sa
     except Exception as err:
         raise RuntimeError(f"Error: Unable to open socket. {err}")
 
-    # Display elapsed time
-    print(f"Time elapsed: {time.time() - start_time:.2f} seconds")
-
     """
     ==============================
     = Launch FreeFlyer instance  =
@@ -282,4 +279,7 @@ def FF_TLE_to_Eph(satObj, GNSS_const, integrationStep, simDuration, no_GNSS_R_sa
     = Return ephemiris file path               =
     ============================================
     """
+    # Display elapsed time
+    print(f"Time elapsed: {time.time() - start_time:.2f} seconds")
+
     return (success, ephemeris_file_path) if success else (None, None)

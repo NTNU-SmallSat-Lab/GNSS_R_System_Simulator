@@ -130,9 +130,8 @@ def testFreeFlyerConnection() -> bool:
 
     if not success1:
         passed = 0
-    if not (eph_file_path1 == os.path.join(Constants.tle_eph_folder_path, f"ephemeris_satID_{sat_1.satID}.e")):
+    if not (eph_file_path1 == os.path.join(Constants.tle_eph_folder_path, f"ephemeris_satID_{sat_1.satID}.FFephem")):
         passed = 0
-
 
     (success2, eph_file_path2) = FF_TLE_to_Eph(
         sat_1,               # Satellite object            [Satellite]
@@ -150,12 +149,6 @@ def testFreeFlyerConnection() -> bool:
         passed = 0
     return passed
 
-def update_test_results(passed: bool, function) -> None:
-    if passed:
-        print("Test passed")
-    else:
-        print("Test failed")
-
 if __name__ == '__main__':
     passed = 1
     passed = passed & testObjReflection()
@@ -164,3 +157,5 @@ if __name__ == '__main__':
     passed = passed & testFreeFlyerConnection()
     if passed:
         print("All tests passed")
+    else:
+        print("Tests failed")
