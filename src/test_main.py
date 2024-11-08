@@ -123,7 +123,9 @@ def testFreeFlyerConnection() -> bool:
         20,                  # integration step size       [sec]
         1,                   # Simulation duration         [days]
         1,                   # Number of GNSS-R satellites [-]
+        "FreeFlyer",           # Ephemeris file type         [ FreeFlyer | CCSDS | STKephem | STKephem ]
         show_FF_GUI          # Show FreeFlyer GUI          [True/False]
+
     )
 
     if not success1:
@@ -134,10 +136,11 @@ def testFreeFlyerConnection() -> bool:
 
     (success2, eph_file_path2) = FF_TLE_to_Eph(
         sat_1,               # Satellite object            [Satellite]
-        'GPS',               # GNSS constellation name     [GPS, GLONASS, GALILEO, BEIDOU]
+        'GALILEO',           # GNSS constellation name     [GPS, GLONASS, GALILEO, BEIDOU]
         20,                  # integration step size       [sec]
         1,                   # Simulation duration         [days]
         1,                   # Number of GNSS-R satellites [-]
+        "CCSDS",             # Ephemeris file type         [ FreeFlyer | CCSDS | STKephem | STKephem ])
         False                # Show FreeFlyer GUI          [True/False]
     )
 

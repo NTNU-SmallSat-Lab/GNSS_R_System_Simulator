@@ -1,2 +1,5 @@
 *.pyc
 *.e
+gnssr_satID_*.tle
+*.FFephem
+*.txt
