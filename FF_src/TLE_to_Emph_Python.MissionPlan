@@ -3616,9 +3616,9 @@ While(GNSS_R[0].ElapsedTime < simDurationTimeSpan);
     For i=0 to GNSS_R.Count-1 step 1;
         Put GNSS_R[i] to Ephemeris_GNSS_R;
     End;
-	//For i=0 to GNSS.Count-1 step 1;
-	//	Put GNSS[i] to Ephemeris_GNSS_R;
-	//End;
+    For i=0 to GNSS.Count-1 step 1;
+        Put GNSS[i] to Ephemeris_GNSS_R;
+    End;
 End;
 
 // ----------------------------------------- //
@@ -5336,9 +5336,9 @@ While(GNSS_R[0].ElapsedTime < simDurationTimeSpan);
     For i=0 to GNSS_R.Count-1 step 1;
         Put GNSS_R[i] to Ephemeris_GNSS_R;
     End;
-	//For i=0 to GNSS.Count-1 step 1;
-	//	Put GNSS[i] to Ephemeris_GNSS_R;
-	//End;
+    For i=0 to GNSS.Count-1 step 1;
+        Put GNSS[i] to Ephemeris_GNSS_R;
+    End;
 End;
 
 // ----------------------------------------- //

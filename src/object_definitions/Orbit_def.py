@@ -46,6 +46,27 @@ class Orbit:
         tle_epoch      = epoch_year_str + epoch_days_str
         return tle_epoch
 
+    """
+    =========================================================================================================
+    Setter functions
+    =========================================================================================================
+    """
+    def set_start_time(self, dt_start):
+        # Set the start time of the orbit
+        #Check if start time is [YYYY:MM:DD HH:mm:ss UTC] format
+        if not isinstance(dt_start, datetime):
+            raise ValueError("Invalid start time format. Please provide a datetime object")
+        # Check if dt_start is timezone-aware and in UTC
+        if dt_start.tzinfo is None or dt_start.tzinfo != timezone.utc:
+            raise ValueError("Start time must be a timezone-aware datetime object in UTC")
+        self.dt_start = dt_start
+        self.epoch    = self.conv_DateTime_to_Epoch(dt_start)
+    
+    """
+    =========================================================================================================
+    Getter functions
+    =========================================================================================================
+    """
     @staticmethod
     def generate_satID():
         # Generate satellite ID based on files in the TLE directory
