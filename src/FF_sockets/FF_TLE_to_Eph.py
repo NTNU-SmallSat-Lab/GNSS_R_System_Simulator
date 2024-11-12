@@ -12,14 +12,14 @@ def FF_TLE_to_Eph(satObj, GNSS_const, integrationStep, simDuration, no_GNSS_R_sa
     ==========================
     """
     if not isinstance(satObj.orbit, Orbit):
-        print(f"Warning: Satellite {satObj.satID} does not contain an Orbit")
+        print(f"WARNING: Satellite {satObj.satID} does not contain an Orbit   \n     TLE file cannot be generated without an Orbit object")
         return (None, None)
 
     if satObj.tle_file_path:
         tle_file_path = satObj.tle_file_path
         satID         = str(satObj.satID)
     else:
-        print("Warning: Filepath to TLE file not found")
+        print("WARNING: Filepath to TLE file not found   \n     Run <Satellite>.write_tle_file() first, to generate TLE file")
         return (None, None)
     
     # Check if the EPHEMERIS file type is valid (can be [ FFephem | CCSDSOEM | STKephem | STKephem ])

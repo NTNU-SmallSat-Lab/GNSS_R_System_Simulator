@@ -30,15 +30,15 @@ class Orbit:
         self.p         = p                                                                # Argument of perigee in degrees
         self.M         = M                                                                # Mean anomaly
         self.a         = a                                                                # Semi-major axis in m
-        self.epoch     = self.conv_DateTime_to_Epoch(epochTime) if epochTime else None    # Eopch in YYDDD.DDDDDDDD format (TLE format)
+        self.epoch_str = self.conv_DateTime_to_Epoch(epochTime) if epochTime else None    # Eopch in YYDDD.DDDDDDDD format (TLE format)
         self.dt_start  = epochTime if epochTime else None                                 # Start time in datetime format
         self.n         = math.sqrt(Constants.GM_earth_tt / (self.a**3))                   # Mean motion in rad/s
 
     def conv_DateTime_to_Epoch(self, dt_epoch):
-        # Convert datetime to TLE epoch format YYDDD.DDDDDDDD
+        # Convert datetime to TLE epoch_str format YYDDD.DDDDDDDD
         tle_year                 = dt_epoch.year % 100
         start_of_year            = datetime(dt_epoch.year, 1, 1, tzinfo=timezone.utc)
-        days_since_start_of_year = (dt_epoch - start_of_year).total_seconds() / Constants.Sec_per_day
+        days_since_start_of_year = (dt_epoch - start_of_year).total_seconds() / Constants.Sec_per_day + 1 # Add 1 day to accont for the first day of the year
 
         # Format strings to TLE Epoch format
         epoch_year_str = f"{tle_year:02d}"
@@ -60,7 +60,7 @@ class Orbit:
         if dt_start.tzinfo is None or dt_start.tzinfo != timezone.utc:
             raise ValueError("Start time must be a timezone-aware datetime object in UTC")
         self.dt_start = dt_start
-        self.epoch    = self.conv_DateTime_to_Epoch(dt_start)
+        self.epoch_str    = self.conv_DateTime_to_Epoch(dt_start)
     
     """
     =========================================================================================================

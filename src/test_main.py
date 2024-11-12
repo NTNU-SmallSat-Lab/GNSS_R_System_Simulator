@@ -1,11 +1,12 @@
 from datetime import datetime, timezone
-import os
+import os, math
 from object_definitions.Reflection_def        import Reflection
 from object_definitions.Orbit_def             import Orbit
 from object_definitions.Constants_def         import Constants
 from object_definitions.Satellite_def         import Satellite
 from object_definitions.GnssConstellation_def import GNSSConstellation
 from object_definitions.ReadWriteSatData      import ReadWriteSatData
+from object_definitions.SatConstellation_def  import SatelliteConfiguration
 from FF_sockets.FF_TLE_to_Eph                 import FF_TLE_to_Eph
 
 def testObjReflection()       -> bool:
@@ -47,9 +48,9 @@ def testObjOrbit()            -> bool:
         apogee,                    # apogee              [m]
         start_time                 # epoch               [YYYY:MM:DD HH:mm:ss UTC]
     )
-    if not (isinstance(orbit_noEpoch, Orbit) and orbit_noEpoch.epoch == None):
+    if not (isinstance(orbit_noEpoch, Orbit) and orbit_noEpoch.epoch_str == None):
         passed = 0
-    if not (isinstance(orbit_withEpoch, Orbit) and orbit_withEpoch.epoch == '24304.21246528'):
+    if not (isinstance(orbit_withEpoch, Orbit) and orbit_withEpoch.epoch_str == '24305.21246528'):
         passed = 0
     return passed
 def testObjSatellite()        -> bool:
@@ -106,14 +107,14 @@ def testObjSatellite()        -> bool:
         passed = 0
     if not (isinstance(sat_orbitWithEpoch, Satellite) and sat_orbitWithEpoch.orbit == orbit_withEpoch and sat_orbitWithEpoch.tle_exists() == False):
         passed = 0
-    if not (isinstance(satellite_newOrbit, Satellite) and satellite_newOrbit.orbit.epoch == '24304.21246528' and satellite_newOrbit.tle_exists() == False):
+    if not (isinstance(satellite_newOrbit, Satellite) and satellite_newOrbit.orbit.epoch_str == '24304.21246528' and satellite_newOrbit.tle_exists() == False):
         passed = 0
     # Generate TLE file  for satellite_newOrbit
     satellite_newOrbit.write_tle_file()
     if not (satellite_newOrbit.tle_exists() == True):
         passed = 0
 
-    if not (isinstance(satellite_newOrbit2, Satellite) and satellite_newOrbit2.orbit.epoch == None and satellite_newOrbit2.tle_exists() == False):
+    if not (isinstance(satellite_newOrbit2, Satellite) and satellite_newOrbit2.orbit.epoch_str == None and satellite_newOrbit2.tle_exists() == False):
         passed = 0
 
     # Set the classification of the satellite
@@ -129,6 +130,11 @@ def testObjSatellite()        -> bool:
     if not (isinstance(satellite_noOrbit_newName, Satellite) and satellite_noOrbit_newName.satName == "newName"):
         passed
 
+    # Initialize Satellite with TLE file
+    sat_tle = Satellite(7, tle_file_path=os.path.join(Constants.tle_folderpath, "ISS.tle"))
+    sat_tle.write_tle_file()
+    a = 1
+
     return passed
 def testReadWriteData()       -> bool:
     passed = 1
@@ -136,27 +142,55 @@ def testReadWriteData()       -> bool:
     filepath  = os.path.join(Constants.tle_folderpath, "GALILEO.tle")
     satList   = ReadWriteSatData.read_tle_data(filepath)
 
-    if not (isinstance(satList, list) and len(satList) == 30):
+    if not (isinstance(satList, list) and len(satList) == 31):
         passed = 0
     if satList[10].argOfPerigee != 12.6669:
+        passed = 0
+
+    filepath2 = os.path.join(Constants.tle_folderpath, "ISS.tle")
+    issList   = ReadWriteSatData.read_tle_data(filepath2)
+    
+    if not (isinstance(issList, list) and len(issList) == 1):
+        passed = 0
+    # https://www.heavens-above.com/orbit.aspx?satid=25544
+    if (issList[0].satCatalogNumber != 25544       and       # Satellite Catalog Number
+        issList[0].inclination      != 51.638      and       # Inclination
+        issList[0].eccentricity     != 0.0008444   and       # Eccentricity
+        issList[0].raan             != 301.8966    and       # Right Ascension of Ascending Node
+        issList[0].argOfPerigee     != 165.9795    and       # Argument of Perigee
+        issList[0].meanAnomaly      != 194.1431    and       # Mean Anomaly at Epoch
+        issList[0].meanMotion       != 15.51387213 and       # Mean Motion [rev/day]
+        issList[0].epoch           != '24304.21246528'):
+        passed = 0
+
+    # Calculate apogee hight for ISS
+    semi_major_axis = (Constants.GM_earth_tt / (issList[0].meanMotion * 2 * math.pi / Constants.Sec_per_day) ** 2) ** (1/3)
+
+    apogee_above_earth  = semi_major_axis * (1 + issList[0].eccentricity) - Constants.R_earth
+    perigee_above_earth = semi_major_axis * (1 - issList[0].eccentricity) - Constants.R_earth
+
+    if not (apogee_above_earth == 425.5460901848506e3 and perigee_above_earth == 414.07776699984353e3):
         passed = 0
 
     return passed
 
 def testFreeFlyerConnection() -> bool:
-    passed = 1
+    passed             = 1
     show_FF_GUI        = True
     GNSS_Constellation = 'GPS'
     sat_1 = Satellite(
         4,                                                      # Satellite ID        [number]
-        51.6374,                                                # inclination         [°]
-        0.0009376,                                              # eccentricity        [-]
-        1.5935,                                                 # RAAN                [°]
-        121.8064,                                               # argument of perigee [°]
-        341.7727,                                               # Mean anomaly        [°]
-        421e3 + Constants.R_earth,                              # apogee              [m]
-        datetime(2024, 10, 31, 5, 5, 57, tzinfo=timezone.utc)   # epoch               [YYYY:MM:DD HH:mm:ss UTC]
+        [
+            51.6374,                                                # inclination         [°]
+            0.0009376,                                              # eccentricity        [-]
+            1.5935,                                                 # RAAN                [°]
+            121.8064,                                               # argument of perigee [°]
+            341.7727,                                               # Mean anomaly        [°]
+            421e3 + Constants.R_earth,                              # apogee              [m]
+            datetime(2024, 10, 31, 5, 5, 57, tzinfo=timezone.utc)   # epoch               [YYYY:MM:DD HH:mm:ss UTC]
+        ]
     )
+    sat_1.write_tle_file()
 
     # Call the function to send TLE to FreeFlyer
     (success1, eph_file_path1) = FF_TLE_to_Eph(
@@ -167,7 +201,6 @@ def testFreeFlyerConnection() -> bool:
         1,                   # Number of GNSS-R satellites [-]
         "FreeFlyer",           # Ephemeris file type         [ FreeFlyer | CCSDS | STKephem | STKephem ]
         show_FF_GUI          # Show FreeFlyer GUI          [True/False]
-
     )
 
     if not success1:
@@ -202,7 +235,20 @@ def testGNSSConstellation()   -> bool:
     return passed
 
 def testSatConstelation()    -> bool:
-    return 1
+    passed = 1
+    # Initialize with an array of Satellite objects
+    sat1 = Satellite(1, [51.6374, 0.0009376, 1.5935, 121.8064, 341.7727, 421e3 + Constants.R_earth, datetime(2024, 10, 31, 5, 5, 57, tzinfo=timezone.utc)])
+    sat2 = Satellite(2, [51.6374, 0.0009376, 1.5935, 121.8064, 341.7727, 441e3 + Constants.R_earth, datetime(2024, 10, 31, 5, 5, 57, tzinfo=timezone.utc)])
+    sat3 = Satellite(3, [51.6374, 0.0009376, 1.5935, 121.8064, 341.7727, 461e3 + Constants.R_earth, datetime(2024, 10, 31, 5, 5, 57, tzinfo=timezone.utc)])
+    sat4 = Satellite(4, [51.6374, 0.0009376, 1.5935, 121.8064, 341.7727, 481e3 + Constants.R_earth, datetime(2024, 10, 31, 5, 5, 57, tzinfo=timezone.utc)])
+
+    satConfiguration_native = SatelliteConfiguration([sat1, sat2, sat3, sat4])
+    if not (isinstance(satConfiguration_native, SatelliteConfiguration) and satConfiguration_native.no_satellites == 4):
+        passed = 0
+
+    # Initialize with a TLE file
+    satConfiguration_tle = SatelliteConfiguration(tle_file=os.path.join(Constants.tle_folderpath, "GALILEO.tle"))
+    return passed
 
 ## ----------------------------------------------------- ##
 ## ------------------- Test Function ------------------- ##
@@ -219,14 +265,15 @@ def testClassOrFunction(testFunction) -> bool:
 
 if __name__ == '__main__':
     passed = 1
+
+    passed  = passed & testClassOrFunction(testSatConstelation)
+
     passed = passed & testClassOrFunction(testObjReflection)
     passed = passed & testClassOrFunction(testObjOrbit)
     passed = passed & testClassOrFunction(testObjSatellite)
     passed = passed & testClassOrFunction(testReadWriteData)
     passed = passed & testClassOrFunction(testFreeFlyerConnection)
     passed = passed & testClassOrFunction(testGNSSConstellation)
-
-    #passed  = passed & testSatConstelation()
 
     if passed:
         print("All tests passed")

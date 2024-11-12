@@ -3535,9 +3535,7 @@ End;
       <FreeForm enabled="true">
         <Label>While-Loop | Step Formations</Label>
         <Bookmarks />
-        <Breakpoints>
-          <Breakpoint line="94" enabled="true" />
-        </Breakpoints>
+        <Breakpoints />
         <FreeFormScript><![CDATA[// Related to Area displayed
 Region NorthSea;
 NorthSea.NumberOfVertices = 4;
