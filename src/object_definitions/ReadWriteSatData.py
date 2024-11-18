@@ -13,13 +13,13 @@ class ReadWriteSatData:
     def generate_tle_data_string(satellite)         -> str:
         """
         =========================================================================
-        Generate TLE based on satellite orbit data.
+        Generate TLE based on satellite orbit_n data.
         =========================================================================
         """
-        if satellite.orbit is None:
+        if satellite.orbit_n is None:
             print("Warning: Orbit was not specified when this Satellite was created.\n-- Insufficient information to generate a TLE --")
             return None 
-        if satellite.orbit.epoch_str is None:
+        if satellite.orbit_n.epoch_str is None:
             print("Warning: Epoch was not specified when this Orbit was created.\n-- Insufficient information to generate a TLE --")
             return None
 
@@ -29,37 +29,38 @@ class ReadWriteSatData:
         element_set_no   = satellite.element_set_no if satellite.element_set_no is not None else 1
 
         # Line 0
-        line0_str = satellite.satName                                                                              # Satellite name
+        line0_str = satellite.satName                                                                                        # Satellite name
 
         # Line 1
-        line_no_1_str   = "1"                                                                                      # Line number "1"
-        satIDStr        = f"{satellite.satID:05d}"                                                                 # Sat_<n> n is satellite, resulting in "Sat_1.tle"               
-        classStr        = satellite.classification                                                                 # The satellite is unclassified [Can be U: Unclassified, C: Classified, S: Secret]
-        IntD_LYear      = f"{satellite.launch_year % 100:02d}"                                                     # International Designator (last two digits of launch year) COSPAR ID
-        IntD_LNo        = f"{int(satellite.lauch_Noyear):03d}"                                                     # International Designator (launch no. of the year)         COSPAR ID
-        IntD_POL        = satellite.lauch_piece                                                                    # International Designator (piece of the launch)            COSPAR ID [hardcoded to 'A']
-        epochStr        = satellite.orbit.epoch_str                                                                # Epoch in TLE format [YYDDD.DDDDDDDD]
-        balisticCoefStr = re.sub(r'-0', '-', f"{balistic_coeff:10.8f}")                                            # Balistic coeffizient / First derivative of the mean motion in TLE format
-        meanMotionStr_2 = ReadWriteSatData.__str2tle_format(meanMotionSecDer)                                      # Second derivative of Mean Motion (decimal point assumed) HARDCODED FOR NOW /TODO 
-        b_star_str      = ReadWriteSatData.__str2tle_format(B_star)                                                # B* the drag term, or radiation pressure coefficient (decimal point assumed) e.g. 1.234e-8 => 12345-8 [https://en.wikipedia.org/wiki/BSTAR] TODO
-        ephemeris_str   = "0" # TODO                                                                               # Ephemeris type (always zero; only used in undistributed TLE data) (0: unclassified, 1: classified) [hardcoded to '0']               
-        elem_st_no_str  = f"{element_set_no:03d}"                                                                  # Element set number. Incremented when a new TLE is generated for this object TODO
+        line_no_1_str   = "1"                                                                                                # Line number "1"
+        satIDStr        = f"{satellite.satID:05d}"                                                                           # Sat_<n> n is satellite, resulting in "Sat_1.tle"               
+        classStr        = satellite.classification                                                                           # The satellite is unclassified [Can be U: Unclassified, C: Classified, S: Secret]
+        IntD_LYear      = f"{satellite.launch_year % 100:02d}"                                                               # International Designator (last two digits of launch year) COSPAR ID
+        IntD_LNo        = f"{int(satellite.lauch_Noyear):03d}"                                                               # International Designator (launch no. of the year)         COSPAR ID
+        IntD_POL        = satellite.lauch_piece                                                                              # International Designator (piece of the launch)            COSPAR ID [hardcoded to 'A']
+        epochStr        = satellite.orbit_n.epoch_str                                                                        # Epoch in TLE format [YYDDD.DDDDDDDD]
+        balisticCoefStr = re.sub(r'-0', '-', f"{balistic_coeff:10.8f}")                                                      # Balistic coeffizient / First derivative of the mean motion in TLE format
+        balisticCoefStr = balisticCoefStr.replace("0.", " .") if balistic_coeff < 0 else balisticCoefStr.replace("0.", "-.") # Remove the decimal point
+        meanMotionStr_2 = ReadWriteSatData.__str2tle_format(meanMotionSecDer)                                                # Second derivative of Mean Motion (decimal point assumed) HARDCODED FOR NOW /TODO 
+        b_star_str      = ReadWriteSatData.__str2tle_format(B_star)                                                          # B* the drag term, or radiation pressure coefficient (decimal point assumed) e.g. 1.234e-8 => 12345-8 [https://en.wikipedia.org/wiki/BSTAR] TODO
+        ephemeris_str   = "0" # TODO                                                                                         # Ephemeris type (always zero; only used in undistributed TLE data) (0: unclassified, 1: classified) [hardcoded to '0']               
+        elem_st_no_str  = f"{element_set_no:03d}"                                                                            # Element set number. Incremented when a new TLE is generated for this object TODO
         checksum1       = ReadWriteSatData.__calc_checksum([line_no_1_str, satIDStr, IntD_LYear, IntD_LNo, epochStr, balisticCoefStr, meanMotionStr_2, b_star_str, ephemeris_str, elem_st_no_str])
-                                                                                                                   # Checksum for line 1 (modulo 10)
+                                                                                                                             # Checksum for line 1 (modulo 10)
 
         line1_str = f"{line_no_1_str} {satIDStr}{classStr} {IntD_LYear}{IntD_LNo}{IntD_POL}   {epochStr} {balisticCoefStr} {meanMotionStr_2} {b_star_str} {ephemeris_str} {elem_st_no_str}{checksum1}"
 
         # Line 2
-        line_no_2_str   = "2"                                                                                      # Line number "2"
-        satcat_str      = satIDStr                                                                                 # Satellite Catalog Number (5 digits) [same as satID]
-        i_str           = f"{satellite.orbit.i:8.4f}"                                                              # Inclination in degrees
-        raan_str        = f"{satellite.orbit.RAAN:8.4f}"                                                           # Right Ascension of Ascending Node in degrees
-        eccen_str       = f"{int(satellite.orbit.e * 1e7):07d}"                                                    # Eccentricity  * 10^7 as decimal value / decimal point assumed
-        per_str         = f"{satellite.orbit.p:8.4f}"                                                              # Argument of perigee in degrees
-        mean_anom_str   = f"{satellite.orbit.M:8.4f}"                                                              # Mean anomaly
-        rev_per_day     = (satellite.orbit.n / (2 * math.pi)) * Constants.Sec_per_day
-        mean_Mot_str    = f"{rev_per_day:11.8f}"                                                                   # Revolutions per day
-        rev_str         = f"{0:05d}"                                                                               # Revolution number at epoch [hardcoded to '00000']
+        line_no_2_str   = "2"                                                                                                # Line number "2"
+        satcat_str      = satIDStr                                                                                           # Satellite Catalog Number (5 digits) [same as satID]
+        i_str           = f"{satellite.orbit_n.i:8.4f}"                                                                        # Inclination in degrees
+        raan_str        = f"{satellite.orbit_n.RAAN:8.4f}"                                                                     # Right Ascension of Ascending Node in degrees
+        eccen_str       = f"{int(satellite.orbit_n.e * 1e7):07d}"                                                              # Eccentricity  * 10^7 as decimal value / decimal point assumed
+        per_str         = f"{satellite.orbit_n.p:8.4f}"                                                                        # Argument of perigee in degrees
+        mean_anom_str   = f"{satellite.orbit_n.M:8.4f}"                                                                        # Mean anomaly
+        rev_per_day     = (satellite.orbit_n.n / (2 * math.pi)) * Constants.Sec_per_day
+        mean_Mot_str    = f"{rev_per_day:11.8f}"                                                                             # Revolutions per day
+        rev_str         = f"{0:05d}"                                                                                         # Revolution number at epoch [hardcoded to '00000']
         checksum2       = ReadWriteSatData.__calc_checksum([line_no_2_str, satcat_str, i_str, raan_str, eccen_str, per_str, mean_anom_str, mean_Mot_str, rev_str]) # Checksum for line 2 (modulo 10)
 
         line2_str = f"{line_no_2_str} {satcat_str} {i_str} {raan_str} {eccen_str} {per_str} {mean_anom_str} {mean_Mot_str}{rev_str}{checksum2}"
@@ -199,6 +200,15 @@ class ReadWriteSatData:
         return satList
 
     @staticmethod
+    def download_and_read_tle(path)                 -> bool:
+        """
+        =========================================================================
+        Download TLE data from a website and read it.
+        =========================================================================
+        """
+        # Download TLE data from a website
+
+    @staticmethod
     def __tle_to_ballistic_coef(balistic_coeff_str) -> float:
         """
         =========================================================================
@@ -311,3 +321,5 @@ class ReadWriteSatData:
         tle_sub_str = f"{sign}{matissa}{exponent_str}"
 
         return tle_sub_str
+    
+    

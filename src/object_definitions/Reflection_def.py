@@ -39,7 +39,7 @@ class Reflection:
         self.rx_satID          = None
 
     # TBD
-    def calculate_specular_reflection(self):
+    def calculate_reflection(self):
         # Calculate Specular Reflections
         # Stub: Write function implementation here
         pass

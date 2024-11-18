@@ -26,13 +26,7 @@ class GNSSConstellation:
         print(f"Initializing GNSS constellation: {self.constellation_name} at epoch {self.epoch}")
         # Additional code to load TLE data and setup satellites here
 
-
     @staticmethod
     def get_current_epoch():
         # Returns the current date and time as an epoch
         return datetime.now(timezone.utc)
-
-# Example usage
-gnss_constellation = GNSSConstellation('GPS')
-print(f"Constellation Name: {gnss_constellation.constellation_name}")
-print(f"Epoch: {gnss_constellation.epoch}")

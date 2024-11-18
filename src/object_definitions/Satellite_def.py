@@ -1,24 +1,24 @@
 #from datetime import datetime
 import re, os
-from datetime import datetime, timezone, timedelta
-from math import pi
-from object_definitions.Constants_def import Constants
-from object_definitions.Orbit_def import Orbit
+from datetime                            import datetime, timezone, timedelta
+from math                                import pi
+from object_definitions.Constants_def    import Constants
+from object_definitions.Orbit_def        import Orbit_native
 from object_definitions.ReadWriteSatData import ReadWriteSatData
 
 class Satellite:
-    def __init__(self, satID, orbit=None, satName=None, tle_file_path=None):
+    def __init__(self, satID, orbit_n=None, satName=None, tle_file_path=None):
         """
         =========================================================================================================
         Satellite class:
             - A satellite object that contains satellite data.
               -> Satellite ID: Unique identifier for the satellite (int)
-                -> Orbit:         Orbit object containing the satellite's orbital data (Orbit) (optional)
+                -> Orbit_native:         Orbit_native object containing the satellite's orbital data (Orbit_native) (optional)
                 -> sensors:       List of sensors on the satellite (list) TODO
                 -> battery:       Battery object containing the satellite's battery data (Battery) TODO
                 -> solarArray:    Solar array object containing the satellite's solar array data (SolarArray) TODO
                 -> tle_file_path: Path to the TLE file (str) (optional)
-                   [Only available if Satellite was initialized with an Orbit object]
+                   [Only available if Satellite was initialized with an Orbit_native object]
 
         =========================================================================================================
         """
@@ -26,14 +26,14 @@ class Satellite:
         if tle_file_path is not None:
             if not os.path.exists(tle_file_path):
                 raise FileNotFoundError(f"TLE file not found: {tle_file_path}")
-            if orbit is not None:
-                raise ValueError("Cannot initialize Satellite with both TLE file and Orbit object")
+            if orbit_n is not None:
+                raise ValueError("Cannot initialize Satellite with both TLE file and Orbit_native object")
             print(f"Initializing Satellite with TLE file: {tle_file_path}")
             self.__initWithTLE(tle_file_path)
         else:
-            # Initialize satellite with Orbit object
-            print(f"Initializing Satellite with Orbit object")
-            self.__initWithOrbit(satID, orbit, satName)
+            # Initialize satellite with Orbit_native object
+            print(f"Initializing Satellite with Orbit_native object")
+            self.__initWithOrbit(satID, orbit_n, satName)
 
         self.sensors        = []
         self.battery        = []
@@ -50,25 +50,25 @@ class Satellite:
             raise ValueError("Invalid classification")
         self.classification = classification
 
-    def set_orbit(self, orbit) -> None:
-        """Set the orbit of the satellite."""
-        if isinstance(orbit, Orbit):
-            self.orbit = orbit
-        elif isinstance(orbit, list):
-            if len(orbit) == 6:
-                # Orbit is initialized with new orbital parameters
-                self.orbit = Orbit(*orbit)
-            elif len(orbit) < 6:
-                print("Insuffizient data to specify Orbit of satellite: ", self.satName)
+    def set_orbit(self, orbit_n) -> None:
+        """Set the orbit_n of the satellite."""
+        if isinstance(orbit_n, Orbit_native):
+            self.orbit_n = orbit_n
+        elif isinstance(orbit_n, list):
+            if len(orbit_n) == 6:
+                # Orbit_native is initialized with new orbital parameters
+                self.orbit_n = Orbit_native(*orbit_n)
+            elif len(orbit_n) < 6:
+                print("Insuffizient data to specify Orbit_native of satellite: ", self.satName)
         else:
-            raise ValueError("Invalid Orbit object provided for satellite: ", self.satName)
+            raise ValueError("Invalid Orbit_native object provided for satellite: ", self.satName)
     
     def set_epoch(self, epoch) -> None:
         """Set the epoch of the satellite."""
-        if self.orbit is None:
-            print("Warning: Orbit is not specified for this satellite. Cannot set epoch.")
+        if self.orbit_n is None:
+            print("Warning: Orbit_native is not specified for this satellite. Cannot set epoch.")
             return
-        self.orbit.set_start_time(epoch)
+        self.orbit_n.set_start_time(epoch)
 
     """
     =========================================================================================================
@@ -83,9 +83,9 @@ class Satellite:
             print("Warning: TLE has not yet been generated")
             return None
 
-    def get_orbit(self)                          -> Orbit:
-        # Extract orbit from the satellit object
-        return self.orbit
+    def get_orbit(self)                          -> Orbit_native:
+        # Extract orbit_n from the satellit object
+        return self.orbit_n
 
     def tle_exists(self):
         """Check if the TLE file exists."""
@@ -145,7 +145,7 @@ class Satellite:
         self.satName        = sat_data[0].satName
         self.classification = sat_data[0].classification
         semi_major_axis     = (Constants.GM_earth_tt / (sat_data[0].meanMotion * 2 * pi / Constants.Sec_per_day) ** 2) ** (1/3)
-        self.orbit          = Orbit(sat_data[0].inclination, sat_data[0].eccentricity, sat_data[0].raan, sat_data[0].argOfPerigee, sat_data[0].meanAnomaly, semi_major_axis, sat_data[0].epoch)
+        self.orbit_n        = Orbit_native(sat_data[0].inclination, sat_data[0].eccentricity, sat_data[0].raan, sat_data[0].argOfPerigee, sat_data[0].meanAnomaly, semi_major_axis, sat_data[0].epoch)
         self.launch_year    = sat_data[0].launchYear # TODO as datetime object
         self.lauch_Noyear   = sat_data[0].lauchNoInYear
         self.lauch_piece    = sat_data[0].launchPiece
@@ -154,7 +154,7 @@ class Satellite:
         self.B_star         = sat_data[0].B_star
         self.element_set_no = sat_data[0].ElementSetNo
 
-    def __initWithOrbit(self, satID, orbit, satName):
+    def __initWithOrbit(self, satID, orbit_n, satName):
         # Initialize satellite object
         self.satID          = satID
         self.satName        = satName if satName is not None else f"Sat_{satID}"
@@ -168,18 +168,18 @@ class Satellite:
         self.B_star         = None           # TODO calculate B_star in a separate function
         self.element_set_no = None           # TODO
 
-        # Initialize Satellite Orbit
-        if not isinstance(orbit, Orbit) and isinstance(orbit, list):
-            if len(orbit) >= 6:
-                # Orbit is initialized with new orbital parameters
-                self.orbit = Orbit(*orbit)
-            elif len(orbit) < 6:
-                print("Insuffizient data to specify Orbit of satellite: ", self.satName)
-        elif orbit is None:
-            print("Orbit of satellite: ", self.satName, " is not specified")
-            self.orbit = None
-        elif isinstance(orbit, Orbit):
-            # Orbit object is passed
-            self.orbit = orbit
+        # Initialize Satellite Orbit_native
+        if not isinstance(orbit_n, Orbit_native) and isinstance(orbit_n, list):
+            if len(orbit_n) >= 6:
+                # Orbit_native is initialized with new orbital parameters
+                self.orbit_n = Orbit_native(*orbit_n)
+            elif len(orbit_n) < 6:
+                print("Insuffizient data to specify Orbit_native of satellite: ", self.satName)
+        elif orbit_n is None:
+            print("Orbit_native of satellite: ", self.satName, " is not specified")
+            self.orbit_n = None
+        elif isinstance(orbit_n, Orbit_native):
+            # Orbit_native object is passed
+            self.orbit_n = orbit_n
         else:
-            raise ValueError("Invalid Orbit object provided for satellite: ", self.satName)
+            raise ValueError("Invalid Orbit_native object provided for satellite: ", self.satName)

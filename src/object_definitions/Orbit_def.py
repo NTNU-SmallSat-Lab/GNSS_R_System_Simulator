@@ -3,11 +3,11 @@ import math
 import numpy as np
 from object_definitions.Constants_def  import Constants
 
-class Orbit:
+class Orbit_native:
     def __init__(self, i, e, raan, p, M, a, epochTime=None) -> None:
         """
         =========================================================================================================
-        Orbit class:
+        Orbit_native class:
           - Defines an orbit object: Initialized with the following parameters:
             - Inclination                       (i)          [degrees]
             - Eccentricity                      (e)          [-]
@@ -15,13 +15,13 @@ class Orbit:
             - Argument of perigee               (p)          [deg]
             - Mean anomaly                      (M)          [deg]
             - Semi-major axis                   (a)          [m]
-            - "start time of Orbit"             (dt_start)   [YYYY:MM:DD HH:mm:ss UTC] (optional)
+            - "start time of Orbit_native"      (dt_start)   [YYYY:MM:DD HH:mm:ss UTC] (optional)
         =========================================================================================================
         """
         # Check if enough variables are provided
         if any(var is None for var in [i, e, raan, p, M, a]):
 #        if i is None or e is None or raan is None or p is None or M is None or a is None:
-            raise ValueError("Orbit undefined, not sufficient variables provided")
+            raise ValueError("Orbit_native undefined, not sufficient variables provided")
 
         # Initialize orbit
         self.i         = i                                                                # Inclination in degrees
@@ -32,7 +32,7 @@ class Orbit:
         self.a         = a                                                                # Semi-major axis in m
         self.epoch_str = self.conv_DateTime_to_Epoch(epochTime) if epochTime else None    # Eopch in YYDDD.DDDDDDDD format (TLE format)
         self.dt_start  = epochTime if epochTime else None                                 # Start time in datetime format
-        self.n         = math.sqrt(Constants.GM_earth_tt / (self.a**3))                   # Mean motion in rad/s
+        self.n         = math.sqrt(Constants.GM_earth_tt / (self.a**3))                   # Mean motion in rad/s #TODO: correct, only works for circular orbits
 
     def conv_DateTime_to_Epoch(self, dt_epoch):
         # Convert datetime to TLE epoch_str format YYDDD.DDDDDDDD

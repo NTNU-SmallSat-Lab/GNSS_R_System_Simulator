@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 import os, math
 from object_definitions.Reflection_def        import Reflection
-from object_definitions.Orbit_def             import Orbit
+from object_definitions.Orbit_def             import Orbit_native
 from object_definitions.Constants_def         import Constants
 from object_definitions.Satellite_def         import Satellite
 from object_definitions.GnssConstellation_def import GNSSConstellation
@@ -28,9 +28,9 @@ def testObjReflection()       -> bool:
 def testObjOrbit()            -> bool:
     passed     = 1
     start_time = datetime(2024, 10, 31, 5, 5, 57, tzinfo=timezone.utc)  # Start time in UTC (YYYY:MM:DD HH:mm:ss)
-    apogee     = 421e3 + Constants.R_earth                                                # Apogee in [m]
+    apogee     = 421e3 + Constants.R_earth                              # Apogee in [m]
 
-    orbit_noEpoch = Orbit(
+    orbit_noEpoch = Orbit_native(
         51.6374,                   # inclination         [°]
         0.0009376,                 # eccentricity        [-]
         1.5935,                    # RAAN                [°]
@@ -39,7 +39,7 @@ def testObjOrbit()            -> bool:
         apogee                     # apogee              [m]
     )
 
-    orbit_withEpoch = Orbit(
+    orbit_withEpoch = Orbit_native(
         51.6374,                   # inclination         [°]
         0.0009376,                 # eccentricity        [-]
         1.5935,                    # RAAN                [°]
@@ -48,16 +48,16 @@ def testObjOrbit()            -> bool:
         apogee,                    # apogee              [m]
         start_time                 # epoch               [YYYY:MM:DD HH:mm:ss UTC]
     )
-    if not (isinstance(orbit_noEpoch, Orbit) and orbit_noEpoch.epoch_str == None):
+    if not (isinstance(orbit_noEpoch, Orbit_native) and orbit_noEpoch.epoch_str == None):
         passed = 0
-    if not (isinstance(orbit_withEpoch, Orbit) and orbit_withEpoch.epoch_str == '24305.21246528'):
+    if not (isinstance(orbit_withEpoch, Orbit_native) and orbit_withEpoch.epoch_str == '24305.21246528'):
         passed = 0
     return passed
 def testObjSatellite()        -> bool:
     passed        = 1
     start_time    = datetime(2024, 10, 31, 5, 5, 57, tzinfo=timezone.utc)
     apogee        = 421e3 + Constants.R_earth
-    orbit_noEpoch = Orbit(
+    orbit_noEpoch = Orbit_native(
         51.6374,                # inclination          [°]
         0.0009376,              # eccentricity         [-]
         1.5935,                 # RAAN                 [°]
@@ -66,7 +66,9 @@ def testObjSatellite()        -> bool:
         apogee                  # apogee               [m]
     )
 
-    orbit_withEpoch = Orbit(
+    sat = Satellite(1)
+
+    orbit_withEpoch = Orbit_native(
         51.6374,                # inclination          [°]
         0.0009376,              # eccentricity         [-]
         1.5935,                 # RAAN                 [°]
@@ -79,7 +81,7 @@ def testObjSatellite()        -> bool:
     sat_noOrbit        = Satellite(1)
     sat_orbitNoEpoch   = Satellite(2, orbit_noEpoch)
     sat_orbitWithEpoch = Satellite(3, orbit_withEpoch)
-    satellite_newOrbit = Satellite(4,                          # Satellite ID        [number]
+    satellite_newOrbit = Satellite(4,                              # Satellite ID        [number]
                                    [
                                        51.6374,                    # inclination         [°]
                                        0.0009376,                  # eccentricity        [-]
@@ -91,30 +93,30 @@ def testObjSatellite()        -> bool:
                                    ])
     satellite_newOrbit2 = Satellite(5,
                                     [
-                                        51.6374,                    # inclination         [°]
-                                        0.0009376,                  # eccentricity        [-]
-                                        1.5935,                     # RAAN                [°]
-                                        121.8064,                   # argument of perigee [°]
-                                        341.7727,                   # Mean anomaly        [°]
-                                        apogee,                     # apogee              [m]
+                                        51.6374,                   # inclination         [°]
+                                        0.0009376,                 # eccentricity        [-]
+                                        1.5935,                    # RAAN                [°]
+                                        121.8064,                  # argument of perigee [°]
+                                        341.7727,                  # Mean anomaly        [°]
+                                        apogee,                    # apogee              [m]
                                     ],
                                     satName="newName")
     satellite_noOrbit_newName = Satellite(6, satName="newName")
 
-    if not (isinstance(sat_noOrbit, Satellite) and sat_noOrbit.orbit == None):
+    if not (isinstance(sat_noOrbit, Satellite) and sat_noOrbit.orbit_n == None):
         passed = 0
-    if not (isinstance(sat_orbitNoEpoch, Satellite) and sat_orbitNoEpoch.orbit == orbit_noEpoch and sat_orbitNoEpoch.tle_exists() == False):
+    if not (isinstance(sat_orbitNoEpoch, Satellite) and sat_orbitNoEpoch.orbit_n == orbit_noEpoch and sat_orbitNoEpoch.tle_exists() == False):
         passed = 0
-    if not (isinstance(sat_orbitWithEpoch, Satellite) and sat_orbitWithEpoch.orbit == orbit_withEpoch and sat_orbitWithEpoch.tle_exists() == False):
+    if not (isinstance(sat_orbitWithEpoch, Satellite) and sat_orbitWithEpoch.orbit_n == orbit_withEpoch and sat_orbitWithEpoch.tle_exists() == False):
         passed = 0
-    if not (isinstance(satellite_newOrbit, Satellite) and satellite_newOrbit.orbit.epoch_str == '24304.21246528' and satellite_newOrbit.tle_exists() == False):
+    if not (isinstance(satellite_newOrbit, Satellite) and satellite_newOrbit.orbit_n.epoch_str == '24305.21246528' and satellite_newOrbit.tle_exists() == False):
         passed = 0
     # Generate TLE file  for satellite_newOrbit
     satellite_newOrbit.write_tle_file()
     if not (satellite_newOrbit.tle_exists() == True):
         passed = 0
 
-    if not (isinstance(satellite_newOrbit2, Satellite) and satellite_newOrbit2.orbit.epoch_str == None and satellite_newOrbit2.tle_exists() == False):
+    if not (isinstance(satellite_newOrbit2, Satellite) and satellite_newOrbit2.orbit_n.epoch_str == None and satellite_newOrbit2.tle_exists() == False):
         passed = 0
 
     # Set the classification of the satellite
@@ -133,8 +135,6 @@ def testObjSatellite()        -> bool:
     # Initialize Satellite with TLE file
     sat_tle = Satellite(7, tle_file_path=os.path.join(Constants.tle_folderpath, "ISS.tle"))
     sat_tle.write_tle_file()
-    a = 1
-
     return passed
 def testReadWriteData()       -> bool:
     passed = 1
@@ -152,7 +152,7 @@ def testReadWriteData()       -> bool:
     
     if not (isinstance(issList, list) and len(issList) == 1):
         passed = 0
-    # https://www.heavens-above.com/orbit.aspx?satid=25544
+    # https://www.heavens-above.com/orbit_n.aspx?satid=25544
     if (issList[0].satCatalogNumber != 25544       and       # Satellite Catalog Number
         issList[0].inclination      != 51.638      and       # Inclination
         issList[0].eccentricity     != 0.0008444   and       # Eccentricity
@@ -173,7 +173,6 @@ def testReadWriteData()       -> bool:
         passed = 0
 
     return passed
-
 def testFreeFlyerConnection() -> bool:
     passed             = 1
     show_FF_GUI        = True
@@ -233,8 +232,7 @@ def testGNSSConstellation()   -> bool:
     if not (isinstance(glonass_constellation, GNSSConstellation) and glonass_constellation.constellation_name == 'GLONASS' and glonass_constellation.epoch == datetime(2021, 10, 31, 5, 5, 57, tzinfo=timezone.utc)):
         passed = 0
     return passed
-
-def testSatConstelation()    -> bool:
+def testSatConstelation()     -> bool:
     passed = 1
     # Initialize with an array of Satellite objects
     sat1 = Satellite(1, [51.6374, 0.0009376, 1.5935, 121.8064, 341.7727, 421e3 + Constants.R_earth, datetime(2024, 10, 31, 5, 5, 57, tzinfo=timezone.utc)])

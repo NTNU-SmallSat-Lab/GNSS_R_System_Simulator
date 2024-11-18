@@ -3487,7 +3487,7 @@ End;*/
 // --- READ TLE for GNSS-R satellite --- //
 // ------------------------------------- //
 For i=0 to GNSS_R.Count-1 step 1;
-	tle_title_gnssrSat = StringConcat("GNSS-R " , satelliteID);
+	tle_title_gnssrSat = StringConcat("Sat_" , satelliteID);
     GNSS_R[i].LoadTLE(GNSS_R_TLE_path, tle_title_gnssrSat);
 End;
 
@@ -5217,7 +5217,7 @@ End;*/
 // --- READ TLE for GNSS-R satellite --- //
 // ------------------------------------- //
 For i=0 to GNSS_R.Count-1 step 1;
-	tle_title_gnssrSat = StringConcat("GNSS-R " , satelliteID);
+	tle_title_gnssrSat = StringConcat("Sat_" , satelliteID);
     GNSS_R[i].LoadTLE(GNSS_R_TLE_path, tle_title_gnssrSat);
 End;
 
