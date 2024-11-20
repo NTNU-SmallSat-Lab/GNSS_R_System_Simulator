@@ -16,23 +16,23 @@ class Orbit_native:
             - Mean anomaly                      (M)          [deg]
             - Semi-major axis                   (a)          [m]
             - "start time of Orbit_native"      (dt_start)   [YYYY:MM:DD HH:mm:ss UTC] (optional)
+            - Mean motion                       (n)          [rev/day]                 (calculated from a)
         =========================================================================================================
         """
         # Check if enough variables are provided
         if any(var is None for var in [i, e, raan, p, M, a]):
-#        if i is None or e is None or raan is None or p is None or M is None or a is None:
             raise ValueError("Orbit_native undefined, not sufficient variables provided")
 
         # Initialize orbit
-        self.i         = i                                                                # Inclination in degrees
-        self.e         = e                                                                # Eccentricity
-        self.RAAN      = raan                                                             # Right Ascension of Ascending Node in degrees
-        self.p         = p                                                                # Argument of perigee in degrees
-        self.M         = M                                                                # Mean anomaly
-        self.a         = a                                                                # Semi-major axis in m
-        self.epoch_str = self.conv_DateTime_to_Epoch(epochTime) if epochTime else None    # Eopch in YYDDD.DDDDDDDD format (TLE format)
-        self.dt_start  = epochTime if epochTime else None                                 # Start time in datetime format
-        self.n         = math.sqrt(Constants.GM_earth_tt / (self.a**3))                   # Mean motion in rad/s #TODO: correct, only works for circular orbits
+        self.i         = i                                                                            # Inclination in degrees
+        self.e         = e                                                                            # Eccentricity
+        self.RAAN      = raan                                                                         # Right Ascension of Ascending Node in degrees
+        self.p         = p                                                                            # Argument of perigee in degrees
+        self.M         = M                                                                            # Mean anomaly
+        self.a         = a                                                                            # Semi-major axis in m
+        self.epoch_str = self.conv_DateTime_to_Epoch(epochTime) if epochTime else None                # Eopch in YYDDD.DDDDDDDD format (TLE format)
+        self.dt_start  = epochTime if epochTime else None                                             # Start time in datetime format
+        self.n         = Constants.Sec_per_day / (2*np.pi*np.sqrt(self.a**3 / Constants.GM_earth_tt)) # Mean motion in rev/day
 
     def conv_DateTime_to_Epoch(self, dt_epoch):
         # Convert datetime to TLE epoch_str format YYDDD.DDDDDDDD

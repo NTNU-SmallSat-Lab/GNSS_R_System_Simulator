@@ -6,7 +6,7 @@ from object_definitions.Constants_def         import Constants
 from object_definitions.Satellite_def         import Satellite
 from object_definitions.GnssConstellation_def import GNSSConstellation
 from object_definitions.ReadWriteSatData      import ReadWriteSatData
-from object_definitions.SatConstellation_def  import SatelliteConfiguration
+from object_definitions.SatConstellation_def  import SatelliteConstellation
 from FF_sockets.FF_TLE_to_Eph                 import FF_TLE_to_Eph
 
 def testObjReflection()       -> bool:
@@ -240,12 +240,12 @@ def testSatConstelation()     -> bool:
     sat3 = Satellite(3, [51.6374, 0.0009376, 1.5935, 121.8064, 341.7727, 461e3 + Constants.R_earth, datetime(2024, 10, 31, 5, 5, 57, tzinfo=timezone.utc)])
     sat4 = Satellite(4, [51.6374, 0.0009376, 1.5935, 121.8064, 341.7727, 481e3 + Constants.R_earth, datetime(2024, 10, 31, 5, 5, 57, tzinfo=timezone.utc)])
 
-    satConfiguration_native = SatelliteConfiguration([sat1, sat2, sat3, sat4])
-    if not (isinstance(satConfiguration_native, SatelliteConfiguration) and satConfiguration_native.no_satellites == 4):
+    satConfiguration_native = SatelliteConstellation([sat1, sat2, sat3, sat4])
+    if not (isinstance(satConfiguration_native, SatelliteConstellation) and satConfiguration_native.no_satellites == 4):
         passed = 0
 
     # Initialize with a TLE file
-    satConfiguration_tle = SatelliteConfiguration(tle_file=os.path.join(Constants.tle_folderpath, "GALILEO.tle"))
+    satConfiguration_tle = SatelliteConstellation(tle_file=os.path.join(Constants.tle_folderpath, "GALILEO.tle"))
     return passed
 
 ## ----------------------------------------------------- ##

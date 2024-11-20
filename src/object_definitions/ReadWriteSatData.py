@@ -58,8 +58,8 @@ class ReadWriteSatData:
         eccen_str       = f"{int(satellite.orbit_n.e * 1e7):07d}"                                                              # Eccentricity  * 10^7 as decimal value / decimal point assumed
         per_str         = f"{satellite.orbit_n.p:8.4f}"                                                                        # Argument of perigee in degrees
         mean_anom_str   = f"{satellite.orbit_n.M:8.4f}"                                                                        # Mean anomaly
-        rev_per_day     = (satellite.orbit_n.n / (2 * math.pi)) * Constants.Sec_per_day
-        mean_Mot_str    = f"{rev_per_day:11.8f}"                                                                             # Revolutions per day
+        #rev_per_day     = (satellite.orbit_n.n / (2 * math.pi)) * Constants.Sec_per_day
+        mean_Mot_str    = f"{satellite.orbit_n.n:11.8f}"                                                                     # Revolutions per day
         rev_str         = f"{0:05d}"                                                                                         # Revolution number at epoch [hardcoded to '00000']
         checksum2       = ReadWriteSatData.__calc_checksum([line_no_2_str, satcat_str, i_str, raan_str, eccen_str, per_str, mean_anom_str, mean_Mot_str, rev_str]) # Checksum for line 2 (modulo 10)
 

@@ -3,7 +3,7 @@ from object_definitions.Satellite_def    import Satellite
 from object_definitions.Constants_def    import Constants
 from object_definitions.ReadWriteSatData import ReadWriteSatData as rw
 
-class SatelliteConfiguration:
+class SatelliteConstellation:
     """
     =========================================================================================================
     SatelliteConfiguration class:

@@ -21,11 +21,11 @@ from skyfield.framelib import itrs
 ##
 from object_definitions.Reflection_def        import Reflection
 from object_definitions.Constants_def         import Constants
-from object_definitions.Orbit_def             import Orbit
+from object_definitions.Orbit_def             import Orbit_native
 from object_definitions.Satellite_def         import Satellite
 from object_definitions.GnssConstellation_def import GNSSConstellation
 from object_definitions.ReadWriteSatData      import ReadWriteSatData
-from object_definitions.SatConstellation_def  import SatelliteConfiguration
+from object_definitions.SatConstellation_def  import SatelliteConstellation
 
 
 #############################################################################################################################

@@ -9,6 +9,15 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": []
+        },
+        {
+            "name": "Python: test Skyfield",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/test_skyfield.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": []
         }
     ]
 }
