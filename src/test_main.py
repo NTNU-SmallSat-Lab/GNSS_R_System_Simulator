@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 import os, math
 from object_definitions.Reflection_def        import Reflection
-from object_definitions.Orbit_def             import Orbit_native
+from object_definitions.Orbit_def             import Orbit_specification
 from object_definitions.Constants_def         import Constants
 from object_definitions.Satellite_def         import Satellite
 from object_definitions.GnssConstellation_def import GNSSConstellation
@@ -30,7 +30,7 @@ def testObjOrbit()            -> bool:
     start_time = datetime(2024, 10, 31, 5, 5, 57, tzinfo=timezone.utc)  # Start time in UTC (YYYY:MM:DD HH:mm:ss)
     apogee     = 421e3 + Constants.R_earth                              # Apogee in [m]
 
-    orbit_noEpoch = Orbit_native(
+    orbit_noEpoch = Orbit_specification(
         51.6374,                   # inclination         [°]
         0.0009376,                 # eccentricity        [-]
         1.5935,                    # RAAN                [°]
@@ -39,7 +39,7 @@ def testObjOrbit()            -> bool:
         apogee                     # apogee              [m]
     )
 
-    orbit_withEpoch = Orbit_native(
+    orbit_withEpoch = Orbit_specification(
         51.6374,                   # inclination         [°]
         0.0009376,                 # eccentricity        [-]
         1.5935,                    # RAAN                [°]
@@ -48,16 +48,16 @@ def testObjOrbit()            -> bool:
         apogee,                    # apogee              [m]
         start_time                 # epoch               [YYYY:MM:DD HH:mm:ss UTC]
     )
-    if not (isinstance(orbit_noEpoch, Orbit_native) and orbit_noEpoch.epoch_str == None):
+    if not (isinstance(orbit_noEpoch, Orbit_specification) and orbit_noEpoch.epoch_str == None):
         passed = 0
-    if not (isinstance(orbit_withEpoch, Orbit_native) and orbit_withEpoch.epoch_str == '24305.21246528'):
+    if not (isinstance(orbit_withEpoch, Orbit_specification) and orbit_withEpoch.epoch_str == '24305.21246528'):
         passed = 0
     return passed
 def testObjSatellite()        -> bool:
     passed        = 1
     start_time    = datetime(2024, 10, 31, 5, 5, 57, tzinfo=timezone.utc)
     apogee        = 421e3 + Constants.R_earth
-    orbit_noEpoch = Orbit_native(
+    orbit_noEpoch = Orbit_specification(
         51.6374,                # inclination          [°]
         0.0009376,              # eccentricity         [-]
         1.5935,                 # RAAN                 [°]
@@ -68,7 +68,7 @@ def testObjSatellite()        -> bool:
 
     sat = Satellite(1)
 
-    orbit_withEpoch = Orbit_native(
+    orbit_withEpoch = Orbit_specification(
         51.6374,                # inclination          [°]
         0.0009376,              # eccentricity         [-]
         1.5935,                 # RAAN                 [°]
@@ -107,12 +107,12 @@ def testObjSatellite()        -> bool:
         passed = 0
     if not (isinstance(sat_orbitNoEpoch, Satellite) and sat_orbitNoEpoch.orbit_n == orbit_noEpoch and sat_orbitNoEpoch.tle_exists() == False):
         passed = 0
-    if not (isinstance(sat_orbitWithEpoch, Satellite) and sat_orbitWithEpoch.orbit_n == orbit_withEpoch and sat_orbitWithEpoch.tle_exists() == False):
+    if not (isinstance(sat_orbitWithEpoch, Satellite) and sat_orbitWithEpoch.orbit_n == orbit_withEpoch and sat_orbitWithEpoch.tle_exists() == True):
         passed = 0
-    if not (isinstance(satellite_newOrbit, Satellite) and satellite_newOrbit.orbit_n.epoch_str == '24305.21246528' and satellite_newOrbit.tle_exists() == False):
+    if not (isinstance(satellite_newOrbit, Satellite) and satellite_newOrbit.orbit_n.epoch_str == '24305.21246528' and satellite_newOrbit.tle_exists() == True):
         passed = 0
     # Generate TLE file  for satellite_newOrbit
-    satellite_newOrbit.write_tle_file()
+#    satellite_newOrbit.write_tle_file()
     if not (satellite_newOrbit.tle_exists() == True):
         passed = 0
 

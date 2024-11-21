@@ -3,11 +3,11 @@ import math
 import numpy as np
 from object_definitions.Constants_def  import Constants
 
-class Orbit_native:
+class Orbit_specification:
     def __init__(self, i, e, raan, p, M, a, epochTime=None) -> None:
         """
         =========================================================================================================
-        Orbit_native class:
+        Orbit_specification class:
           - Defines an orbit object: Initialized with the following parameters:
             - Inclination                       (i)          [degrees]
             - Eccentricity                      (e)          [-]
@@ -15,13 +15,13 @@ class Orbit_native:
             - Argument of perigee               (p)          [deg]
             - Mean anomaly                      (M)          [deg]
             - Semi-major axis                   (a)          [m]
-            - "start time of Orbit_native"      (dt_start)   [YYYY:MM:DD HH:mm:ss UTC] (optional)
+            - "start time of Orbit_specification"      (dt_start)   [YYYY:MM:DD HH:mm:ss UTC] (optional)
             - Mean motion                       (n)          [rev/day]                 (calculated from a)
         =========================================================================================================
         """
         # Check if enough variables are provided
         if any(var is None for var in [i, e, raan, p, M, a]):
-            raise ValueError("Orbit_native undefined, not sufficient variables provided")
+            raise ValueError("Orbit_specification undefined, not sufficient variables provided")
 
         # Initialize orbit
         self.i         = i                                                                            # Inclination in degrees

@@ -11,10 +11,10 @@
             "args": []
         },
         {
-            "name": "Python: test Skyfield",
+            "name": "Python: main Simulator",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/src/test_skyfield.py",
+            "program": "${workspaceFolder}/src/main_simulator2.py",
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": []

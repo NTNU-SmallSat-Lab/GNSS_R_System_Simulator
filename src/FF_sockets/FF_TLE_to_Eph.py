@@ -1,6 +1,6 @@
 import socket, time, os, subprocess, struct
 import numpy as np
-from object_definitions.Orbit_def     import Orbit_native
+from object_definitions.Orbit_def     import Orbit_specification
 from object_definitions.Constants_def import Constants
 from typing                           import Tuple
 
@@ -10,8 +10,8 @@ def FF_TLE_to_Eph(satObj, GNSS_const, integrationStep, simDuration, no_GNSS_R_sa
     = Robustness checks      =
     ==========================
     """
-    if not isinstance(satObj.orbit_n, Orbit_native):
-        print(f"WARNING: Satellite {satObj.satID} does not contain an Orbit_native   \n     TLE file cannot be generated without an Orbit_native object")
+    if not isinstance(satObj.orbit_n, Orbit_specification):
+        print(f"WARNING: Satellite {satObj.satID} does not contain an Orbit_specification   \n     TLE file cannot be generated without an Orbit_specification object")
         return (None, None)
 
     if satObj.tle_file_path:
