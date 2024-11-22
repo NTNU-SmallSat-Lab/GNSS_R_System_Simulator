@@ -26,9 +26,11 @@ class SatelliteConstellation:
                 print(f"Initializing Satellite Configuration with TLE file: {tle_file}")
                 satList  = rw.read_tle_data(tle_file)
                 satArray = []
+                satNo   = 0
                 for sat_data in satList:
-                    sat = Satellite(sat_data.satCatalogNumber, satName=sat_data.satName, tle_file_path=tle_file)
+                    sat = Satellite(sat_data.satCatalogNumber, satName=sat_data.satName, tle_file_path=tle_file, satNo_in_tle=satNo)
                     satArray.append(sat)
+                    satNo += 1
             else:
                 raise FileNotFoundError("TLE file not found")
         elif satArray is not None and tle_file is None:

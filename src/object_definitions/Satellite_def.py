@@ -9,7 +9,7 @@ from object_definitions.ReadWriteSatData import ReadWriteSatData
 from skyfield.api      import load, wgs84
 
 class Satellite:
-    def __init__(self, satID, orbit_n=None, satName=None, tle_file_path=None):
+    def __init__(self, satID, orbit_n=None, satName=None, tle_file_path=None, satNo_in_tle=0):
         """
         =========================================================================================================
         Satellite class:
@@ -39,7 +39,7 @@ class Satellite:
             if orbit_n is not None:
                 raise ValueError("Cannot initialize Satellite with both TLE file and Orbit_specification object")
             print(f"Initializing Satellite with TLE file: {tle_file_path}")
-            self.__initWithTLE(tle_file_path, satName)
+            self.__initWithTLE(tle_file_path, satNo_in_tle, satName)
         else:
             # Initialize satellite with Orbit_specification object
             print(f"Initializing Satellite with Orbit_specification object")
@@ -157,16 +157,15 @@ class Satellite:
         ts      = load.timescale()
         for t in range(0, duration, deltaT):
             times_i.append(ts.utc(startTime + timedelta(seconds=t)))
-        #end_time = startTime + timedelta(seconds=duration)
-        
-        position = np.array([self.skf.at(t).position.m for t in times_i])
+
+        position = np.array([self.skf.at(t).position.m       for t in times_i])
         velocity = np.array([self.skf.at(t).velocity.m_per_s for t in times_i])
 
         self.time_prop_vec   = times_i
         self.positions_eci   = np.transpose(position)
         self.velocities_eci  = np.transpose(velocity)
 
-    def __initWithTLE(self, tle_file_path, satName=None):
+    def __initWithTLE(self, tle_file_path, satNo_in_tle, satName=None):
         """
         =========================================================================
         Initialize the satellite object with the TLE data from the file
@@ -203,7 +202,7 @@ class Satellite:
         self.meanMotion_2   = sat_data.secDerivMeanMotion
         self.B_star         = sat_data.B_star
         self.element_set_no = sat_data.ElementSetNo
-        self.skf            = load.tle_file(tle_file_path)[0]
+        self.skf            = load.tle_file(tle_file_path)[satNo_in_tle]
 
     def __initWithOrbit(self, satID, orbit_n, satName):
         # Initialize satellite object
