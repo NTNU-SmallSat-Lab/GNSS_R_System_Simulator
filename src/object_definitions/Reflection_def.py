@@ -34,6 +34,7 @@ class Reflection:
                                 'gnssVel':  [], #TBD
                                 'satPos':   [], #TBD
                                 'satVel':   []  #TBD
+                                
                                 }
         self.tx_satID          = None
         self.rx_satID          = None

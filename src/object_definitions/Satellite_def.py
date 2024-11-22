@@ -1,4 +1,5 @@
 import re, os
+import numpy as np
 from datetime                            import datetime, timezone, timedelta
 from math                                import pi
 from object_definitions.Constants_def    import Constants
@@ -138,7 +139,7 @@ class Satellite:
             print(f"Warning: TLE file could not be written for {self.satID}")
         return filePath
 
-    def propagate_orbit(self, startTime, duration, deltaT):
+    def propagate_orbit(self, startTime, duration, deltaT) -> np.array:
         """
         =========================================================================
         Propagate the satellite orbit for a given duration and a given time step 
@@ -147,9 +148,23 @@ class Satellite:
         =    deltaT:     Time step for the propagation   [seconds]              =
         =    return:     Position and velocity of the satellite at each time    =
         =    -> This function used "Skyfield" to propagate the satellite orbit  =
+        =                                                                       =
+        =    self.position (propagated position)                                = 
+        =    self.velocity (propagated velocity)                                =
         =========================================================================
         """
-        pass
+        times_i = []
+        ts      = load.timescale()
+        for t in range(0, duration, deltaT):
+            times_i.append(ts.utc(startTime + timedelta(seconds=t)))
+        #end_time = startTime + timedelta(seconds=duration)
+        
+        position = np.array([self.skf.at(t).position.m for t in times_i])
+        velocity = np.array([self.skf.at(t).velocity.m_per_s for t in times_i])
+
+        self.time_prop_vec   = times_i
+        self.positions_eci   = np.transpose(position)
+        self.velocities_eci  = np.transpose(velocity)
 
     def __initWithTLE(self, tle_file_path, satName=None):
         """

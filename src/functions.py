@@ -1,9 +1,7 @@
 import numpy as np
+import pymap3d
 from pyproj import Transformer
-import pymap3d 
-
 # Define the transformer for ECEF (EPSG:4978) to LLA (EPSG:4326)
-
 
 '''
 def ecef_to_lla(x, y, z):
@@ -56,12 +54,11 @@ def compute_reflection(finalPositionGPS, finalPositionSat, ellipse, angle, times
     latlon_ref = np.full((finalPositionSat.shape[1], 2), np.nan)
     for i in range(finalPositionSat.shape[1]):
         if not np.isnan(specular_point_vec[i, 0]):
-            
+
             lat, lon, alt = pymap3d.eci2geodetic(specular_point_vec[i, 0], specular_point_vec[i, 1], specular_point_vec[i, 2], times[i])
             #lat, lon, alt =  ecef_to_lla(specular_point_vec[i, 0], specular_point_vec[i, 1], specular_point_vec[i, 2])
             latlon_ref[i, :] = [lat, lon]
             #latlon_ref[i, :] = ecef_to_lla(specular_point_vec[i, 0], specular_point_vec[i, 1], specular_point_vec[i, 2])  # Ensure `ecef_to_lla` is defined or available
-
     return specular_point_vec, theta_vec, latlon_ref
 
 def check_los_satellites(r1, r2, R_earth):
@@ -71,18 +68,17 @@ def check_los_satellites(r1, r2, R_earth):
     """
     # Vector between the two points
     d = r2 - r1
-    
+
     # Parametric line between points, sampled at 100 points
     t_values = np.linspace(0, 1, 100)
-    
+
     # Check if any point along the line passes through Earth
     for t in t_values:
         r_t = r1 + t * d  # Parametric equation of the line
         distance_to_earth_center = np.linalg.norm(r_t)
-        
+
         if distance_to_earth_center < R_earth:
             return False  # No line of sight, obstructed by Earth
-    
     return True  # LOS is clear
 
 
