@@ -14,7 +14,7 @@
             "name": "Python: main Simulator",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/src/main_simulator2.py",
+            "program": "${workspaceFolder}/src/main_simulator.py",
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": []

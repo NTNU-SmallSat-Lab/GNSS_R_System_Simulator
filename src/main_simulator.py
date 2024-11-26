@@ -1,43 +1,22 @@
-import os
 
 from astropy             import units as u
-from astropy.coordinates import GCRS, ITRS, CartesianRepresentation
-from astropy.time        import Time, TimeDelta
-from poliastro.bodies    import Earth
-from poliastro.twobody   import Orbit as Orbit_poliastro
 
 import numpy           as np
-import pandas          as pd
 import cartopy.crs     as ccrs
 import cartopy.feature as cfeature
 
-from functions.functions         import compute_reflection
-from astropy           import coordinates as coord
+import matplotlib
+matplotlib.use('TkAgg', force=True)
+from matplotlib import pyplot as plt
 
-import pymap3d 
-
-from skyfield.api      import load, wgs84
-from skyfield.sgp4lib  import EarthSatellite
-from datetime          import timedelta, timezone, datetime
-from skyfield.framelib import itrs
+from skyfield.api      import load
+from datetime          import timezone, datetime
 
 ##
 from object_definitions.Reflection_def        import Reflection
 from object_definitions.Constants_def         import Constants
-from object_definitions.Orbit_def             import Orbit_specification
 from object_definitions.Satellite_def         import Satellite
-from object_definitions.GnssConstellation_def import GNSSConstellation
-from object_definitions.ReadWriteSatData      import ReadWriteSatData
 from object_definitions.SatConstellation_def  import SatelliteConstellation
-
-import numpy as np
-from mpl_toolkits.mplot3d import Axes3D
-
-import matplotlib
-from matplotlib import pyplot as plt
-matplotlib.use('TkAgg', force=True)
-#matplotlib.use('Qt5Agg', force=True)
-print("Switched to:",matplotlib.get_backend())
 
 #############################################################################################################################
 tle_file_path       = "TLE_EPHEMIRIS_files/GPS_operational.tle"                            # Replace with your file's name 
@@ -48,7 +27,6 @@ print(f"Loaded {GNSS_const.no_satellites} GNSS satellites from {tle_file_path}."
 latest_epoch = None
 # Iterate through satellites and save latest time for integration
 for sat in GNSS_const.satellites:
-    #print(f"Satellite: {sat.name}, Epoch: {sat.epoch.utc_jpl()}")
     current_epoch = sat.skf.epoch.utc_jpl()
     # Parse the epoch string into a datetime object
     current_epoch_dt = datetime.strptime(current_epoch, "A.D. %Y-%b-%d %H:%M:%S.%f UTC")
@@ -74,7 +52,7 @@ print("Start Time:", start_time.utc_iso())
 step_size = 20             # Seconds
 duration  = int(4 * 3600)  # Total duration in seconds (4 hours)
 
-#################################################
+#############################################################################################################################
 orbits_input = [[70, 0.00001, 0,   0, 0, 7300e3, start_time_dt],
                 [70, 0.00001, 180, 0, 0, 7300e3, start_time_dt]]
 Nsat        = 2
@@ -89,22 +67,9 @@ sat_const.generate_constellation_TLE()
 
 #############################################################################################################################
 sat_const.propagate_constellation(start_time_dt, duration, step_size)
+GNSS_const.propagate_constellation(start_time_dt, duration, step_size)
 
-satellites_LEO_sk = [sat_const.satellites[0].skf, sat_const.satellites[1].skf]
-
-#############################################################################################################################
-# Generate a sequence of times
-times_1      = []
-#current_time = start_time.utc_datetime()
-for t in range(0, duration, step_size):
-    new_time = start_time_dt + timedelta(seconds=t)
-    times_1.append(ts.utc(new_time))
-end_time = Time(start_time_dt) + TimeDelta(duration * u.s)  # 3 hours later
-
-# Need to create another datime obect, times_2, to run the latitude, longitude conversion
-times_2 = [time.utc_datetime() for time in times_1]  # Call the method on each Time object
-
-#############################################################################################################################
+times_2 = [time.utc_datetime() for time in sat_const.satellites[0].time_prop_vec]  # Call the method on each Time object (list of datetime objects) # times_1 was list of skyfield time objects
 # Start process
 plt.figure(figsize=(12, 6))
 ax = plt.axes(projection=ccrs.PlateCarree())
@@ -114,37 +79,21 @@ ax.set_global()
 
 reflection_vec = []
 
+#############################################################################################################################
 sat_no = 0
 for sat in sat_const.satellites:
-
-    # Position and velocity of the j LEO satellite
-    leo_positions_ECI = np.array([sat.skf.at(t).position.m for t in times_1])  
-    leo_positions_ECI = np.transpose(leo_positions_ECI)
-    leo_velocity_ECI  = np.array([sat.skf.at(t).velocity.m_per_s for t in times_1])
-    leo_velocity_ECI  = np.transpose(leo_velocity_ECI)
-
     gnss_sat_no = 0
-    for i in range(len(satellites_sk)): #len(satellites_sk)):
-        # Position and velocity of the i GNSS satellite
-        GNSS_positions_ECI = np.array([satellites_sk[i].at(t).position.m for t in times_1])
-        GNSS_positions_ECI = np.transpose(GNSS_positions_ECI)
-        GNSS_velocity_ECI = np.array([satellites_sk[i].at(t).velocity.m_per_s for t in times_1])
-        GNSS_velocity_ECI = np.transpose(GNSS_velocity_ECI)
-        print(i)
-        specular_point_vec, theta_vec, latlon_ref = compute_reflection(GNSS_positions_ECI, leo_positions_ECI, 0, 45, times_2)
-        ax.scatter(latlon_ref[:, 1], latlon_ref[:, 0], color='red', s=1, transform=ccrs.PlateCarree())
-        #ax.plot(latlon_ref[:, 1], latlon_ref[:, 0], color='red', transform=ccrs.PlateCarree())
-        reflection_vec.append(Reflection())
-        reflection_vec[i + sat_no*len(satellites_sk)].reflection_points['time']     = times_1
-        reflection_vec[i + sat_no*len(satellites_sk)].reflection_points['reflECEF'] = specular_point_vec
-        reflection_vec[i + sat_no*len(satellites_sk)].reflection_points['reflLL']   = latlon_ref
-        reflection_vec[i + sat_no*len(satellites_sk)].reflection_points['gnssPos']  = GNSS_positions_ECI
-        reflection_vec[i + sat_no*len(satellites_sk)].reflection_points['gnssVel']  = GNSS_velocity_ECI
-        reflection_vec[i + sat_no*len(satellites_sk)].reflection_points['satPos']   = specular_point_vec
-        reflection_vec[i + sat_no*len(satellites_sk)].reflection_points['satVel']   = latlon_ref
-        reflection_vec[i + sat_no*len(satellites_sk)].reflection_points['refl_ang'] = theta_vec
-        reflection_vec[i + sat_no*len(satellites_sk)].tx_satID = satellites_sk[i].name
-        reflection_vec[i + sat_no*len(satellites_sk)].rx_satID = satellites_LEO_sk[sat_no].name
+    for gnss_sat in GNSS_const.satellites:
+        print(gnss_sat_no + 1)
+        refl_gps = Reflection('spherical', angle=45, tx_satID=gnss_sat.satID, rx_satID=sat.satID, gnss_const = 'GPS')
+        refl_gps.calculate_reflection(gnss_sat, sat, times_2) #sat.time_prop_vec.utc_datetime()
+        reflection_vec.append(refl_gps)
+        # Add the reflection points to the plot
+        ax.scatter(refl_gps.refl_LL_vec[:, 1], refl_gps.refl_LL_vec[:, 0], color='red', s=1, transform=ccrs.PlateCarree())
+        gnss_sat_no += 1
+    sat_no += 1
+
+satellites_LEO_sk = [sat_const.satellites[0].skf, sat_const.satellites[1].skf]
 
 # Plot reflection points
 ax.set_xlabel('Longitude')
@@ -171,9 +120,9 @@ y  = Constants.R_earth*1e-3 * np.outer(np.sin(u), np.sin(v))
 z  = Constants.R_earth*1e-3 * np.outer(np.ones(np.size(u)), np.cos(v))
 ax = fig.add_subplot(111, projection='3d')
 # Plot the satellite trajectory (line connecting the points)
-leo_positions_ECI_1 = np.array([satellites_LEO_sk[0].at(t).position.m for t in times_1])
+leo_positions_ECI_1 = np.array([satellites_LEO_sk[0].at(t).position.m for t in sat_const.satellites[0].time_prop_vec])
 leo_positions_ECI_1 = np.transpose(leo_positions_ECI_1/1e3)
-leo_positions_ECI_2 = np.array([satellites_LEO_sk[1].at(t).position.m for t in times_1])
+leo_positions_ECI_2 = np.array([satellites_LEO_sk[1].at(t).position.m for t in sat_const.satellites[0].time_prop_vec])
 leo_positions_ECI_2 = np.transpose(leo_positions_ECI_2/1e3)
 
 ax.plot(leo_positions_ECI_1[0], leo_positions_ECI_1[1], leo_positions_ECI_1[2], label="Satellite 1 Path", color='r')
