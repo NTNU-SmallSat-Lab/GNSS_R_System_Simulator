@@ -18,15 +18,6 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": []
-        },
-        {
-            "name": "Python: main Simulator",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/src/main_simulator2.py",
-            "console": "integratedTerminal",
-            "justMyCode": true,
-            "args": []
         }
     ]
 }

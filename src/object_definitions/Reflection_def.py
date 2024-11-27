@@ -3,15 +3,22 @@ import pymap3d
 from object_definitions.Constants_def import Constants
 
 class Reflection:
-    def __init__(self, earth_model=None, angle=None, tx_satID=None, rx_satID=None, gnss_const=None):
+    def __init__(self, tx_satID=None, rx_satID=None, earth_model=None, angle=None, gnss_const=None):
         """
         =========================================================================================================
         Reflection class:
             - Defines a reflection object: Initialized with the following parameters:
-                - Earth model (spherical or elliptical)
-                - Reflection points (time, reflECEF, reflLL, gnssPos, gnssVel, satPos, satVel)
-                - Transmitting satellite ID
-                - Receiving satellite ID
+                INPUTS:
+                - tx_satID: Transmitting satellite ID (GNSS satellite IS)
+                - rx_satID: Receiving satellite ID    (LEO satellite ID)
+                - Earth model                         (spherical or elliptical)
+                - angle                               (Cutoff angle) (default: 45 degrees)
+                - gnss_const: GNSS constellation      (GPS, GLONASS, GALILEO, BEIDOU) (optional)
+                
+                CLASS VARIABLES:
+                - time_vec: Time vector               (vector with UTC datetime objects, when reflection occurs)
+                - refl_ECI_vec: Reflection points    (vector containing ECEF coordinates of point reflections)
+                - refl_LL_vec: Reflection points      (vector containing Lat-Lon coordinates of point reflections)
         =========================================================================================================
         """
         # ENTRY point to the Object (Initialization)
@@ -27,18 +34,25 @@ class Reflection:
             else:
                 # - Robustness - : If the earth model is correct, initialize the object
                 pass
+
         if angle is None:
             # If not specified, use the default cutoff angle of 45 degrees
             print("Cutoff angle not specified - Using default (45 degrees)")
             angle = 45
 
+        if tx_satID is None or rx_satID is None:
+            Warning("Transmitting or Receiving satellite IDs are not specified    \n WARNING: Reflection object not initialized")
+            return None
+        self.initialization(earth_model, angle, tx_satID, rx_satID, gnss_const)   
+
+    def initialization(self, earth_model, angle, tx_satID, rx_satID, gnss_const):
         self.earth_model       = earth_model       # 'spherical' or 'circular'
         self.gnss_const        = gnss_const        # Could be [GPS, GLONASS, GALILEO, BEIDOU]
         self.cutoff_angle      = angle
         self.tx_satID          = tx_satID
         self.rx_satID          = rx_satID
         self.time_vec          = []
-        self.refl_ECEF_vec     = []
+        self.refl_ECI_vec     = []
         self.refl_LL_vec       = []
         self.gnss_pos_vec      = []
         self.gnss_vel_vec      = []
@@ -46,57 +60,68 @@ class Reflection:
         self.sat_vel_vec       = []
         self.refl_ang_vec      = []
 
-
-    def calculate_reflection(self, finalPositionGNSS, finalPositionSat, times):
-        # Calculate Specular Reflections
+    def compute_reflection_coordinates(self, GNSS_state, Sat_state, times):
+        times = np.array(times)
 
         # Preallocate outputs for efficiency
-        theta_vec          = np.full((len(finalPositionSat.positions_eci[0]), 3), np.nan)
-        specular_point_vec = np.full((len(finalPositionSat.positions_eci[0]), 3), np.nan)
-        # Calculate the angles (theta) between GPS and satellite positions
-        dot_product = np.einsum('ij,ij->j', finalPositionGNSS.positions_eci, finalPositionSat.positions_eci)
-        magnitude_a = np.linalg.norm(finalPositionGNSS.positions_eci, axis=0)
-        magnitude_b = np.linalg.norm(finalPositionSat.positions_eci, axis=0)
-        cos_theta   = dot_product / (magnitude_a * magnitude_b)
-        theta       = np.degrees(np.arccos(cos_theta))
-
-        # Loop through each satellite position to compute reflection points
-        for i in range(finalPositionSat.positions_eci.shape[1]):
-            has_los = self.__check_los_satellites(finalPositionSat.positions_eci[:, i], finalPositionGNSS.positions_eci[:, i])
-            if theta[i] < self.cutoff_angle and has_los:
-                # Depending on 'ellipse' flag, call appropriate reflection calculation
-                if self.earth_model == 'elliptical':
-                    specular_point_ecef, theta_degrees2, theta_degrees3 = self.find_specular_point_ellipse(finalPositionSat.positions_eci[:, i], finalPositionGNSS.positions_eci[:, i])
-                    theta_vec[:, i]                                     = [theta_degrees2, theta_degrees3, theta[i]]
-                    specular_point_vec[:, i]                            = specular_point_ecef
-                elif self.earth_model == 'spherical':
-                    reflection_point, theta_2_circ, theta_3_circ = self.get_reflection_point_FF(finalPositionGNSS.positions_eci[:, i], finalPositionSat.positions_eci[:, i])
-                    theta_vec[i, :]                              = [theta_2_circ, theta_3_circ, theta[i]]
-                    specular_point_vec[i, :]                     = reflection_point
-        #print(theta_vec)
-        # Convert ECEF specular points to latitude and longitude
-            #print(specular_point_vec[i, 0], specular_point_vec[i, 1], specular_point_vec[i, 2])
-        #latlon_ref = np.full((len(finalPositionSat.positions_eci[0]), 2), np.nan)
-        latlon_ref = np.full((finalPositionSat.positions_eci.shape[1], 2), np.nan)
-        for i in range(finalPositionSat.positions_eci.shape[1]):
-            if not np.isnan(specular_point_vec[i, 0]):
-
-                lat, lon, alt = pymap3d.eci2geodetic(specular_point_vec[i, 0], specular_point_vec[i, 1], specular_point_vec[i, 2], times[i])
-                #lat, lon, alt =  ecef_to_lla(specular_point_vec[i, 0], specular_point_vec[i, 1], specular_point_vec[i, 2])
-                latlon_ref[i, :] = [lat, lon]
-                #latlon_ref[i, :] = ecef_to_lla(specular_point_vec[i, 0], specular_point_vec[i, 1], specular_point_vec[i, 2])  # Ensure `ecef_to_lla` is defined or available
-        # Store the reflection points in the object
-        self.time_vec          = times
-        self.refl_ECEF_vec     = specular_point_vec
-        self.refl_LL_vec       = latlon_ref
-        self.gnss_pos_vec      = finalPositionGNSS.positions_eci
-        self.gnss_vel_vec      = finalPositionGNSS.velocities_eci
-        self.sat_pos_vec       = finalPositionSat.positions_eci
-        self.sat_vel_vec       = finalPositionSat.velocities_eci
-        self.refl_ang_vec      = theta_vec
+        num_positions      = Sat_state.positions_eci.shape[1]
+        theta_vec          = np.full((num_positions, 3), np.nan)
+        specular_point_vec = np.full((num_positions, 3), np.nan)
         
-        return specular_point_vec, theta_vec, latlon_ref
+        # Calculate the angles (theta) between GPS and satellite positions
+        dot_product        = np.einsum('ij,ij->j', GNSS_state.positions_eci, Sat_state.positions_eci)
+        magnitude_a        = np.linalg.norm(GNSS_state.positions_eci, axis=0)
+        magnitude_b        = np.linalg.norm(Sat_state.positions_eci,  axis=0)
+        cos_theta          = dot_product / (magnitude_a * magnitude_b)
+        theta              = np.degrees(np.arccos(cos_theta))
+
+        # Precompute line-of-sight (LOS) and valid theta indices for efficiency
+        los_mask = np.array([
+            self.__check_los_satellites(Sat_state.positions_eci[:, i], GNSS_state.positions_eci[:, i])
+            for i in range(num_positions)
+        ])
+        valid_indices = (theta < self.cutoff_angle) & los_mask
     
+        # Loop through satellite positions with valid LOS to compute reflection points
+        for i in np.where(valid_indices)[0]:
+            if self.earth_model == 'elliptical':
+                specular_point_ecef, theta_degrees2, theta_degrees3 = self.find_specular_point_ellipse(Sat_state.positions_eci[:, i], GNSS_state.positions_eci[:, i])
+                theta_vec[i, :]                                     = [theta_degrees2, theta_degrees3, theta[i]]
+                specular_point_vec[i, :]                            = specular_point_ecef
+            elif self.earth_model == 'spherical':
+                reflection_point, theta_2_circ, theta_3_circ = self.get_reflection_point_FF(GNSS_state.positions_eci[:, i], Sat_state.positions_eci[:, i])
+                theta_vec[i, :]                              = [theta_2_circ, theta_3_circ, theta[i]]
+                specular_point_vec[i, :]                     = reflection_point
+
+        # Compute geodetic coordinates for valid specular points
+        valid_specular_points = ~np.isnan(specular_point_vec[:, 0])
+        latlon_ref            = np.full((num_positions, 2), np.nan)
+        if valid_specular_points.any():
+            lat, lon, _ = pymap3d.eci2geodetic(
+                specular_point_vec[valid_specular_points, 0],
+                specular_point_vec[valid_specular_points, 1],
+                specular_point_vec[valid_specular_points, 2],
+                times[valid_specular_points]
+            )
+            latlon_ref[valid_specular_points, :] = np.column_stack((lat, lon))
+            lons, lats                           = self.__prevent_longitude_wraparound(latlon_ref[:, 1], latlon_ref[:, 0])
+
+        distance_R = np.linalg.norm((specular_point_vec - np.transpose(Sat_state.positions_eci))*1e-3, axis=1)
+        distance_T = np.linalg.norm((specular_point_vec - np.transpose(GNSS_state.positions_eci))*1e-3, axis=1)
+
+        power = 1/(distance_R**2*distance_T**2)*1e15
+
+        # Store results in the object
+        self.time_vec      = times                              # Time vector numpy array
+        self.refl_ECI_vec  = specular_point_vec                 # Reflection points         ECI coordinates 
+        self.refl_LL_vec   = np.column_stack((lats, lons))      # Reflection points         Lat-Lon coordinates
+        self.gnss_pos_vec  = GNSS_state.positions_eci           # GNSS satellite positions  ECI coordinates
+        self.gnss_vel_vec  = GNSS_state.velocities_eci          # GNSS satellite velocities ECI coordinates
+        self.sat_pos_vec   = Sat_state.positions_eci            # LEO satellite positions   ECI coordinates
+        self.sat_vel_vec   = Sat_state.velocities_eci           # LEO satellite velocities  ECI coordinates
+        self.refl_ang_vec  = theta_vec                          # Reflection angles         ECI coordinates [deg]
+        self.power         = power                              # Power of the reflection   []
+
     def get_reflection_point_FF(self, satPos, gpsPos):
         # Convert positions to column vectors
         satCoord = np.array(satPos).reshape(-1, 1)
@@ -234,3 +259,12 @@ class Reflection:
         return np.array([[0, -v[2], v[1]],
                          [v[2], 0, -v[0]],
                          [-v[1], v[0], 0]])
+
+    @staticmethod
+    def __prevent_longitude_wraparound(lons, lats):
+        # Find where the difference between consecutive longitudes exceeds 180 degrees -> avoid plotting lines from -179 to 179 deg longitude
+        wraparound = np.abs(np.diff(lons)) > 180
+        # Replace the longitude and latitude at the wraparound point with NaN
+        lons[1:][wraparound] = np.nan
+        lats[1:][wraparound] = np.nan
+        return lons, lats
