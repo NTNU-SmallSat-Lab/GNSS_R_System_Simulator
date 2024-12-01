@@ -81,6 +81,7 @@ def fix_longitude_wraparound(lons, lats):
 #orbit_input = [[99.1, 0.00001, 0, 0, 0,  7300e3],
 #               [99.1, 0.00001, 90, 0, 0,  7300e3]]
 #Nsat = 2
+
 # Receiver satellite
 orbit_input = [[99.1, 0.00001, 0, 0, 0,  7000e3],
                [99.1, 0.00001, 90, 0, 0,  7000e3]]
