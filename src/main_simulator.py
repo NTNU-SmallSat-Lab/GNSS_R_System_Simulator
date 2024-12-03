@@ -83,8 +83,8 @@ def fix_longitude_wraparound(lons, lats):
 #Nsat = 2
 
 # Receiver satellite
-orbit_input = [[99.1, 0.00001, 0, 0, 0,  7000e3],
-               [99.1, 0.00001, 90, 0, 0,  7000e3]]
+orbit_input = [[99.1, 0.00001, 0, 0, 0,  7300e3],
+               [99.1, 0.00001, 90, 0, 0,  7300e3]]
 Nsat = 2
 
 #Nsat = 1
@@ -97,7 +97,7 @@ tle_file = "TLE_EPHEMIRIS_files/GPS_operational.tle"  # Replace with your file's
 
 # Define the step size and duration
 step_size = 30  # Seconds
-hours = 8
+hours = 2
 duration = int(hours * 3600)  # Total duration in seconds (6 hours)
 #duration = int(2*np.pi*np.sqrt((orbit_input[1][5]/1e3)**3/(398600.4)))
 
@@ -153,6 +153,18 @@ hour, minute, second = start_time.utc.hour, start_time.utc.minute, start_time.ut
 start_time_datetime = datetime(year, month, day, hour, minute, int(second), tzinfo=timezone.utc)
 
 
+#######################################################################################################
+###################################### NEW ADDITION!! 26.11 PUSH ######################################
+# Calculate the total number of steps
+num_steps = (duration ) // step_size
+# Generate the time series starting at 3:00 PM on October 23, 2024
+times_1 = ts.utc(2024, 10, 23, 12, 0, range(0, num_steps * step_size, step_size))
+# Need to create another datime obect, times_2, to run the latitude, longitude conversion
+times_2 = [time.utc_datetime() for time in times_1]  # Call the method on each Time object
+
+
+
+
 ###################################
 # Create TLE file for the constellation
 
@@ -186,19 +198,6 @@ if Nsat == 1:
 else: #NSAT > 1, then use the merged file
     satellites_LEO_sk = load.tle_file(output_path)
     
-
-#######################################################################################################
-###################################### NEW ADDITION!! 26.11 PUSH ######################################
-
-
-# Calculate the total number of steps
-num_steps = (duration ) // step_size
-# Generate the time series starting at 3:00 PM on October 23, 2024
-times_1 = ts.utc(2024, 10, 23, 15, 0, range(0, num_steps * step_size, step_size))
-
-
-# Need to create another datime obect, times_2, to run the latitude, longitude conversion
-times_2 = [time.utc_datetime() for time in times_1]  # Call the method on each Time object
 
 ######################################
 # Load the required data
