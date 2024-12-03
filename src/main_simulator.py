@@ -26,12 +26,13 @@ from object_definitions.Coverage_def          import Coverage
 # Load Timescale
 start_time_dt = datetime(2024, 10, 23, 12, 00, 00, tzinfo=timezone.utc)        # Year, Month, Day, Hour, Minute, Second
 step_size     = 30                                                             # Seconds
-sim_duration  = 8                                                              # Hours
+sim_duration  = 48                                                              # Hours
 
-orbits_input = [[70, 0.00001, 0,   0, 0, 7300e3, start_time_dt],               # [inclination [°], eccentricity [-], RAAN [°], Argument of perigee [°], Mean anomaly [°], Semi-major axis [m], start_time_dt [datetime] (optional)]
-                [70, 0.00001, 180, 0, 0, 7300e3, start_time_dt]]
+orbits_input = [[75, 0.00001, 0,   0, 0, 7300e3, start_time_dt],               # [inclination [°], eccentricity [-], RAAN [°], Argument of perigee [°], Mean anomaly [°], Semi-major axis [m], start_time_dt [datetime] (optional)]
+                [75, 0.00001, 90, 0, 0, 7300e3, start_time_dt]]
 
-gnss_tle_file_path       = "TLE_EPHEMIRIS_files/GPS_operational.tle"           # Replace with your file's name 
+#gnss_tle_file_path       = "TLE_EPHEMIRIS_files/GPS_operational.tle"           # Replace with your file's name 
+gnss_tle_file_path       = os.path.join("TLE_EPHEMIRIS_files", "GPS_operational.tle")           # Replace with your file's name 
 
 # Define bounding box and grid
 min_lon, max_lon = -17, 30
