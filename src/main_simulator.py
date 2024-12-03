@@ -97,7 +97,7 @@ tle_file = "TLE_EPHEMIRIS_files/GPS_operational.tle"  # Replace with your file's
 
 # Define the step size and duration
 step_size = 30  # Seconds
-hours = 2
+hours = 8
 duration = int(hours * 3600)  # Total duration in seconds (6 hours)
 #duration = int(2*np.pi*np.sqrt((orbit_input[1][5]/1e3)**3/(398600.4)))
 
