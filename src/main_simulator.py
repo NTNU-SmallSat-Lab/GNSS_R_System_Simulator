@@ -26,10 +26,10 @@ from object_definitions.Coverage_def          import Coverage
 # Load Timescale
 start_time_dt = datetime(2024, 10, 23, 12, 00, 00, tzinfo=timezone.utc)        # Year, Month, Day, Hour, Minute, Second
 step_size     = 30                                                             # Seconds
-sim_duration  = 48                                                              # Hours
+sim_duration  = 8                                                              # Hours
 
-orbits_input = [[75, 0.00001, 0,   0, 0, 7300e3, start_time_dt],               # [inclination [°], eccentricity [-], RAAN [°], Argument of perigee [°], Mean anomaly [°], Semi-major axis [m], start_time_dt [datetime] (optional)]
-                [75, 0.00001, 90, 0, 0, 7300e3, start_time_dt]]
+orbits_input = [[99.1, 0.00001, 0,   0, 0, 7300e3, start_time_dt],               # [inclination [°], eccentricity [-], RAAN [°], Argument of perigee [°], Mean anomaly [°], Semi-major axis [m], start_time_dt [datetime] (optional)]
+                [99.1, 0.00001, 90, 0, 0, 7300e3, start_time_dt]]
 
 #gnss_tle_file_path       = "TLE_EPHEMIRIS_files/GPS_operational.tle"           # Replace with your file's name 
 gnss_tle_file_path       = os.path.join("TLE_EPHEMIRIS_files", "GPS_operational.tle")           # Replace with your file's name 
@@ -46,6 +46,20 @@ ts         = load.timescale()
 start_time = ts.utc(start_time_dt)
 # Convert to naive datetime
 print("Start Time:", start_time.utc_iso())
+
+# Load the required data
+# Calculate the total number of steps
+# Define the step size and duration
+duration  = int(sim_duration * 3600)  # Total duration in seconds (4 hours)
+num_steps = (duration) // step_size
+# Generate the time series starting at 3:00 PM on October 23, 2024
+times_1 = ts.utc(2024, 10, 23, 12, 0, range(0, num_steps * step_size, step_size))
+
+
+# Need to create another datime obect, times_2, to run the latitude, longitude conversion
+times_2 = [time.utc_datetime() for time in times_1]  # Call the method on each Time object
+
+
 
 #############################################################################################################################
 GNSS_const          = SatelliteConstellation(tle_file=gnss_tle_file_path)
@@ -66,9 +80,6 @@ for sat in GNSS_const.satellites:
 if latest_epoch is not None:
     print(f"Latest Epoch: {latest_epoch.strftime('%Y-%m-%d %H:%M:%S.%f')}")
 
-# Define the step size and duration
-
-duration  = int(sim_duration * 3600)  # Total duration in seconds (4 hours)
 
 # Create TLE file for the constellation
 sat_array = []
@@ -82,7 +93,7 @@ sat_const.propagate_constellation(start_time_dt, duration, step_size)
 GNSS_const.propagate_constellation(start_time_dt, duration, step_size)
 
 #TODO improve on this
-times_2 = [time.utc_datetime() for time in sat_const.satellites[0].time_prop_vec]  # Call the method on each Time object (list of datetime objects) # times_1 was list of skyfield time objects
+times_3 = [time.utc_datetime() for time in sat_const.satellites[0].time_prop_vec]  # Call the method on each Time object (list of datetime objects) # times_1 was list of skyfield time objects
 # Start process
 plt.figure(figsize=(12, 6))
 ax = plt.axes(projection=ccrs.PlateCarree())
@@ -93,15 +104,6 @@ ax.set_global()
 reflection_vec = []
 
 ######################################
-# Load the required data
-# Calculate the total number of steps
-num_steps = (duration ) // step_size
-# Generate the time series starting at 3:00 PM on October 23, 2024
-times_1 = ts.utc(2024, 10, 23, 15, 0, range(0, num_steps * step_size, step_size))
-
-
-# Need to create another datime obect, times_2, to run the latitude, longitude conversion
-times_2 = [time.utc_datetime() for time in times_1]  # Call the method on each Time object
 
 planets = load('de421.bsp')
 earth   = planets['earth']
