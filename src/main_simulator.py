@@ -24,14 +24,23 @@ from object_definitions.Coverage_def          import Coverage
 
 ######################################################## - INPUTS - #########################################################
 # Load Timescale
-start_time_dt = datetime(2024, 10, 23, 12, 00, 00, tzinfo=timezone.utc)        # Year, Month, Day, Hour, Minute, Second
-step_size     = 30                                                             # Seconds
-sim_duration  = 8                                                              # Hours
+#if os.name == 'nt':
+#    print("Running on Windows")
+#    win = True
+#elif os.name == 'posix':
+#    print("Running on Linux or macOS")
+#    win = False
 
-orbits_input = [[70, 0.00001, 0,   0, 0, 7300e3, start_time_dt],               # [inclination [°], eccentricity [-], RAAN [°], Argument of perigee [°], Mean anomaly [°], Semi-major axis [m], start_time_dt [datetime] (optional)]
-                [70, 0.00001, 180, 0, 0, 7300e3, start_time_dt]]
+start_time_dt = datetime(2024, 10, 23, 12, 00, 00, tzinfo=timezone.utc)              # Year, Month, Day, Hour, Minute, Second
+step_size     = 30                                                                   # Seconds
+sim_duration  = 4                                                                   # Hours
 
-gnss_tle_file_path       = "TLE_EPHEMIRIS_files/GPS_operational.tle"           # Replace with your file's name 
+orbits_input = [[99.1, 0.00001, 0,   0, 0, 7300e3, start_time_dt],                     # [inclination [°], eccentricity [-], RAAN [°], Argument of perigee [°], Mean anomaly [°], Semi-major axis [m], start_time_dt [datetime] (optional)]
+                [99.1, 0.00001, 90.0, 0, 0, 7300e3, start_time_dt]]
+
+gnss_tle_file_path       = os.path.join("TLE_EPHEMIRIS_files", "GPS_operational.tle") # Replace with your file's name 
+
+print("Start Time:", start_time_dt)
 
 # Define bounding box and grid
 min_lon, max_lon = -17, 30
@@ -42,9 +51,9 @@ Nsat        = len(orbits_input)                                                #
 
 # This  start time is after both GPS and GALILEO TLE Epoch, so I will use this atm
 ts         = load.timescale()
-start_time = ts.utc(start_time_dt)
+#start_time = ts.utc(start_time_dt)
 # Convert to naive datetime
-print("Start Time:", start_time.utc_iso())
+#print("Start Time:", start_time.utc_iso())
 
 #############################################################################################################################
 GNSS_const          = SatelliteConstellation(tle_file=gnss_tle_file_path)
@@ -137,7 +146,7 @@ gridlines.top_labels   = False  # Disable top labels
 gridlines.right_labels = False  # Disable right-side labels
 
 plt.title('Specular Reflection Points for GPS and LEO Satellite Over Time')
-plt.savefig('Reflection_traces' + gnss_tle_file_path.split('/')[-1] + ".png" , dpi = 300)
+#plt.savefig('Reflection_traces' + gnss_tle_file_path.split('/')[-1] + ".png" , dpi = 300)
 
 
 ####################################################################################################################################################################################
@@ -392,7 +401,7 @@ ax.plot(leo_positions_ECI_1[0], leo_positions_ECI_1[1], leo_positions_ECI_1[2], 
 ax.plot(leo_positions_ECI_2[0], leo_positions_ECI_2[1], leo_positions_ECI_2[2], label="Satellite 2 Path", color='b')
 plt.savefig('Orbits.png')
 plt.show()
-
+a = 1
 ####################################################################################################################################################################################
 '''
 
