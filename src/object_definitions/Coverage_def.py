@@ -17,3 +17,6 @@ class Coverage:
             self.shape       = []
             self.power       = []
 
+    def calculate_coverage(self, tx_sat_const, rx_sat_const, start_time, end_time, time_step, earth_model=None):
+        # Calculate the coverage between the transmitter and receiver constellations
+        

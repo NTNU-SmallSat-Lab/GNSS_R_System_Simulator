@@ -14,6 +14,7 @@ class Constants:
     R_earth        = 6.371e6               # Earth's radius in                  [m]
     Radius_earth   = 6378136.6             # Earth's equatorial radius in       [m]
     Sec_per_day    = 86400                 # Seconds in a day                   [s/day]
+    Sep_per_hour   = 3600                  # Seconds in an hour                 [s/hour]
 
     # Determine the base directory of this file
     base_dir = os.getcwd()  # Gets the directory where the code is run

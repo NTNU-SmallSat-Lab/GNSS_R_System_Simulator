@@ -21,73 +21,54 @@ from object_definitions.Constants_def         import Constants
 from object_definitions.Satellite_def         import Satellite
 from object_definitions.SatConstellation_def  import SatelliteConstellation
 from object_definitions.Coverage_def          import Coverage
+from object_definitions.Static_classes_def    import Plotting
 
+#############################################################################################################################
 ######################################################## - INPUTS - #########################################################
-# Load Timescale
-#if os.name == 'nt':
-#    print("Running on Windows")
-#    win = True
-#elif os.name == 'posix':
-#    print("Running on Linux or macOS")
-#    win = False
+#############################################################################################################################
+start_time_dt          = datetime(2024, 10, 23, 12, 00, 00, tzinfo=timezone.utc)              # Start time: Year, Month, Day, Hour, Minute, Second
+step_size              = 30                                                                   # Seconds
+sim_duration           = 4                                                                    # Hours
 
-start_time_dt = datetime(2024, 10, 23, 12, 00, 00, tzinfo=timezone.utc)              # Year, Month, Day, Hour, Minute, Second
-step_size     = 30                                                                   # Seconds
-sim_duration  = 4                                                                   # Hours
-
-orbits_input = [[99.1, 0.00001, 0,   0, 0, 7300e3, start_time_dt],                     # [inclination [°], eccentricity [-], RAAN [°], Argument of perigee [°], Mean anomaly [°], Semi-major axis [m], start_time_dt [datetime] (optional)]
+orbits_input           = [[99.1, 0.00001, 0,   0, 0, 7300e3, start_time_dt],                     # [inclination [°], eccentricity [-], RAAN [°], Argument of perigee [°], Mean anomaly [°], Semi-major axis [m], start_time_dt [datetime] (optional)]
                 [99.1, 0.00001, 90.0, 0, 0, 7300e3, start_time_dt]]
 
-gnss_tle_file_path       = os.path.join("TLE_EPHEMIRIS_files", "GPS_operational.tle") # Replace with your file's name 
+gnss_tle_file_path     = os.path.join("TLE_EPHEMIRIS_files", "GPS_operational.tle") # Replace with your file's name 
 
 print("Start Time:", start_time_dt)
 
 # Define bounding box and grid
 min_lon, max_lon = -17, 30
 min_lat, max_lat =  56, 80
-#ax.set_extent([min_lon - 5, max_lon + 5, min_lat - 5, max_lat + 5])  # Add padding to the extent
+
 #############################################################################################################################
-Nsat        = len(orbits_input)                                                # Number of satellites
-
-# This  start time is after both GPS and GALILEO TLE Epoch, so I will use this atm
-ts         = load.timescale()
-#start_time = ts.utc(start_time_dt)
-# Convert to naive datetime
-#print("Start Time:", start_time.utc_iso())
-
-# Load the required data
-# Calculate the total number of steps
-# Define the step size and duration
-duration  = int(sim_duration * 3600)  # Total duration in seconds (4 hours)
-num_steps = (duration) // step_size
+#################################################### - INITIALIZATIONS - ####################################################
+#############################################################################################################################
+Nsat        = len(orbits_input)                                                     # Number of satellites
+ts          = load.timescale()                                                      # This  start time is after both GPS and GALILEO TLE Epoch, so I will use this atm
+duration    = int(sim_duration * Constants.Sep_per_hour)                            # Duration in seconds
+num_steps   = (duration) // step_size                                                 # derive no. of steps from duration and step size
 # Generate the time series starting at 3:00 PM on October 23, 2024
-times_1 = ts.utc(2024, 10, 23, 12, 0, range(0, num_steps * step_size, step_size))
-
+times_1     = ts.utc(start_time_dt.year, start_time_dt.month, start_time_dt.day, start_time_dt.hour, start_time_dt.minute, range(0, num_steps * step_size, step_size))
 
 # Need to create another datime obect, times_2, to run the latitude, longitude conversion
 times_2 = [time.utc_datetime() for time in times_1]  # Call the method on each Time object
 
-
-
-#############################################################################################################################
-GNSS_const          = SatelliteConstellation(tle_file=gnss_tle_file_path)
-
-print(f"Loaded {GNSS_const.no_satellites} GNSS satellites from {gnss_tle_file_path}.")                           # Print loaded satellites
+# Load the GNSS constellation
+GNSS_const = SatelliteConstellation(tle_file=gnss_tle_file_path)
+print(f"Loaded {GNSS_const.no_satellites} GNSS satellites from {gnss_tle_file_path}.")
 latest_epoch = None
 # Iterate through satellites and save latest time for integration
 for sat in GNSS_const.satellites:
-    current_epoch = sat.skf.epoch.utc_jpl()
-    # Parse the epoch string into a datetime object
-    current_epoch_dt = datetime.strptime(current_epoch, "A.D. %Y-%b-%d %H:%M:%S.%f UTC")
+    current_epoch = datetime.strptime(sat.skf.epoch.utc_jpl(), "A.D. %Y-%b-%d %H:%M:%S.%f UTC")
 
     # Update the latest epoch if this one is newer
-    if latest_epoch is None or current_epoch_dt > latest_epoch:
-        latest_epoch = current_epoch_dt
+    if latest_epoch is None or current_epoch > latest_epoch:
+        latest_epoch = current_epoch
 
 # Print the latest epoch
 if latest_epoch is not None:
     print(f"Latest Epoch: {latest_epoch.strftime('%Y-%m-%d %H:%M:%S.%f')}")
-
 
 # Create TLE file for the constellation
 sat_array = []
@@ -97,22 +78,16 @@ sat_const = SatelliteConstellation(satConfigName="Constellation", satArray=sat_a
 sat_const.generate_constellation_TLE()
 
 #############################################################################################################################
+################################## - PROPAGATE ORBITS OF "GNSS" AND "GNSS-R" SATELLITES - ###################################
+#############################################################################################################################
 sat_const.propagate_constellation(start_time_dt, duration, step_size)
 GNSS_const.propagate_constellation(start_time_dt, duration, step_size)
 
-#TODO improve on this
-times_3 = [time.utc_datetime() for time in sat_const.satellites[0].time_prop_vec]  # Call the method on each Time object (list of datetime objects) # times_1 was list of skyfield time objects
-# Start process
-plt.figure(figsize=(12, 6))
-ax = plt.axes(projection=ccrs.PlateCarree())
-ax.add_feature(cfeature.COASTLINE)
-ax.add_feature(cfeature.BORDERS, linestyle=':')
-ax.set_global()
 
-reflection_vec = []
-
-######################################
-
+#############################################################################################################################
+############################################ - to be continued - ##############################################################
+############################################################################################################################
+#TODO improve the code below
 planets = load('de421.bsp')
 earth   = planets['earth']
 sun     = planets['sun']
@@ -125,7 +100,10 @@ print(false_count)
 print(true_count)
 
 #############################################################################################################################
-sat_no = 0
+######################################### - CALCULATE "POINT" REFLECTION POINTS - ###########################################
+#############################################################################################################################
+sat_no         = 0
+reflection_vec = []
 for sat in sat_const.satellites:
     print("Calculating refl. for GNSS-R Sat-", sat_no + 1)
     gnss_sat_no = 0
@@ -134,27 +112,33 @@ for sat in sat_const.satellites:
         refl_gps.compute_reflection_coordinates(gnss_sat, sat, times_2)                                                             #sat.time_prop_vec.utc_datetime()
         reflection_vec.append(refl_gps)
         # Add the reflection points to the plot
-        ax.scatter(refl_gps.refl_LL_vec[:, 1], refl_gps.refl_LL_vec[:, 0], color='red', s=1, transform=ccrs.PlateCarree())
         gnss_sat_no += 1
     sat_no += 1
 
 satellites_LEO_sk = [sat_const.satellites[0].skf, sat_const.satellites[1].skf]
 
-# Plot reflection points
-ax.set_xlabel('Longitude')
-ax.set_ylabel('Latitude')
-gridlines              = ax.gridlines(draw_labels=True, linestyle='--', color='gray', alpha=0.7)
-gridlines.top_labels   = False  # Disable top labels
-gridlines.right_labels = False  # Disable right-side labels
+#############################################################################################################################
+######################################### - PLOTTING REFLECTION POINTS - ####################################################
+#############################################################################################################################
+Plotting.plot_reflection_traces(sat_const, GNSS_const, reflection_vec, "Reflection_traces.png")
 
-plt.title('Specular Reflection Points for GPS and LEO Satellite Over Time')
-#plt.savefig('Reflection_traces' + gnss_tle_file_path.split('/')[-1] + ".png" , dpi = 300)
-
-
-####################################################################################################################################################################################
-######### Coverage calculation part ###############
+#############################################################################################################################
+########################################## - CALCULATE COVERAGE - ###########################################################
+#############################################################################################################################
 output_shapefile = os.path.join(os.getcwd(), 'iho', 'fishnet.shp')
 grid_gdf         = gpd.read_file(output_shapefile)
+
+# Initialize coverage vector for storing coverage over each cell in the fishnet
+coverage_vec = []
+for idx in range(len(grid_gdf)):
+    coverage = Coverage()  
+    # Compute the centroid of the current grid cell
+    centroid = grid_gdf.loc[idx].geometry.centroid
+    # Set the position attribute of the Coverage instance
+    coverage.position = (centroid.x, centroid.y)
+    # Append the instance to the coverage_vec list
+    coverage_vec.append(coverage)
+    coverage.shape = grid_gdf.loc[[idx]].boundary
 
 # Initialize figure and axis with projection
 fig, ax = plt.subplots(figsize=(10, 10), subplot_kw={'projection': ccrs.PlateCarree()})
@@ -171,19 +155,6 @@ grid_gdf = gpd.read_file(output_shapefile)
 
 # Plot the grid as the background (light gray color)
 grid_gdf.plot(ax=ax, edgecolor='lightgray', facecolor='lightgray', linestyle='-', alpha=0.5, label="Grid Background")
-
-# Initialize coverage vector for storing coverage over each cell in the fishnet
-coverage_vec = []
-for idx in range(len(grid_gdf)):
-    coverage = Coverage()  
-    # Compute the centroid of the current grid cell
-    centroid = grid_gdf.loc[idx].geometry.centroid
-    # Set the position attribute of the Coverage instance
-    coverage.position = (centroid.x, centroid.y)
-    # Append the instance to the coverage_vec list
-    coverage_vec.append(coverage)
-    coverage.shape = grid_gdf.loc[[idx]].boundary
-
 
 # Loop through the reflection vectors
 plt.figure(figsize=(12, 6))
@@ -263,6 +234,7 @@ plt.savefig("Coverage1.png", dpi = 300)
 
 ################################################################
 ######################## PLOTTING ##############################
+################################################################
 intersection_count = {idx: 0 for idx in grid_gdf.index}
 
 # Iterate through coverage_vec to evaluate the times attribute and count intersections
@@ -404,69 +376,3 @@ ax.plot(leo_positions_ECI_2[0], leo_positions_ECI_2[1], leo_positions_ECI_2[2], 
 plt.savefig('Orbits.png')
 plt.show()
 a = 1
-####################################################################################################################################################################################
-'''
-
-if method == 1:
-    for i in len(reflection_vec):#range(11):
-        refl_temp = reflection_vec[i].reflection_points['reflLL']
-        points_in_box = []
-        check = False
-        # Filter points within the bounding box and ignore points outside it
-        for lat, lon in refl_temp:
-            if min_lat <= lat <= max_lat and min_lon <= lon <= max_lon:
-                points_in_box.append((lat, lon))
-                check = True
-            else:
-                points_in_box.append((np.nan, np.nan))
-        cleaned_points_in_box = []
-        for j in range(len(points_in_box)):
-            if j > 0 and j < len(points_in_box) - 1:  # Check for non-edge points
-                prev_point = points_in_box[j - 1]
-                next_point = points_in_box[j + 1]
-                current_point = points_in_box[j]
-
-                # Replace current point with NaN if both previous and next points are NaN
-                if np.isnan(prev_point[0]) and np.isnan(next_point[0]):
-                    cleaned_points_in_box.append((np.nan, np.nan))
-                else:
-                    cleaned_points_in_box.append(current_point)
-            else:
-                # Keep edge points as is
-                cleaned_points_in_box.append(points_in_box[j])
-
-        # Replace `points_in_box` with the cleaned version
-        points_in_box = cleaned_points_in_box
-        if check and len(points_in_box) > 1:
-            lats, lons = zip(*points_in_box)
-            ax.plot(lons, lats, color='blue', label="Line", linewidth=2)
-            # Create a line from the valid points within the bounding box
-            line = LineString([(lon, lat) for lat, lon in points_in_box])
-            # Find intersecting grid cells
-            intersecting_rectangles = []
-            print(intersecting_rectangles)
-            for idx, polygon in grid_gdf.iterrows():
-                # Check if the polygon intersects with the line
-                #print(polygon)
-                intersection = polygon['geometry'].intersection(line)
-                if not intersection.is_empty:
-                    intersecting_rectangles.append(idx)
-            # Plot intersecting rectangles if any
-            if intersecting_rectangles:
-                intersecting_gdf = grid_gdf.loc[intersecting_rectangles]
-                intersecting_gdf.plot(ax=ax, edgecolor='red', facecolor='none', linestyle='-', label="Intersecting Rectangles")
-   
-   
-   
-    # Finalize the plot
-    ax.set_xlabel('Longitude')
-    ax.set_ylabel('Latitude')
-    gridlines = ax.gridlines(draw_labels=True, linestyle='--', color='gray', alpha=0.7)
-    gridlines.top_labels = False  # Disable top labels
-    gridlines.right_labels = False  # Disable right-side labels
-    # Add a legend only once
-    #ax.legend(loc='upper right')
-    # Save and show the plot
-    plt.savefig("Intersection_rectangles_from_grid_points_with_background.png", dpi=300)
-'''
-####################################################################################################################################################################################
