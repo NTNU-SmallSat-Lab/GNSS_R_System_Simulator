@@ -1,4 +1,5 @@
 import os
+import numpy           as np
 import cartopy.crs     as ccrs
 import cartopy.feature as cfeature
 
@@ -8,20 +9,6 @@ from matplotlib             import pyplot as plt
 from skyfield.api           import load
 
 class Plotting:
-    #def __init__(self):
-    #    self.fig = plt.figure(figsize=(10, 10))
-    #    self.ax = self.fig.add_subplot(111, projection='3d')
-    #    self.ax.set_xlabel('X')
-    #    self.ax.set_ylabel('Y')
-    #    self.ax.set_zlabel('Z')
-    #    self.ax.set_xlim(-1, 1)
-    #    self.ax.set_ylim(-1, 1)
-    #    self.ax.set_zlim(-1, 1)
-    #    self.ax.set_title('3D plot')
-    #    self.ax.grid(True)
-    #    self.ax.view_init(elev=30, azim=30)
-    #    self.ax.legend()
-
     @staticmethod
     def plot_reflection_traces(tx_sat_const, rx_sat_const, reflection_vec, file_name):
         plt.figure(figsize=(12, 6))
@@ -44,3 +31,49 @@ class Plotting:
         
         plt.title('Specular Reflection Points for GPS and LEO Satellite Over Time')
         plt.savefig("Reflection_traces.png", dpi=300)
+
+    @staticmethod
+    def plot_coverage(coverage_obj, bounding_box, file_name):
+        [min_lon, max_lon, min_lat, max_lat] = bounding_box
+        grid_gdf = coverage_obj.grid_gdf
+        # Initialize figure and axis with projection
+        fig, ax = plt.subplots(figsize=(10, 10), subplot_kw={'projection': ccrs.PlateCarree()})
+        ax.add_feature(cfeature.COASTLINE)
+        ax.add_feature(cfeature.BORDERS, linestyle=':')
+        ax = plt.axes(projection=ccrs.PlateCarree())
+        ax.set_global()
+
+        ax.set_extent([min_lon - 5, max_lon + 5, min_lat - 5, max_lat + 5])  # Add padding to the extent
+
+        # Plot the grid as the background (light gray color)
+        grid_gdf.plot(ax=ax, edgecolor='lightgray', facecolor='lightgray', linestyle='-', alpha=0.5, label="Grid Background")
+        
+        # Loop through the reflection vectors
+        plt.figure(figsize=(12, 6))
+        ax = plt.axes(projection=ccrs.PlateCarree())
+        ax.add_feature(cfeature.COASTLINE)
+        ax.add_feature(cfeature.BORDERS, linestyle=':')
+        ax.set_global()
+        ax.set_extent([min_lon - 5, max_lon + 5, min_lat - 5, max_lat + 5])  # Add padding to the extent
+        grid_gdf.plot(ax=ax, edgecolor='lightgray', facecolor='lightgray', linestyle='-', alpha=0.5, label="Grid Background")
+
+        plt.figure(figsize=(12, 6))
+        ax = plt.axes(projection=ccrs.PlateCarree())
+        ax.add_feature(cfeature.COASTLINE)
+        ax.add_feature(cfeature.BORDERS, linestyle=':')
+        ax.set_global()
+        ax.set_extent([min_lon - 5, max_lon + 5, min_lat - 5, max_lat + 5])  # Add padding to the extent
+        grid_gdf.plot(ax=ax, edgecolor='lightgray', facecolor='lightgray', linestyle='-', alpha=0.5, label="Grid Background")
+
+        for i in range(len(coverage_obj.position_vec)):
+#        for cluster in clusters:
+            ax.plot(coverage_obj.position_vec[i][0], coverage_obj.position_vec[i][1], 'ro', transform=ccrs.PlateCarree())
+#            ax.plot(valid_position[:, 1], valid_position[:, 0], color='red', transform=ccrs.PlateCarree()) # TODO add to plotting function
+
+#        if len(intersecting_rectangles) > 0:
+        if len(coverage_obj.intersecting_rectangles) > 0:
+#            intersecting_gdf = self.grid_gdf.loc[intersecting_rectangles]
+#            intersecting_gdf.plot(ax=ax, edgecolor='red', facecolor='none', linestyle='-', label="Intersecting Rectangles")  # TODO add to plotting function
+            intersecting_gdf = coverage_obj.grid_gdf.loc[coverage_obj.intersecting_rectangles]
+            intersecting_gdf.plot(ax=ax, edgecolor='red', facecolor='none', linestyle='-', label="Intersecting Rectangles")
+        plt.savefig("Coverage1.png", dpi = 300)

@@ -20,7 +20,7 @@ from object_definitions.Reflection_def        import Reflection
 from object_definitions.Constants_def         import Constants
 from object_definitions.Satellite_def         import Satellite
 from object_definitions.SatConstellation_def  import SatelliteConstellation
-from object_definitions.Coverage_def          import Coverage
+from object_definitions.Coverage_def          import Coverage, Coverage_OLD
 from object_definitions.Static_classes_def    import Plotting
 
 #############################################################################################################################
@@ -40,7 +40,7 @@ print("Start Time:", start_time_dt)
 # Define bounding box and grid
 min_lon, max_lon = -17, 30
 min_lat, max_lat =  56, 80
-
+bounding_box = [min_lon, max_lon, min_lat, max_lat]
 #############################################################################################################################
 #################################################### - INITIALIZATIONS - ####################################################
 #############################################################################################################################
@@ -85,17 +85,17 @@ GNSS_const.propagate_constellation(start_time_dt, duration, step_size)
 
 
 #############################################################################################################################
-############################################ - to be continued - ##############################################################
-############################################################################################################################
+######################################## - CALCULATE SUNLITE TIME - #########################################################
+#############################################################################################################################
 #TODO improve the code below
 planets = load('de421.bsp')
 earth   = planets['earth']
 sun     = planets['sun']
 
 # Compute sunlight or not
-sunlit = sat_const.satellites[0].skf.at(times_1).is_sunlit(planets)
+sunlit      = sat_const.satellites[0].skf.at(times_1).is_sunlit(planets)
 false_count = np.sum(sunlit == False)
-true_count = np.sum(sunlit == True)
+true_count  = np.sum(sunlit == True)
 print(false_count)
 print(true_count)
 
@@ -106,13 +106,11 @@ sat_no         = 0
 reflection_vec = []
 for sat in sat_const.satellites:
     print("Calculating refl. for GNSS-R Sat-", sat_no + 1)
-    gnss_sat_no = 0
     for gnss_sat in tqdm(GNSS_const.satellites):
         refl_gps = Reflection(gnss_sat.satID, sat.satID, earth_model='spherical', angle=45, gnss_const = 'GPS')
         refl_gps.compute_reflection_coordinates(gnss_sat, sat, times_2)                                                             #sat.time_prop_vec.utc_datetime()
         reflection_vec.append(refl_gps)
         # Add the reflection points to the plot
-        gnss_sat_no += 1
     sat_no += 1
 
 satellites_LEO_sk = [sat_const.satellites[0].skf, sat_const.satellites[1].skf]
@@ -126,19 +124,22 @@ Plotting.plot_reflection_traces(sat_const, GNSS_const, reflection_vec, "Reflecti
 ########################################## - CALCULATE COVERAGE - ###########################################################
 #############################################################################################################################
 output_shapefile = os.path.join(os.getcwd(), 'iho', 'fishnet.shp')
-grid_gdf         = gpd.read_file(output_shapefile)
+coverage         = Coverage(output_shapefile)
+coverage.calculate_coverage(bounding_box, reflection_vec, times_2)
+Plotting.plot_coverage(coverage, bounding_box, "Coverage.png")
 
+grid_gdf         = gpd.read_file(output_shapefile)
 # Initialize coverage vector for storing coverage over each cell in the fishnet
 coverage_vec = []
 for idx in range(len(grid_gdf)):
-    coverage = Coverage()  
+    coverage_old = Coverage_OLD()
     # Compute the centroid of the current grid cell
     centroid = grid_gdf.loc[idx].geometry.centroid
     # Set the position attribute of the Coverage instance
-    coverage.position = (centroid.x, centroid.y)
+    coverage_old.position = (centroid.x, centroid.y)
     # Append the instance to the coverage_vec list
-    coverage_vec.append(coverage)
-    coverage.shape = grid_gdf.loc[[idx]].boundary
+    coverage_vec.append(coverage_old)
+    coverage_old.shape = grid_gdf.loc[[idx]].boundary
 
 # Initialize figure and axis with projection
 fig, ax = plt.subplots(figsize=(10, 10), subplot_kw={'projection': ccrs.PlateCarree()})
@@ -147,16 +148,13 @@ ax.add_feature(cfeature.BORDERS, linestyle=':')
 ax = plt.axes(projection=ccrs.PlateCarree())
 ax.set_global()
 
-# Define bounding box and grid
+# Define bounding box and grid 
 ax.set_extent([min_lon - 5, max_lon + 5, min_lat - 5, max_lat + 5])  # Add padding to the extent
-
-# Load the grid shapefile using the correct variable for the path
-grid_gdf = gpd.read_file(output_shapefile)
 
 # Plot the grid as the background (light gray color)
 grid_gdf.plot(ax=ax, edgecolor='lightgray', facecolor='lightgray', linestyle='-', alpha=0.5, label="Grid Background")
 
-# Loop through the reflection vectors
+# Loop through the reflection vectors #TODO
 plt.figure(figsize=(12, 6))
 ax = plt.axes(projection=ccrs.PlateCarree())
 ax.add_feature(cfeature.COASTLINE)
@@ -202,10 +200,10 @@ for i in range(len(reflection_vec)):#range(11):
             if not intersection.is_empty:
                 intersecting_rectangles.append(idx)
         print(intersecting_rectangles) 
-        ax.plot(valid_position[:, 1], valid_position[:, 0], color='red', transform=ccrs.PlateCarree())
+        ax.plot(valid_position[:, 1], valid_position[:, 0], color='red', transform=ccrs.PlateCarree()) # TODO add to plotting function
         if len(intersecting_rectangles) > 0:
             intersecting_gdf = grid_gdf.loc[intersecting_rectangles]
-            intersecting_gdf.plot(ax=ax, edgecolor='red', facecolor='none', linestyle='-', label="Intersecting Rectangles")
+            intersecting_gdf.plot(ax=ax, edgecolor='red', facecolor='none', linestyle='-', label="Intersecting Rectangles")  # TODO add to plotting function
         
             # Save results
             grid_gdf.loc[intersecting_rectangles]
@@ -230,7 +228,7 @@ for i in range(len(reflection_vec)):#range(11):
                 coverage_vec[rect_idx].angle.append(angle)
                 coverage_vec[rect_idx].power.append(power) 
 
-plt.savefig("Coverage1.png", dpi = 300)
+#plt.savefig("Coverage1.png", dpi = 300) #TODO add to plotting function
 
 ################################################################
 ######################## PLOTTING ##############################
