@@ -126,7 +126,7 @@ Plotting.plot_reflection_traces(sat_const, GNSS_const, reflection_vec, "Reflecti
 output_shapefile = os.path.join(os.getcwd(), 'iho', 'fishnet.shp')
 coverage         = Coverage(output_shapefile)
 coverage.calculate_coverage(bounding_box, reflection_vec, times_2)
-Plotting.plot_coverage(coverage, bounding_box, "Coverage.png")
+Plotting.plot_coverage(coverage, reflection_vec, bounding_box, "Coverage.png")
 
 grid_gdf         = gpd.read_file(output_shapefile)
 # Initialize coverage vector for storing coverage over each cell in the fishnet

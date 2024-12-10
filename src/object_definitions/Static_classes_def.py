@@ -33,7 +33,7 @@ class Plotting:
         plt.savefig("Reflection_traces.png", dpi=300)
 
     @staticmethod
-    def plot_coverage(coverage_obj, bounding_box, file_name):
+    def plot_coverage(coverage_obj, reflection_vec, bounding_box, file_name):
         [min_lon, max_lon, min_lat, max_lat] = bounding_box
         grid_gdf = coverage_obj.grid_gdf
         # Initialize figure and axis with projection
@@ -47,7 +47,7 @@ class Plotting:
 
         # Plot the grid as the background (light gray color)
         grid_gdf.plot(ax=ax, edgecolor='lightgray', facecolor='lightgray', linestyle='-', alpha=0.5, label="Grid Background")
-        
+
         # Loop through the reflection vectors
         plt.figure(figsize=(12, 6))
         ax = plt.axes(projection=ccrs.PlateCarree())
@@ -65,9 +65,9 @@ class Plotting:
         ax.set_extent([min_lon - 5, max_lon + 5, min_lat - 5, max_lat + 5])  # Add padding to the extent
         grid_gdf.plot(ax=ax, edgecolor='lightgray', facecolor='lightgray', linestyle='-', alpha=0.5, label="Grid Background")
 
-        for i in range(len(coverage_obj.position_vec)):
+        for i in range(len(coverage_obj.coverage_vector)):
 #        for cluster in clusters:
-            ax.plot(coverage_obj.position_vec[i][0], coverage_obj.position_vec[i][1], 'ro', transform=ccrs.PlateCarree())
+            ax.plot(coverage_obj.coverage_vector[i].position[0], coverage_obj.coverage_vector[i].position[1], 'ro', transform=ccrs.PlateCarree())
 #            ax.plot(valid_position[:, 1], valid_position[:, 0], color='red', transform=ccrs.PlateCarree()) # TODO add to plotting function
 
 #        if len(intersecting_rectangles) > 0:

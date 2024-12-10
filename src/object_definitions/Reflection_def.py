@@ -52,7 +52,7 @@ class Reflection:
         self.tx_satID          = tx_satID
         self.rx_satID          = rx_satID
         self.time_vec          = []
-        self.refl_ECI_vec     = []
+        self.refl_ECI_vec      = []
         self.refl_LL_vec       = []
         self.gnss_pos_vec      = []
         self.gnss_vel_vec      = []
