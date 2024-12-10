@@ -120,15 +120,96 @@ satellites_LEO_sk = [sat_const.satellites[0].skf, sat_const.satellites[1].skf]
 #############################################################################################################################
 Plotting.plot_reflection_traces(sat_const, GNSS_const, reflection_vec, "Reflection_traces.png")
 
+
+
+
 #############################################################################################################################
 ########################################## - CALCULATE COVERAGE - ###########################################################
 #############################################################################################################################
 output_shapefile = os.path.join(os.getcwd(), 'iho', 'fishnet.shp')
 coverage         = Coverage(output_shapefile)
 coverage.calculate_coverage(bounding_box, reflection_vec, times_2)
-Plotting.plot_coverage(coverage, reflection_vec, bounding_box, "Coverage.png")
-
+#Plotting.plot_coverage(coverage, reflection_vec, bounding_box, "Coverage.png")
 grid_gdf         = gpd.read_file(output_shapefile)
+
+################################################################
+######################## PLOTTING ##############################
+################################################################
+intersection_count = {idx: 0 for idx in grid_gdf.index}
+
+
+for i in range(len(grid_gdf)):
+    intersection_count[i] += len(coverage.coverage_vector[i].times)
+
+'''
+# Iterate through coverage_vec to evaluate the times attribute and count intersections
+for coverage in coverage_vec:
+    # If there are any times recorded, update the intersection count for the corresponding grid cell
+    # Assuming coverage_vec corresponds to the same index as grid_gdf
+    grid_idx = coverage_vec.index(coverage)  # Get the index of the current coverage in coverage_vec
+    intersection_count[grid_idx] += len(coverage.times)  # Increase count based on the number of times recorded
+'''
+# Define color based on the count
+def get_color(count):
+    if count == 1:
+        return 'red', 1  # Color for 1-time intersection
+    elif count > 1:
+        return 'blue', 0.5  # Color for more than 1-time intersection
+    else:
+        return 'none', 0  # If the cell isn't intersected at all
+
+
+
+plt.figure(figsize=(12, 6))
+ax = plt.axes(projection=ccrs.PlateCarree())
+ax.add_feature(cfeature.COASTLINE)
+ax.add_feature(cfeature.BORDERS, linestyle=':')
+#for i in range(len(reflection_vec)):
+#    lons, lats = fix_longitude_wraparound(reflection_vec[i].reflection_points['reflLL'][:,1], reflection_vec[i].reflection_points['reflLL'][:,0])
+#    ax.plot(lons, lats,'red')
+ax.set_global()
+ax.set_extent([min_lon, max_lon, min_lat, max_lat])  # Add padding to the extent
+grid_gdf.plot(ax=ax, edgecolor='lightgray', facecolor='lightgray', linestyle='-', alpha=0.5, label="Grid Background")
+
+# Loop through each grid cell to plot with the correct color
+for idx in grid_gdf.index:
+    # Get the intersection count for the grid cell
+    count = intersection_count[idx]
+    
+    # Get the color for the current grid cell
+    color, alpha_vec = get_color(count)
+    
+    coverage.coverage_vector[idx].shape.plot(ax=ax, edgecolor='red', facecolor=color, alpha = 0.3)
+
+# Plot the blue grid cells (those intersected more than once) on top of the red ones
+for idx in grid_gdf.index:
+    count = intersection_count[idx]
+    color, alpha_vec = get_color(count)
+    
+    if color == 'blue':  # Only plot blue cells (more than 1-time intersection)
+        coverage.coverage_vector[idx].shape.plot(ax=ax, edgecolor='blue', facecolor=color, alpha = 0.3)
+
+
+for i in range(len(reflection_vec)):
+    ax.plot(reflection_vec[i].refl_LL_vec[:, 1], reflection_vec[i].refl_LL_vec[:, 0], color='red', transform=ccrs.PlateCarree())
+plt.savefig("Coverage2.png", dpi = 300)
+
+
+####################################################
+########### Average  signal"Power" ###########
+all_powers = np.concatenate([item.power for item in coverage.coverage_vector])  # Flatten all power values
+average_power = np.mean(all_powers)  # Calculate the average
+print("Average Power:", average_power)
+
+########### Coverage ###########
+non_zero_count = sum(1 for value in intersection_count.values() if value != 0)
+print("Coverage percentage:", non_zero_count/len(intersection_count)*100)
+
+
+
+
+
+'''
 # Initialize coverage vector for storing coverage over each cell in the fishnet
 coverage_vec = []
 for idx in range(len(grid_gdf)):
@@ -230,71 +311,12 @@ for i in range(len(reflection_vec)):#range(11):
 
 #plt.savefig("Coverage1.png", dpi = 300) #TODO add to plotting function
 
-################################################################
-######################## PLOTTING ##############################
-################################################################
-intersection_count = {idx: 0 for idx in grid_gdf.index}
 
-# Iterate through coverage_vec to evaluate the times attribute and count intersections
-for coverage in coverage_vec:
-    # If there are any times recorded, update the intersection count for the corresponding grid cell
-    # Assuming coverage_vec corresponds to the same index as grid_gdf
-    grid_idx = coverage_vec.index(coverage)  # Get the index of the current coverage in coverage_vec
-    intersection_count[grid_idx] += len(coverage.times)  # Increase count based on the number of times recorded
-
-# Define color based on the count
-def get_color(count):
-    if count == 1:
-        return 'red', 1  # Color for 1-time intersection
-    elif count > 1:
-        return 'blue', 0.5  # Color for more than 1-time intersection
-    else:
-        return 'none', 0  # If the cell isn't intersected at all
+'''
 
 
 
-plt.figure(figsize=(12, 6))
-ax = plt.axes(projection=ccrs.PlateCarree())
-ax.add_feature(cfeature.COASTLINE)
-ax.add_feature(cfeature.BORDERS, linestyle=':')
-#for i in range(len(reflection_vec)):
-#    lons, lats = fix_longitude_wraparound(reflection_vec[i].reflection_points['reflLL'][:,1], reflection_vec[i].reflection_points['reflLL'][:,0])
-#    ax.plot(lons, lats,'red')
-ax.set_global()
-ax.set_extent([min_lon, max_lon, min_lat, max_lat])  # Add padding to the extent
-grid_gdf.plot(ax=ax, edgecolor='lightgray', facecolor='lightgray', linestyle='-', alpha=0.5, label="Grid Background")
 
-# Loop through each grid cell to plot with the correct color
-for idx in grid_gdf.index:
-    # Get the intersection count for the grid cell
-    count = intersection_count[idx]
-    
-    # Get the color for the current grid cell
-    color, alpha_vec = get_color(count)
-    
-    coverage_vec[idx].shape.plot(ax=ax, edgecolor='red', facecolor=color, alpha = 0.3)
-
-# Plot the blue grid cells (those intersected more than once) on top of the red ones
-for idx in grid_gdf.index:
-    count = intersection_count[idx]
-    color, alpha_vec = get_color(count)
-    
-    if color == 'blue':  # Only plot blue cells (more than 1-time intersection)
-        coverage_vec[idx].shape.plot(ax=ax, edgecolor='blue', facecolor=color, alpha = 0.3)
-
-
-plt.savefig("Coverage2.png", dpi = 300)
-
-
-####################################################
-########### Average  signal"Power" ###########
-all_powers = np.concatenate([item.power for item in coverage_vec])  # Flatten all power values
-average_power = np.mean(all_powers)  # Calculate the average
-print("Average Power:", average_power)
-
-########### Coverage ###########
-non_zero_count = sum(1 for value in intersection_count.values() if value != 0)
-print("Coverage percentage:", non_zero_count/len(intersection_count)*100)
 
 
 ###########################################################################################################################
@@ -372,5 +394,4 @@ ax.plot(leo_positions_ECI_1[0], leo_positions_ECI_1[1], leo_positions_ECI_1[2], 
 # Plot the satellite trajectory for the second satellite
 ax.plot(leo_positions_ECI_2[0], leo_positions_ECI_2[1], leo_positions_ECI_2[2], label="Satellite 2 Path", color='b')
 plt.savefig('Orbits.png')
-plt.show()
-a = 1
+#plt.show()

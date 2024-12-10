@@ -38,13 +38,23 @@ class Coverage:
             check         = False
 
             points_in_box = []
+            '''
             # Filter points within the bounding box and ignore points outside it
+            for point in refl_temp:
+                # Check if the point is a valid iterable (tuple or list) with two elements
+                if not (isinstance(point, (tuple, list)) and len(point) == 2):
+                    points_in_box.append((np.nan, np.nan))  # Add (NaN, NaN) for invalid entries
+                    continue
+                # Safely unpack the point
+                lat, lon = point            
+                '''
             for lat, lon in refl_temp:
                 if min_lat <= lat <= max_lat and min_lon <= lon <= max_lon:
                     points_in_box.append((lat, lon))
                     check = True
                 else:
                     points_in_box.append((np.nan, np.nan))
+
 
             points_in_box_1 = np.array(points_in_box)
             valid           = ~np.isnan(points_in_box_1[:, 0])  # Check latitude for NaN

@@ -64,16 +64,21 @@ class Plotting:
         ax.set_global()
         ax.set_extent([min_lon - 5, max_lon + 5, min_lat - 5, max_lat + 5])  # Add padding to the extent
         grid_gdf.plot(ax=ax, edgecolor='lightgray', facecolor='lightgray', linestyle='-', alpha=0.5, label="Grid Background")
+        for i in range(len(reflection_vec)):
+            ax.plot(reflection_vec[i].refl_LL_vec[:, 1], reflection_vec[i].refl_LL_vec[:, 0], color='red', transform=ccrs.PlateCarree())
 
-        for i in range(len(coverage_obj.coverage_vector)):
+        #for i in range(len(coverage_obj.coverage_vector)):
 #        for cluster in clusters:
-            ax.plot(coverage_obj.coverage_vector[i].position[0], coverage_obj.coverage_vector[i].position[1], 'ro', transform=ccrs.PlateCarree())
+            #ax.plot(coverage_obj.coverage_vector[i].position[0], coverage_obj.coverage_vector[i].position[1], 'ro', transform=ccrs.PlateCarree())
 #            ax.plot(valid_position[:, 1], valid_position[:, 0], color='red', transform=ccrs.PlateCarree()) # TODO add to plotting function
 
 #        if len(intersecting_rectangles) > 0:
+        '''
         if len(coverage_obj.intersecting_rectangles) > 0:
 #            intersecting_gdf = self.grid_gdf.loc[intersecting_rectangles]
 #            intersecting_gdf.plot(ax=ax, edgecolor='red', facecolor='none', linestyle='-', label="Intersecting Rectangles")  # TODO add to plotting function
             intersecting_gdf = coverage_obj.grid_gdf.loc[coverage_obj.intersecting_rectangles]
             intersecting_gdf.plot(ax=ax, edgecolor='red', facecolor='none', linestyle='-', label="Intersecting Rectangles")
+        
+        '''
         plt.savefig("Coverage1.png", dpi = 300)

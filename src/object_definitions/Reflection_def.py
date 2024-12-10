@@ -53,7 +53,7 @@ class Reflection:
         self.rx_satID          = rx_satID
         self.time_vec          = []
         self.refl_ECI_vec      = []
-        self.refl_LL_vec       = []
+        self.refl_LL_vec       = None
         self.gnss_pos_vec      = []
         self.gnss_vel_vec      = []
         self.sat_pos_vec       = []
@@ -105,6 +105,9 @@ class Reflection:
             )
             latlon_ref[valid_specular_points, :] = np.column_stack((lat, lon))
             lons, lats                           = self.__prevent_longitude_wraparound(latlon_ref[:, 1], latlon_ref[:, 0])
+        else:
+             lons = np.nan
+             lats = np.nan
 
         distance_R = np.linalg.norm((specular_point_vec - np.transpose(Sat_state.positions_eci))*1e-3, axis=1)
         distance_T = np.linalg.norm((specular_point_vec - np.transpose(GNSS_state.positions_eci))*1e-3, axis=1)
