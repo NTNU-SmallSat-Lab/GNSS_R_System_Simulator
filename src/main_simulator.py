@@ -20,7 +20,7 @@ from object_definitions.Reflection_def        import Reflection
 from object_definitions.Constants_def         import Constants
 from object_definitions.Satellite_def         import Satellite
 from object_definitions.SatConstellation_def  import SatelliteConstellation
-from object_definitions.Coverage_def          import Coverage, Coverage_OLD
+from object_definitions.Coverage_def          import Coverage
 from object_definitions.Static_classes_def    import Plotting
 
 #############################################################################################################################
@@ -121,15 +121,13 @@ satellites_LEO_sk = [sat_const.satellites[0].skf, sat_const.satellites[1].skf]
 Plotting.plot_reflection_traces(sat_const, GNSS_const, reflection_vec, "Reflection_traces.png")
 
 
-
-
 #############################################################################################################################
 ########################################## - CALCULATE COVERAGE - ###########################################################
 #############################################################################################################################
 output_shapefile = os.path.join(os.getcwd(), 'iho', 'fishnet.shp')
 coverage         = Coverage(output_shapefile)
 coverage.calculate_coverage(bounding_box, reflection_vec, times_2)
-#Plotting.plot_coverage(coverage, reflection_vec, bounding_box, "Coverage.png")
+Plotting.plot_coverage(coverage, reflection_vec, bounding_box, "Coverage.png")
 grid_gdf         = gpd.read_file(output_shapefile)
 
 ################################################################
@@ -149,6 +147,7 @@ for coverage in coverage_vec:
     grid_idx = coverage_vec.index(coverage)  # Get the index of the current coverage in coverage_vec
     intersection_count[grid_idx] += len(coverage.times)  # Increase count based on the number of times recorded
 '''
+
 # Define color based on the count
 def get_color(count):
     if count == 1:
@@ -157,8 +156,6 @@ def get_color(count):
         return 'blue', 0.5  # Color for more than 1-time intersection
     else:
         return 'none', 0  # If the cell isn't intersected at all
-
-
 
 plt.figure(figsize=(12, 6))
 ax = plt.axes(projection=ccrs.PlateCarree())
@@ -204,10 +201,6 @@ print("Average Power:", average_power)
 ########### Coverage ###########
 non_zero_count = sum(1 for value in intersection_count.values() if value != 0)
 print("Coverage percentage:", non_zero_count/len(intersection_count)*100)
-
-
-
-
 
 '''
 # Initialize coverage vector for storing coverage over each cell in the fishnet
