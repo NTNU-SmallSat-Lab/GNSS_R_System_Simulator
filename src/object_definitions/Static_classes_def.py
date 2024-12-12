@@ -64,15 +64,11 @@ class Plotting:
         ax.set_global()
         ax.set_extent([min_lon - 5, max_lon + 5, min_lat - 5, max_lat + 5])  # Add padding to the extent
         grid_gdf.plot(ax=ax, edgecolor='lightgray', facecolor='lightgray', linestyle='-', alpha=0.5, label="Grid Background")
-        for i in range(len(reflection_vec)):
-            ax.plot(reflection_vec[i].refl_LL_vec[:, 1], reflection_vec[i].refl_LL_vec[:, 0], color='red', transform=ccrs.PlateCarree())
+        for coverage_vect in coverage_obj.coverage_vector:
+            if len(coverage_vect.val_pos) > 0:
+                ax.plot(coverage_vect.val_pos[0][1], coverage_vect.val_pos[0][0], 'ro', transform=ccrs.PlateCarree())
 
-        #for i in range(len(coverage_obj.coverage_vector)):
-#        for cluster in clusters:
-            #ax.plot(coverage_obj.coverage_vector[i].position[0], coverage_obj.coverage_vector[i].position[1], 'ro', transform=ccrs.PlateCarree())
-#            ax.plot(valid_position[:, 1], valid_position[:, 0], color='red', transform=ccrs.PlateCarree()) # TODO add to plotting function
 
-#        if len(intersecting_rectangles) > 0:
         '''
         if len(coverage_obj.intersecting_rectangles) > 0:
 #            intersecting_gdf = self.grid_gdf.loc[intersecting_rectangles]

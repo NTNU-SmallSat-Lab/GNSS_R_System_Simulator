@@ -45,26 +45,21 @@ class Coverage:
             # Assembly of points in the bounding box for one GNSS-R satellite and one GNSS satellite
             refl_clusters = self.__get_reflection_clusters(reflection_vec[i], validity_mask)
             for cluster in refl_clusters:
-                intersecting_rectangles = []
                 # Skip refl_clusters with no valid data
                 if len(cluster) <= 1: #not validity_mask[cluster].any() &
                     continue
-
                 cluster = cluster[1::]
                 if len(cluster) <= 1: #not validity_mask[cluster].any() &
                     continue        
+                intersecting_rectangles = []
                 # Extract valid times and positions for this cluster
-#                valid_cluster  = cluster[validity_mask[cluster]]
                 valid_position = ref_points_in_box[cluster]
-                #print(valid_position)
-                line = LineString(zip(valid_position[:, 1], valid_position[:, 0]))
+                line           = LineString(zip(valid_position[:, 1], valid_position[:, 0]))
                 for idx, polygon in self.grid_gdf.iterrows():
                     # Check if the polygon intersects with the line
-                    #print(polygon)
                     intersection = polygon['geometry'].intersection(line)
                     if not intersection.is_empty:
                         intersecting_rectangles.append(idx)
-
                 if len(intersecting_rectangles) > 0:
                     # Save results
                     self.grid_gdf.loc[intersecting_rectangles]
@@ -80,12 +75,13 @@ class Coverage:
 
                     # Save the nearest points
                     for rect_idx, time, angle, power in zip(intersecting_rectangles, times_at_nearest_points, angle_at_nearest_points, power_at_nearest_points):
-                        # Assign time to coverage_vec
+                        # Assign the values to the coverage vector
                         self.coverage_vector[rect_idx].times.append(time)
                         self.coverage_vector[rect_idx].tx_satID.append(reflection_vec[i].tx_satID)
                         self.coverage_vector[rect_idx].rx_satID.append(reflection_vec[i].rx_satID)
                         self.coverage_vector[rect_idx].angles.append(angle)
                         self.coverage_vector[rect_idx].power.append(power)
+                        self.coverage_vector[rect_idx].val_pos.append(nearest_points)
 
     @staticmethod
     def validity_mask(reflection_obj, bounding_box) -> np.ndarray:
@@ -131,16 +127,18 @@ class Coverage:
     
         return validity_mask, refl_in_bounding_box
     
-    def __get_reflection_clusters(self, reflection_obj, validity_mask):
+    @staticmethod
+    def __get_reflection_clusters(reflection_obj, validity_mask):
         clusters = np.split(np.arange(len(reflection_obj.refl_LL_vec)), np.where(~validity_mask)[0])  # Split indices by NaN gaps
         return clusters
 
 @dataclass
 class coverage_struct:
     position:   List = field(default_factory=list)
-    tx_satID:   List = field(default_factory=list)
-    rx_satID:   List = field(default_factory=list)
-    times:      List = field(default_factory=list)
-    angles:     List = field(default_factory=list)
     shape:      List = field(default_factory=list)
+    times:      List = field(default_factory=list)
+    rx_satID:   List = field(default_factory=list)
+    tx_satID:   List = field(default_factory=list)
+    angles:     List = field(default_factory=list)
     power:      List = field(default_factory=list)
+    val_pos:    List = field(default_factory=list)

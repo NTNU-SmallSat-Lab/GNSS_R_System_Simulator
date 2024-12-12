@@ -128,14 +128,12 @@ output_shapefile = os.path.join(os.getcwd(), 'iho', 'fishnet.shp')
 coverage         = Coverage(output_shapefile)
 coverage.calculate_coverage(bounding_box, reflection_vec, times_2)
 Plotting.plot_coverage(coverage, reflection_vec, bounding_box, "Coverage.png")
-grid_gdf         = gpd.read_file(output_shapefile)
 
 ################################################################
 ######################## PLOTTING ##############################
 ################################################################
+grid_gdf           = gpd.read_file(output_shapefile)
 intersection_count = {idx: 0 for idx in grid_gdf.index}
-
-
 for i in range(len(grid_gdf)):
     intersection_count[i] += len(coverage.coverage_vector[i].times)
 
