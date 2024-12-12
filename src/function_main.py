@@ -19,7 +19,7 @@ from object_definitions.Reflection_def import Reflection
 from object_definitions.Constants_def import Constants
 from object_definitions.Satellite_def import Satellite
 from object_definitions.SatConstellation_def import SatelliteConstellation
-from object_definitions.Coverage_def import Coverage, Coverage_OLD
+from object_definitions.Coverage_def import Coverage#, Coverage_OLD
 from object_definitions.Static_classes_def import Plotting
 
 def main(start_time_dt, step_size, sim_duration, orbits_input, gnss_tle_file_path, bounding_box):
@@ -84,9 +84,7 @@ def main(start_time_dt, step_size, sim_duration, orbits_input, gnss_tle_file_pat
     sunlit      = sat_const.satellites[0].skf.at(times_1).is_sunlit(planets)
     false_count = np.sum(sunlit == False)
     true_count  = np.sum(sunlit == True)
-    print(false_count)
-    print(true_count)
-
+  
     #############################################################################################################################
     ######################################### - CALCULATE "POINT" REFLECTION POINTS - ###########################################
     #############################################################################################################################
@@ -101,7 +99,7 @@ def main(start_time_dt, step_size, sim_duration, orbits_input, gnss_tle_file_pat
             # Add the reflection points to the plot
         sat_no += 1
 
-    satellites_LEO_sk = [sat_const.satellites[0].skf, sat_const.satellites[1].skf]
+    #satellites_LEO_sk = [sat_const.satellites[0].skf, sat_const.satellites[1].skf]
 
     #############################################################################################################################
     ######################################### - PLOTTING REFLECTION POINTS - ####################################################
@@ -191,24 +189,62 @@ def main(start_time_dt, step_size, sim_duration, orbits_input, gnss_tle_file_pat
 
     ########### Coverage ###########
     non_zero_count = sum(1 for value in intersection_count.values() if value != 0)
-    print("Coverage percentage:", non_zero_count/len(intersection_count)*100)
+    coverage_percentage = non_zero_count/len(intersection_count)*100
+    print("Coverage percentage:", coverage_percentage)
+
+    ########### Coverage ###########
+    sunlight_percentage = true_count/(true_count + false_count)*100
+    print("Time in sunlight in percentage:", sunlight_percentage)
 
 
     print("Simulation complete.")
 
+
+    return average_power, coverage_percentage, sunlight_percentage
+
 if __name__ == "__main__":
     # Define default inputs
+
+    def save_results_to_file(filename, start_time_dt, step_size, sim_duration, bounding_box, orbits_input, gnss_tle_file_path, average_power, coverage_percentage, sunlight_percentage):
+        with open(filename, 'w') as f:
+            # Writing input parameters
+            f.write("Input Parameters:")
+            f.write(f"Start Time: {start_time_dt}")
+            f.write(f"Step Size: {step_size} seconds")
+            f.write(f"Simulation Duration: {sim_duration} hours")
+            f.write(f"Bounding Box: {bounding_box}")
+            f.write(f"TLE File Path: {gnss_tle_file_path}")
+            f.write(f"Orbits Input: {orbits_input}")
+
+            # Writing results
+            f.write("Results:")
+            f.write(f"Average Power: {average_power}")
+            f.write(f"Coverage Percentage: {coverage_percentage}")
+            f.write(f"Sunlight Percentage: {sunlight_percentage}")
+
     start_time_dt = datetime(2024, 10, 23, 12, 00, 00, tzinfo=timezone.utc)
     step_size = 30  # Seconds
-    sim_duration = 12  # Hours
+    sim_duration = 5  # Hours
+
+    bounding_box = [-17, 30, 56, 80]  # [min_lon, max_lon, min_lat, max_lat]
+    gnss_tle_file_path = os.path.join("TLE_EPHEMIRIS_files", "GPS_operational.tle")
+
 
     orbits_input = [
         [99.1, 0.00001, 0, 0, 0, 7300e3, start_time_dt],
         [99.1, 0.00001, 90.0, 0, 0, 7300e3, start_time_dt],
     ]
 
-    gnss_tle_file_path = os.path.join("TLE_EPHEMIRIS_files", "GPS_operational.tle")
-    bounding_box = [-17, 30, 56, 80]  # [min_lon, max_lon, min_lat, max_lat]
+
+
 
     # Run main with the default parameters
-    main(start_time_dt, step_size, sim_duration, orbits_input, gnss_tle_file_path, bounding_box)
+    average_power, coverage_percentage, sunlight_percentage = main(start_time_dt, step_size, sim_duration, orbits_input, gnss_tle_file_path, bounding_box)
+
+    # File to save the results
+    output_file_path = "simulation_results.txt"
+
+    # Save the input parameters and results to a text file
+    save_results_to_file(output_file_path, start_time_dt, step_size, sim_duration, bounding_box, orbits_input, gnss_tle_file_path, average_power, coverage_percentage, sunlight_percentage)
+
+    print(f"Results and input saved to {output_file_path}")
