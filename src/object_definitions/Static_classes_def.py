@@ -4,7 +4,7 @@ import cartopy.crs     as ccrs
 import cartopy.feature as cfeature
 
 import matplotlib
-matplotlib.use('TkAgg', force=True)
+#matplotlib.use('TkAgg', force=True)
 from matplotlib             import pyplot as plt
 from skyfield.api           import load
 

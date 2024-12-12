@@ -5,13 +5,13 @@ import cartopy.feature as cfeature
 import geopandas as gpd
 
 import matplotlib
-matplotlib.use('TkAgg', force=True)
+#matplotlib.use('TkAgg', force=True)
 from matplotlib import pyplot as plt
-from astropy import units as u
+#from astropy import units as u
 from skyfield.api import load
 from datetime import timezone, datetime
 from tqdm import tqdm
-from shapely.geometry import Polygon, LineString
+#from shapely.geometry import Polygon, LineString
 from scipy.spatial.distance import cdist
 
 # Import your custom object definitions
@@ -167,14 +167,16 @@ def main(start_time_dt, step_size, sim_duration, orbits_input, gnss_tle_file_pat
         
         coverage.coverage_vector[idx].shape.plot(ax=ax, edgecolor='red', facecolor=color, alpha = 0.3)
 
+
+    count_total = 0
     # Plot the blue grid cells (those intersected more than once) on top of the red ones
     for idx in grid_gdf.index:
         count = intersection_count[idx]
         color, alpha_vec = get_color(count)
+        count_total = count_total + count
         
         if color == 'blue':  # Only plot blue cells (more than 1-time intersection)
             coverage.coverage_vector[idx].shape.plot(ax=ax, edgecolor='blue', facecolor=color, alpha = 0.3)
-
 
     for i in range(len(reflection_vec)):
         ax.plot(reflection_vec[i].refl_LL_vec[:, 1], reflection_vec[i].refl_LL_vec[:, 0], color='red', transform=ccrs.PlateCarree())
@@ -192,39 +194,63 @@ def main(start_time_dt, step_size, sim_duration, orbits_input, gnss_tle_file_pat
     coverage_percentage = non_zero_count/len(intersection_count)*100
     print("Coverage percentage:", coverage_percentage)
 
-    ########### Coverage ###########
+    ########### Sunlight ###########
     sunlight_percentage = true_count/(true_count + false_count)*100
     print("Time in sunlight in percentage:", sunlight_percentage)
 
+    ########### Avg passes per cell ###########
+    count_avg = count_total/len(grid_gdf)
+    print("Avg passes:", count_avg)
 
     print("Simulation complete.")
 
 
-    return average_power, coverage_percentage, sunlight_percentage
+    return average_power, coverage_percentage, sunlight_percentage, count_avg
 
+def save_results_to_file(f, start_time_dt, step_size, sim_duration, bounding_box, orbits_input, gnss_tle_file_path, average_power, coverage_percentage, sunlight_percentage, count_avg):
+    #with open(filename, 'a') as f:
+        # Writing input parameters
+    f.write("Input Parameters:")
+    f.write(f"{start_time_dt},")
+    f.write(f"{step_size},")
+    f.write(f"{sim_duration},")
+    #f.write(f"Bounding Box: {bounding_box}")
+    f.write(f"{gnss_tle_file_path},")
+    f.write(f"{orbits_input},")
+
+    # Writing results
+    #f.write("Results:")
+    f.write(f"{average_power},")
+    f.write(f"{coverage_percentage},")
+    f.write(f"{sunlight_percentage}")
+    f.write(f"{count_avg}")
+    f.write("-----\n")
+
+
+def run_simulation(start_time_dt, step_size, sim_duration, bounding_box, gnss_tle_file_path, orbits_input):
+    """Run simulation using the given parameters and save results."""
+    # Convert start_time to datetime
+    #start_time_dt = datetime.strptime(start_time, '%Y-%m-%d %H:%M:%S')
+    
+    # Run the main simulation
+    '''
+    average_power, coverage_percentage, sunlight_percentage, count_avg = main(
+        start_time_dt, step_size, sim_duration, orbits_input, gnss_tle_file_path, bounding_box
+    )
+    '''
+    # Save results to file
+    #output_file_path = "simulation_results.txt"
+    #save_results_to_file(output_file_path, start_time_dt, step_size, sim_duration, bounding_box, orbits_input, gnss_tle_file_path, average_power, coverage_percentage, sunlight_percentage, count_avg)
+
+    #print(f"Results and input saved to {output_file_path}")
+    return 
+'''
 if __name__ == "__main__":
     # Define default inputs
 
-    def save_results_to_file(filename, start_time_dt, step_size, sim_duration, bounding_box, orbits_input, gnss_tle_file_path, average_power, coverage_percentage, sunlight_percentage):
-        with open(filename, 'w') as f:
-            # Writing input parameters
-            f.write("Input Parameters:")
-            f.write(f"Start Time: {start_time_dt}")
-            f.write(f"Step Size: {step_size} seconds")
-            f.write(f"Simulation Duration: {sim_duration} hours")
-            f.write(f"Bounding Box: {bounding_box}")
-            f.write(f"TLE File Path: {gnss_tle_file_path}")
-            f.write(f"Orbits Input: {orbits_input}")
-
-            # Writing results
-            f.write("Results:")
-            f.write(f"Average Power: {average_power}")
-            f.write(f"Coverage Percentage: {coverage_percentage}")
-            f.write(f"Sunlight Percentage: {sunlight_percentage}")
-
     start_time_dt = datetime(2024, 10, 23, 12, 00, 00, tzinfo=timezone.utc)
     step_size = 30  # Seconds
-    sim_duration = 5  # Hours
+    sim_duration = 4  # Hours
 
     bounding_box = [-17, 30, 56, 80]  # [min_lon, max_lon, min_lat, max_lat]
     gnss_tle_file_path = os.path.join("TLE_EPHEMIRIS_files", "GPS_operational.tle")
@@ -239,7 +265,7 @@ if __name__ == "__main__":
 
 
     # Run main with the default parameters
-    average_power, coverage_percentage, sunlight_percentage = main(start_time_dt, step_size, sim_duration, orbits_input, gnss_tle_file_path, bounding_box)
+    average_power, coverage_percentage, sunlight_percentage, count_avg = main(start_time_dt, step_size, sim_duration, orbits_input, gnss_tle_file_path, bounding_box)
 
     # File to save the results
     output_file_path = "simulation_results.txt"
@@ -248,3 +274,4 @@ if __name__ == "__main__":
     save_results_to_file(output_file_path, start_time_dt, step_size, sim_duration, bounding_box, orbits_input, gnss_tle_file_path, average_power, coverage_percentage, sunlight_percentage)
 
     print(f"Results and input saved to {output_file_path}")
+'''
