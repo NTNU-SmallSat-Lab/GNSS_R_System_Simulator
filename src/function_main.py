@@ -1,26 +1,26 @@
 import os
-import numpy as np
-import cartopy.crs as ccrs
+import numpy           as np
+import cartopy.crs     as ccrs
 import cartopy.feature as cfeature
-import geopandas as gpd
+import geopandas       as gpd
 
 import matplotlib
-matplotlib.use('TkAgg', force=True)
-from matplotlib import pyplot as plt
-from astropy import units as u
-from skyfield.api import load
-from datetime import timezone, datetime
-from tqdm import tqdm
-from shapely.geometry import Polygon, LineString
+#matplotlib.use('TkAgg', force=True)
+from matplotlib             import pyplot as plt
+from astropy                import units  as u
+from skyfield.api           import load
+from datetime               import timezone, datetime
+from tqdm                   import tqdm
+from shapely.geometry       import Polygon, LineString
 from scipy.spatial.distance import cdist
 
 # Import your custom object definitions
-from object_definitions.Reflection_def import Reflection
-from object_definitions.Constants_def import Constants
-from object_definitions.Satellite_def import Satellite
+from object_definitions.Reflection_def       import Reflection
+from object_definitions.Constants_def        import Constants
+from object_definitions.Satellite_def        import Satellite
 from object_definitions.SatConstellation_def import SatelliteConstellation
-from object_definitions.Coverage_def import Coverage, Coverage_OLD
-from object_definitions.Static_classes_def import Plotting
+from object_definitions.Coverage_def         import Coverage
+from object_definitions.Static_classes_def   import Plotting
 
 def main(start_time_dt, step_size, sim_duration, orbits_input, gnss_tle_file_path, bounding_box):
     print("Start Time:", start_time_dt)

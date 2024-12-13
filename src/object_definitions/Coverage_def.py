@@ -1,34 +1,57 @@
 import os
 import geopandas         as gpd
 import numpy             as np
-import matplotlib.pyplot as plt
 
 from shapely.geometry       import Polygon, LineString
 from scipy.spatial.distance import cdist
-from skyfield.api           import load
-from typing                 import List
+from typing                 import List, Tuple, Optional
 from dataclasses            import dataclass, field
+
+@dataclass
+class coverage_struct:
+    position:   Tuple[float, float]       = field(default_factory=lambda: (0.0, 0.0))
+    shape:      Optional[Polygon]         = None
+    times:      List                      = field(default_factory=list)
+    rx_satID:   List                      = field(default_factory=list)
+    tx_satID:   List                      = field(default_factory=list)
+    angles:     List                      = field(default_factory=list)
+    power:      List                      = field(default_factory=list)
+    #val_pos:    List[Tuple[float, float]] = field(default_factory=list)
 
 class Coverage:
     def __init__(self, output_shapefile):
-            self.shapefile               = output_shapefile
-            self.grid_gdf                = gpd.read_file(self.shapefile)
-            self.coverage_vector         = None
+            """
+            Initialize coverage analysis from a shapefile.    
+            """
+            try:
+                self.shapefile               = output_shapefile
+                self.grid_gdf                = gpd.read_file(self.shapefile)
+            except Exception as e:
+                raise ValueError(f"Error reading shapefile: {e}")
+            self.coverage_vector = self.intialize_coverage()
 
-            self.intialize_coverage()
-
-    def intialize_coverage(self) -> None:
+    def intialize_coverage(self) -> List[coverage_struct]:
         # Initialize coverage vector for storing coverage over each cell in the fishnet
         # Make a list of coverage_struct instanced with the length N
-        N                    = len(self.grid_gdf)
-        self.coverage_vector = [coverage_struct() for _ in range(N)]
+        coverage_vector = []
 
-        # TODO: IMPROVE THIS
-        for idx in range(len(self.grid_gdf)):
-            # Compute the centroid of the current grid cell
-            centroid                           = self.grid_gdf.loc[idx].geometry.centroid
-            self.coverage_vector[idx].position = (centroid.x, centroid.y)
-            self.coverage_vector[idx].shape    = self.grid_gdf.loc[[idx]].boundary
+        for idx, row in self.grid_gdf.iterrows():
+            cell = coverage_struct(
+                position = (row.geometry.centroid.x, row.geometry.centroid.y),
+                shape    = row.geometry.boundary
+            )
+            coverage_vector.append(cell)
+
+#         N               = len(self.grid_gdf)
+#        coverage_vector = [coverage_struct() for _ in range(N)]
+
+        
+#        for idx in range(len(self.grid_gdf)):
+#            # Compute the centroid of the current grid cell
+#            centroid                           = self.grid_gdf.loc[idx].geometry.centroid
+#            coverage_vector[idx].position = (centroid.x, centroid.y)
+#            coverage_vector[idx].shape    = self.grid_gdf.loc[[idx]].boundary
+        return coverage_vector
 
     def calculate_coverage(self, bounding_box, reflection_vec, times_2) -> None:
         '''
@@ -81,7 +104,7 @@ class Coverage:
                         self.coverage_vector[rect_idx].rx_satID.append(reflection_vec[i].rx_satID)
                         self.coverage_vector[rect_idx].angles.append(angle)
                         self.coverage_vector[rect_idx].power.append(power)
-                        self.coverage_vector[rect_idx].val_pos.append(nearest_points)
+                        #self.coverage_vector[rect_idx].val_pos.append(nearest_points)
 
     @staticmethod
     def validity_mask(reflection_obj, bounding_box) -> np.ndarray:
@@ -132,13 +155,4 @@ class Coverage:
         clusters = np.split(np.arange(len(reflection_obj.refl_LL_vec)), np.where(~validity_mask)[0])  # Split indices by NaN gaps
         return clusters
 
-@dataclass
-class coverage_struct:
-    position:   List = field(default_factory=list)
-    shape:      List = field(default_factory=list)
-    times:      List = field(default_factory=list)
-    rx_satID:   List = field(default_factory=list)
-    tx_satID:   List = field(default_factory=list)
-    angles:     List = field(default_factory=list)
-    power:      List = field(default_factory=list)
-    val_pos:    List = field(default_factory=list)
+
