@@ -7,15 +7,17 @@ import traceback
 # Define input parameters
 start_time_dt = datetime(2024, 10, 23, 12, 00, 00, tzinfo=timezone.utc)
 step_size = 30  # Seconds
-sim_duration = 8  # Hours
+sim_duration = 2  # Hours
 bounding_box = [-17, 30, 56, 80]  # [min_lon, max_lon, min_lat, max_lat]
 gnss_tle_file_path = os.path.join("TLE_EPHEMIRIS_files", "GPS_operational.tle")
 
 # Define multiple orbits_input sets
 
-orbits_input_list = define_orbit_vector(2, start_time_dt)
+orbits_input_list = define_orbit_vector(3, start_time_dt)
 
+print(len(orbits_input_list))
 print(orbits_input_list)
+print(len(orbits_input_list))
 
 '''
 orbits_input_list = [
@@ -43,7 +45,7 @@ with open(output_file_path, 'a') as result_file:
                 start_time_dt, step_size, sim_duration, orbits_input, gnss_tle_file_path, bounding_box
             )
             cleaned_orbits_input = [orbit[:-1] for orbit in orbits_input]  # Remove the last element (datetime) from each orbit
-            print(cleaned_orbits_input)
+            #print(cleaned_orbits_input)
 
             # Save the input parameters and results to the file (appending mode)
             save_results_to_file(

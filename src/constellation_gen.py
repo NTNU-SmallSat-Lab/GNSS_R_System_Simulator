@@ -58,7 +58,7 @@ def define_orbit_vector(max_inputs, start_time_dt):
     # Generate 30 random configurations
     random_configs = []
     results = []
-    for _ in range(200):
+    for _ in range(max_inputs*10):
         Nsat = random.randint(1, 3)  # Random Nsat (1 to 3)
         Nplane = random.choice([1, Nsat])  # Random Nplane (1 or 3)
         f    = random.randint(0, Nplane - 1)  # Random f (0 to Nplane-1)
@@ -71,26 +71,24 @@ def define_orbit_vector(max_inputs, start_time_dt):
                 random_configs.append(config)
     # Evaluate each configuration
 
-    print('ciao')
-    print(random_configs)
 
     for idx, (Nsat, Nplane, f, incl, a, RAAN_0) in enumerate(random_configs, start=1):
         if len(results) >= max_inputs:
-            print("More than 30 results collected. Exiting loop.")
+            #print("More than 30 results collected. Exiting loop.")
             break
 
         #print(f"Configuration {idx}: Nsat={Nsat}, Nplane={Nplane}, f={f}, incl={incl:.1f}, a={a:.1f}")
         constellation = delta_pattern_hybrid(Nsat, Nplane, f, incl, a, RAAN_0)
         if constellation is not None:
             results.append(constellation)
-            print(f"Output {idx}:")
+            #print(f"Output {idx}:")
             #print(constellation)
-        print("\n")
+        #print("\n")
 
     orbits_input_list = []
     from datetime import datetime
 
-    print(results)
+    #print(results)
     for array in results:
         orbit_list = []
         for row in array:
@@ -110,7 +108,7 @@ def define_orbit_vector(max_inputs, start_time_dt):
     # Printing the result
     return orbits_input_list
 
-from datetime import datetime
+#from datetime import datetime
 
-start_time_dt = datetime.now()
-define_orbit_vector(5, start_time_dt)
+#start_time_dt = datetime.now()
+#define_orbit_vector(5, start_time_dt)
