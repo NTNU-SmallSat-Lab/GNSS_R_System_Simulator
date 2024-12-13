@@ -6,12 +6,12 @@ import geopandas       as gpd
 
 import matplotlib
 #matplotlib.use('TkAgg', force=True)
-from matplotlib             import pyplot as plt
-from astropy                import units  as u
-from skyfield.api           import load
-from datetime               import timezone, datetime
-from tqdm                   import tqdm
-from shapely.geometry       import Polygon, LineString
+from matplotlib import pyplot as plt
+#from astropy import units as u
+from skyfield.api import load
+from datetime import timezone, datetime
+from tqdm import tqdm
+#from shapely.geometry import Polygon, LineString
 from scipy.spatial.distance import cdist
 
 # Import your custom object definitions
@@ -21,6 +21,7 @@ from object_definitions.Satellite_def        import Satellite
 from object_definitions.SatConstellation_def import SatelliteConstellation
 from object_definitions.Coverage_def         import Coverage
 from object_definitions.Static_classes_def   import Plotting
+
 
 def main(start_time_dt, step_size, sim_duration, orbits_input, gnss_tle_file_path, bounding_box):
     print("Start Time:", start_time_dt)
@@ -84,9 +85,7 @@ def main(start_time_dt, step_size, sim_duration, orbits_input, gnss_tle_file_pat
     sunlit      = sat_const.satellites[0].skf.at(times_1).is_sunlit(planets)
     false_count = np.sum(sunlit == False)
     true_count  = np.sum(sunlit == True)
-    print(false_count)
-    print(true_count)
-
+  
     #############################################################################################################################
     ######################################### - CALCULATE "POINT" REFLECTION POINTS - ###########################################
     #############################################################################################################################
@@ -101,7 +100,7 @@ def main(start_time_dt, step_size, sim_duration, orbits_input, gnss_tle_file_pat
             # Add the reflection points to the plot
         sat_no += 1
 
-    satellites_LEO_sk = [sat_const.satellites[0].skf, sat_const.satellites[1].skf]
+    #satellites_LEO_sk = [sat_const.satellites[0].skf, sat_const.satellites[1].skf]
 
     #############################################################################################################################
     ######################################### - PLOTTING REFLECTION POINTS - ####################################################
@@ -169,14 +168,16 @@ def main(start_time_dt, step_size, sim_duration, orbits_input, gnss_tle_file_pat
         
         coverage.coverage_vector[idx].shape.plot(ax=ax, edgecolor='red', facecolor=color, alpha = 0.3)
 
+
+    count_total = 0
     # Plot the blue grid cells (those intersected more than once) on top of the red ones
     for idx in grid_gdf.index:
         count = intersection_count[idx]
         color, alpha_vec = get_color(count)
+        count_total = count_total + count
         
         if color == 'blue':  # Only plot blue cells (more than 1-time intersection)
             coverage.coverage_vector[idx].shape.plot(ax=ax, edgecolor='blue', facecolor=color, alpha = 0.3)
-
 
     for i in range(len(reflection_vec)):
         ax.plot(reflection_vec[i].refl_LL_vec[:, 1], reflection_vec[i].refl_LL_vec[:, 0], color='red', transform=ccrs.PlateCarree())
@@ -191,24 +192,92 @@ def main(start_time_dt, step_size, sim_duration, orbits_input, gnss_tle_file_pat
 
     ########### Coverage ###########
     non_zero_count = sum(1 for value in intersection_count.values() if value != 0)
-    print("Coverage percentage:", non_zero_count/len(intersection_count)*100)
+    coverage_percentage = non_zero_count/len(intersection_count)*100
+    print("Coverage percentage:", coverage_percentage)
 
+    ########### Sunlight ###########
+    sunlight_percentage = true_count/(true_count + false_count)*100
+    print("Time in sunlight in percentage:", sunlight_percentage)
+
+    ########### Avg passes per cell ###########
+    count_avg = count_total/len(grid_gdf)
+    print("Avg passes:", count_avg)
 
     print("Simulation complete.")
 
+
+    return average_power, coverage_percentage, sunlight_percentage, count_avg
+
+def save_results_to_file(f, start_time_dt, step_size, sim_duration, bounding_box, orbits_input, gnss_tle_file_path, average_power, coverage_percentage, sunlight_percentage, count_avg):
+    #with open(filename, 'a') as f:
+        # Writing input parameters
+    orbits_input_c = [[float(val) for val in orbit] for orbit in orbits_input]
+
+    f.write("Input Parameters:")
+    f.write(f"{start_time_dt},")
+    f.write(f"{step_size},")
+    f.write(f"{sim_duration},")
+    #f.write(f"Bounding Box: {bounding_box}")
+    f.write(f"{gnss_tle_file_path},")
+    # Remove the datetime object from each orbit (assuming datetime is the last element in each list)
+    # Write the cleaned orbits input to the file (now excluding the datetime)
+    f.write(f"{orbits_input_c},")
+
+
+    # Writing results
+    #f.write("Results:")
+    f.write(f"{average_power},")
+    f.write(f"{coverage_percentage},")
+    f.write(f"{sunlight_percentage},")
+    f.write(f"{count_avg}")
+    f.write("-----\n")
+
+
+def run_simulation(start_time_dt, step_size, sim_duration, bounding_box, gnss_tle_file_path, orbits_input):
+    """Run simulation using the given parameters and save results."""
+    # Convert start_time to datetime
+    #start_time_dt = datetime.strptime(start_time, '%Y-%m-%d %H:%M:%S')
+    
+    # Run the main simulation
+    '''
+    average_power, coverage_percentage, sunlight_percentage, count_avg = main(
+        start_time_dt, step_size, sim_duration, orbits_input, gnss_tle_file_path, bounding_box
+    )
+    '''
+    # Save results to file
+    #output_file_path = "simulation_results.txt"
+    #save_results_to_file(output_file_path, start_time_dt, step_size, sim_duration, bounding_box, orbits_input, gnss_tle_file_path, average_power, coverage_percentage, sunlight_percentage, count_avg)
+
+    #print(f"Results and input saved to {output_file_path}")
+    return 
+'''
 if __name__ == "__main__":
     # Define default inputs
+
     start_time_dt = datetime(2024, 10, 23, 12, 00, 00, tzinfo=timezone.utc)
     step_size = 30  # Seconds
-    sim_duration = 12  # Hours
+    sim_duration = 4  # Hours
+
+    bounding_box = [-17, 30, 56, 80]  # [min_lon, max_lon, min_lat, max_lat]
+    gnss_tle_file_path = os.path.join("TLE_EPHEMIRIS_files", "GPS_operational.tle")
+
 
     orbits_input = [
         [99.1, 0.00001, 0, 0, 0, 7300e3, start_time_dt],
         [99.1, 0.00001, 90.0, 0, 0, 7300e3, start_time_dt],
     ]
 
-    gnss_tle_file_path = os.path.join("TLE_EPHEMIRIS_files", "GPS_operational.tle")
-    bounding_box = [-17, 30, 56, 80]  # [min_lon, max_lon, min_lat, max_lat]
+
+
 
     # Run main with the default parameters
-    main(start_time_dt, step_size, sim_duration, orbits_input, gnss_tle_file_path, bounding_box)
+    average_power, coverage_percentage, sunlight_percentage, count_avg = main(start_time_dt, step_size, sim_duration, orbits_input, gnss_tle_file_path, bounding_box)
+
+    # File to save the results
+    output_file_path = "simulation_results.txt"
+
+    # Save the input parameters and results to a text file
+    save_results_to_file(output_file_path, start_time_dt, step_size, sim_duration, bounding_box, orbits_input, gnss_tle_file_path, average_power, coverage_percentage, sunlight_percentage)
+
+    print(f"Results and input saved to {output_file_path}")
+'''
