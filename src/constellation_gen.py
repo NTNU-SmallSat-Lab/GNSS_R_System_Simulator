@@ -61,9 +61,9 @@ def define_orbit_vector(max_inputs, start_time_dt):
     for _ in range(200):
         Nsat = random.randint(1, 3)  # Random Nsat (1 to 3)
         Nplane = random.choice([1, Nsat])  # Random Nplane (1 or 3)
-        f = random.randint(0, Nplane - 1)  # Random f (0 to Nplane-1)
+        f    = random.randint(0, Nplane - 1)  # Random f (0 to Nplane-1)
         incl = np.round(random.uniform(60, 80), 2)  # Random inclination (60 to 80 degrees)
-        a = random.randint(7800 * 1e3, 8000 * 1e3)  # Random semi-major axis (7800 to 8000 km)
+        a    = random.randint( int(7800 * 1e3), int(8000 * 1e3))  # Random semi-major axis (7800 to 8000 km)
         RAAN_0 = np.round(random.uniform(0, 360), 2)  # Random RAAN (0 to 360)
         if Nplane <= Nsat:  # Only add the config if Nplane <= Nsat
             config = (Nsat, Nplane, f, incl, a, RAAN_0)
