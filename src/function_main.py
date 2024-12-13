@@ -210,6 +210,8 @@ def main(start_time_dt, step_size, sim_duration, orbits_input, gnss_tle_file_pat
 def save_results_to_file(f, start_time_dt, step_size, sim_duration, bounding_box, orbits_input, gnss_tle_file_path, average_power, coverage_percentage, sunlight_percentage, count_avg):
     #with open(filename, 'a') as f:
         # Writing input parameters
+    orbits_input_c = [[float(val) for val in orbit] for orbit in orbits_input]
+
     f.write("Input Parameters:")
     f.write(f"{start_time_dt},")
     f.write(f"{step_size},")
@@ -218,7 +220,7 @@ def save_results_to_file(f, start_time_dt, step_size, sim_duration, bounding_box
     f.write(f"{gnss_tle_file_path},")
     # Remove the datetime object from each orbit (assuming datetime is the last element in each list)
     # Write the cleaned orbits input to the file (now excluding the datetime)
-    f.write(f"{orbits_input},")
+    f.write(f"{orbits_input_c},")
 
 
     # Writing results
