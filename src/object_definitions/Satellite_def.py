@@ -116,28 +116,35 @@ class Satellite:
             print("TLE DATA CANNOT BE GENERATED FOR SATELLITE: ", self.satID)
             return None
 
-        filePath  = os.path.join(Constants.tle_eph_folder_path, self.satName+ ".tle")
-
         # Make sure the directory exists
         if not os.path.exists(Constants.tle_eph_folder_path):
             print(f"Creating directory: {Constants.tle_eph_folder_path}")
             os.makedirs(Constants.tle_eph_folder_path)
 
+        filePath  = os.path.join(Constants.tle_eph_folder_path, self.satName+ ".tle")
+
         # Check if the file already exists
-        if os.path.exists(filePath):
-            print(f"Warning: TLE file already exists for {self.satID} \n-- Overwriting previous TLE file --")
+        incrementing_no = 0
+        while os.path.exists(filePath):
+            # HACK if the file exists, increment the filename
+            self.satName    += f"_{incrementing_no}"
+            filePath         = os.path.join(Constants.tle_eph_folder_path, self.satName+ ".tle")
+            incrementing_no += 1
+
+#        if os.path.exists(filePath):
+#            print(f"Warning: TLE file already exists for {self.satID} \n-- Overwriting previous TLE file --")
             # delete the file
-            os.remove(filePath)
+#            os.remove(filePath)
 
         # Write the TLE to the file
-        try:
-            with open(filePath, 'w') as file:
-                file.write(tle_str)
-            self.tle_file_path = filePath
-            print(f"TLE written to {filePath}")
-        except IOError:
-            print(f"Warning: TLE file could not be written for {self.satID}")
-        return filePath
+#        try:
+#            with open(filePath, 'w') as file:
+#                file.write(tle_str)
+#            self.tle_file_path = filePath
+#            print(f"TLE written to {filePath}")
+#        except IOError:
+#            print(f"Warning: TLE file could not be written for {self.satID}")
+#        return filePath
 
     def propagate_orbit(self, startTime, duration, deltaT) -> np.array:
         """

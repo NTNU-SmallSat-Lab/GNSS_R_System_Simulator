@@ -83,10 +83,18 @@ class SatelliteConstellation:
             os.makedirs(Constants.tle_eph_folder_path)
 
         # Check if the file already exists
-        if os.path.exists(filePath):
-            print(f"Warning: TLE file already exists for {self.satConfigName } \n-- Overwriting previous TLE file --")
-            # delete the file
-            os.remove(filePath)
+#        if os.path.exists(filePath):
+#            print(f"Warning: TLE file already exists for {self.satConfigName } \n-- Overwriting previous TLE file --")
+#            # delete the file
+#            os.remove(filePath)
+
+        incrementing_number = 0
+        while os.path.exists(filePath):
+            # HACK - Append a number to the file name
+            self.satConfigName += f"_{incrementing_number}"
+            incrementing_number += 1
+            filePath = os.path.join(Constants.tle_eph_folder_path, f"{self.satConfigName}.tle")
+
 
         # Write the TLE to the file
         try:
