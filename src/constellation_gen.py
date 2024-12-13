@@ -2,6 +2,8 @@ import numpy as np
 #import matplotlib.pyplot as plt
 #from mpl_toolkits.mplot3d import Axes3D
 import random 
+from object_definitions.Constants_def import Constants
+
 
 def wrapto360(angle):
     return angle % 360
@@ -38,8 +40,6 @@ def delta_pattern_hybrid(Nsat, Nplane, f, incl, a, RAAN_0):
     dRAAN = PU * NSsat
     TAo = np.zeros(Nsat)
     RAANo = np.zeros(Nsat)
-     
-
 
     for i in range(Nsat):
         pindex = int(np.ceil((i + 1) / NSsat))  # Plane index
@@ -63,7 +63,7 @@ def define_orbit_vector(max_inputs, start_time_dt):
         Nplane = random.choice([1, Nsat])  # Random Nplane (1 or 3)
         f    = random.randint(0, Nplane - 1)  # Random f (0 to Nplane-1)
         incl = np.round(random.uniform(60, 80), 2)  # Random inclination (60 to 80 degrees)
-        a    = random.randint( int(7800 * 1e3), int(8000 * 1e3))  # Random semi-major axis (7800 to 8000 km)
+        a    = random.randint( 6878*1e3, 7078*1e3)  # Random semi-major axis (7800 to 8000 km)
         RAAN_0 = np.round(random.uniform(0, 360), 2)  # Random RAAN (0 to 360)
         if Nplane <= Nsat:  # Only add the config if Nplane <= Nsat
             config = (Nsat, Nplane, f, incl, a, RAAN_0)
