@@ -216,13 +216,16 @@ def save_results_to_file(f, start_time_dt, step_size, sim_duration, bounding_box
     f.write(f"{sim_duration},")
     #f.write(f"Bounding Box: {bounding_box}")
     f.write(f"{gnss_tle_file_path},")
+    # Remove the datetime object from each orbit (assuming datetime is the last element in each list)
+    # Write the cleaned orbits input to the file (now excluding the datetime)
     f.write(f"{orbits_input},")
+
 
     # Writing results
     #f.write("Results:")
     f.write(f"{average_power},")
     f.write(f"{coverage_percentage},")
-    f.write(f"{sunlight_percentage}")
+    f.write(f"{sunlight_percentage},")
     f.write(f"{count_avg}")
     f.write("-----\n")
 

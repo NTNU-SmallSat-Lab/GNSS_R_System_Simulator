@@ -1,12 +1,12 @@
 import numpy as np
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
+#import matplotlib.pyplot as plt
+#from mpl_toolkits.mplot3d import Axes3D
 import random 
 
 def wrapto360(angle):
     return angle % 360
 
-def delta_pattern_hybrid(Nsat, Nplane, f, incl, a):
+def delta_pattern_hybrid(Nsat, Nplane, f, incl, a, RAAN_0):
     """
     Generate and plot the given Walker delta constellation.
 
@@ -38,13 +38,14 @@ def delta_pattern_hybrid(Nsat, Nplane, f, incl, a):
     dRAAN = PU * NSsat
     TAo = np.zeros(Nsat)
     RAANo = np.zeros(Nsat)
+     
 
 
     for i in range(Nsat):
         pindex = int(np.ceil((i + 1) / NSsat))  # Plane index
         Spindex = i - (pindex - 1) * NSsat
         TAo[i] = wrapto360(Spindex * beta + (pindex - 1) * f * PU)
-        RAANo[i] = (pindex - 1) * dRAAN
+        RAANo[i] = wrapto360((pindex - 1) * dRAAN + RAAN_0)
 
     CONSTELLATION_SC = np.zeros((Nsat, 6))
 
@@ -59,12 +60,13 @@ def define_orbit_vector(max_inputs, start_time_dt):
     results = []
     for _ in range(200):
         Nsat = random.randint(1, 3)  # Random Nsat (1 to 3)
-        Nplane = random.choice([1, 3])  # Random Nplane (1 or 3)
+        Nplane = random.choice([1, Nsat])  # Random Nplane (1 or 3)
         f = random.randint(0, Nplane - 1)  # Random f (0 to Nplane-1)
         incl = np.round(random.uniform(60, 80), 2)  # Random inclination (60 to 80 degrees)
         a = random.randint(7800 * 1e3, 8000 * 1e3)  # Random semi-major axis (7800 to 8000 km)
+        RAAN_0 = np.round(random.uniform(0, 360), 2)  # Random RAAN (0 to 360)
         if Nplane <= Nsat:  # Only add the config if Nplane <= Nsat
-            config = (Nsat, Nplane, f, incl, a)
+            config = (Nsat, Nplane, f, incl, a, RAAN_0)
             if config not in random_configs:  # Ensure uniqueness
                 random_configs.append(config)
     # Evaluate each configuration
@@ -72,13 +74,13 @@ def define_orbit_vector(max_inputs, start_time_dt):
     print('ciao')
     print(random_configs)
 
-    for idx, (Nsat, Nplane, f, incl, a) in enumerate(random_configs, start=1):
+    for idx, (Nsat, Nplane, f, incl, a, RAAN_0) in enumerate(random_configs, start=1):
         if len(results) >= max_inputs:
             print("More than 30 results collected. Exiting loop.")
             break
 
         #print(f"Configuration {idx}: Nsat={Nsat}, Nplane={Nplane}, f={f}, incl={incl:.1f}, a={a:.1f}")
-        constellation = delta_pattern_hybrid(Nsat, Nplane, f, incl, a)
+        constellation = delta_pattern_hybrid(Nsat, Nplane, f, incl, a, RAAN_0)
         if constellation is not None:
             results.append(constellation)
             print(f"Output {idx}:")
@@ -108,4 +110,7 @@ def define_orbit_vector(max_inputs, start_time_dt):
     # Printing the result
     return orbits_input_list
 
+from datetime import datetime
 
+start_time_dt = datetime.now()
+define_orbit_vector(5, start_time_dt)
