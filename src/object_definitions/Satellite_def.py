@@ -6,8 +6,8 @@ from object_definitions.Constants_def    import Constants
 from object_definitions.Orbit_def        import Orbit_specification
 from object_definitions.ReadWriteSatData import ReadWriteSatData
 
-from skyfield.api      import load, wgs84
-
+from skyfield.api      import load, wgs84, EarthSatellite
+#from io                import BytesIO, StringIO
 class Satellite:
     def __init__(self, satID, orbit_n=None, satName=None, tle_file_path=None, satNo_in_tle=0):
         """
@@ -48,6 +48,7 @@ class Satellite:
         self.sensors        = []
         self.battery        = []
         self.solarArray     = []
+        self.tle_str       = None
     """
     =========================================================================================================
     Setter functions
@@ -115,6 +116,7 @@ class Satellite:
         if tle_str is None:
             print("TLE DATA CANNOT BE GENERATED FOR SATELLITE: ", self.satID)
             return None
+        self.tle_str = tle_str
 
         # Make sure the directory exists
         if not os.path.exists(Constants.tle_eph_folder_path):
@@ -130,6 +132,7 @@ class Satellite:
             self.satName    += f"_{incrementing_no}"
             filePath         = os.path.join(Constants.tle_eph_folder_path, self.satName+ ".tle")
             incrementing_no += 1
+        self.tle_file_path = filePath
 
 #        if os.path.exists(filePath):
 #            print(f"Warning: TLE file already exists for {self.satID} \n-- Overwriting previous TLE file --")
@@ -144,7 +147,7 @@ class Satellite:
 #            print(f"TLE written to {filePath}")
 #        except IOError:
 #            print(f"Warning: TLE file could not be written for {self.satID}")
-#        return filePath
+        return None
 
     def propagate_orbit(self, startTime, duration, deltaT) -> np.array:
         """
@@ -245,7 +248,15 @@ class Satellite:
         if self.orbit_n is not None:
             if self.orbit_n.epoch_str is not None:
                 self.write_tle_file()
-                self.skf = load.tle_file(self.tle_file_path)[0]
+#                self.skf = load.tle_file(self.tle_file_path)[0]
+                # Load the satellite object from tle string
+#                self.skf = load.tle_file(StringIO(self.tle_str.encode('utf-8')))[0]
+                lines = self.tle_str.splitlines()
+                # Extract the variables
+                satellite_name = lines[0]          # First line is the satellite name
+                line_1         = lines[1]          # Second line is TLE line 1
+                line_2         = lines[2]          # Third line is TLE line 2
+                self.skf = EarthSatellite(line_1, line_2, satellite_name)
             else:
                 print("Warning: Orbit_specification epoch is not specified for satellite: ", self.satName, 
                       " To generate the skyfield satellite object, specify the epoch.")
