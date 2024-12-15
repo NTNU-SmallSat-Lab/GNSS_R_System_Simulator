@@ -80,10 +80,6 @@ def main(start_time_dt, step_size, sim_duration, orbits_input, gnss_tle_file_pat
     earth   = planets['earth']
     sun     = planets['sun']
 
-    # Compute sunlight or not
-    sunlit      = sat_const.satellites[0].skf.at(times_1).is_sunlit(planets)
-    false_count = np.sum(sunlit == False)
-    true_count  = np.sum(sunlit == True)
   
     #############################################################################################################################
     ######################################### - CALCULATE "POINT" REFLECTION POINTS - ###########################################
@@ -195,8 +191,16 @@ def main(start_time_dt, step_size, sim_duration, orbits_input, gnss_tle_file_pat
     print("Coverage percentage:", coverage_percentage)
 
     ########### Sunlight ###########
-    sunlight_percentage = true_count/(true_count + false_count)*100
-    print("Time in sunlight in percentage:", sunlight_percentage)
+    # Compute sunlight or not
+    sunlight_percentage = np.zeros(Nsat)
+    for i in range(0, Nsat):
+        sunlit      = sat_const.satellites[i].skf.at(times_1).is_sunlit(planets)
+        false_count = np.sum(sunlit == False)
+        true_count  = np.sum(sunlit == True)
+        sunlight_percentage[i] = true_count/(true_count + false_count)*100
+        print("Time in sunlight in percentage", sunlight_percentage[i])
+    sunlight_percentage_avg = np.mean(sunlight_percentage)
+    print("Time in sunlight in percentage:", sunlight_percentage_avg)
 
     ########### Avg passes per cell ###########
     count_avg = count_total/len(grid_gdf)
@@ -205,7 +209,7 @@ def main(start_time_dt, step_size, sim_duration, orbits_input, gnss_tle_file_pat
     print("Simulation complete.")
 
 
-    return average_power, coverage_percentage, sunlight_percentage, count_avg
+    return average_power, coverage_percentage, sunlight_percentage_avg, count_avg
 
 def save_results_to_file(f, start_time_dt, step_size, sim_duration, bounding_box, orbits_input, gnss_tle_file_path, average_power, coverage_percentage, sunlight_percentage, count_avg):
     #with open(filename, 'a') as f:
@@ -216,7 +220,7 @@ def save_results_to_file(f, start_time_dt, step_size, sim_duration, bounding_box
     f.write(f"{start_time_dt},")
     f.write(f"{step_size},")
     f.write(f"{sim_duration},")
-    #f.write(f"Bounding Box: {bounding_box}")
+    #f.write(f"{bounding_box}")
     f.write(f"{gnss_tle_file_path},")
     # Remove the datetime object from each orbit (assuming datetime is the last element in each list)
     # Write the cleaned orbits input to the file (now excluding the datetime)

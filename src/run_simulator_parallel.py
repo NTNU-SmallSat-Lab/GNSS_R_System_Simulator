@@ -1,7 +1,7 @@
 import os
 from function_main import main, save_results_to_file
 from datetime import timezone, datetime
-from constellation_gen import define_orbit_vector
+from constellation_gen import define_orbit_vector, define_orbit_vector_sunsync
 import traceback
 from multiprocessing import Pool
 
@@ -19,7 +19,10 @@ bounding_box = [-17, 30, 56, 80]  # [min_lon, max_lon, min_lat, max_lat]
 gnss_tle_file_path = os.path.join("TLE_EPHEMIRIS_files", "GPS_operational.tle")
 
 # Define multiple orbits_input sets
-orbits_input_list = define_orbit_vector(200, start_time_dt)
+# Inclined orbits
+orbits_input_list, saving_inputs_list = define_orbit_vector_sunsync(1000, start_time_dt)
+# Sun-syncronous orbits
+#orbits_input_list, saving_inputs_list = define_orbit_vector(2, start_time_dt)
 
 
 print(len(orbits_input_list))
@@ -63,5 +66,5 @@ def process_orbit_set(orbits_input):
 # Initialize the Pool and process the orbits_input_list in parallel
 if __name__ == "__main__":
     # Create a Pool of workers (you can specify the number of processes, or leave it empty to use the default number of CPU cores)
-    with Pool(14) as pool:
+    with Pool() as pool:
         pool.map(process_orbit_set, orbits_input_list)  # Distribute the orbit sets to the pool workers

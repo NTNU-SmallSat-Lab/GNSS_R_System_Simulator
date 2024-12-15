@@ -57,6 +57,7 @@ def delta_pattern_hybrid(Nsat, Nplane, f, incl, a, RAAN_0):
 def define_orbit_vector(max_inputs, start_time_dt):
     # Generate 30 random configurations
     random_configs = []
+    saving_inputs = []
     results = []
     for _ in range(max_inputs*10):
         Nsat = random.randint(1, 3)  # Random Nsat (1 to 3)
@@ -81,6 +82,7 @@ def define_orbit_vector(max_inputs, start_time_dt):
         constellation = delta_pattern_hybrid(Nsat, Nplane, f, incl, a, RAAN_0)
         if constellation is not None:
             results.append(constellation)
+            saving_inputs.append([Nsat, Nplane, f])
             #print(f"Output {idx}:")
             #print(constellation)
         #print("\n")
@@ -106,9 +108,102 @@ def define_orbit_vector(max_inputs, start_time_dt):
         orbits_input_list.append(orbit_list)
 
     # Printing the result
-    return orbits_input_list
+    return orbits_input_list, saving_inputs
 
-#from datetime import datetime
+def define_orbit_vector_sunsync(max_inputs, start_time_dt):
+    # Generate 30 random configurations
+    random_configs = []
+    results = []
+    saving_inputs = []
+    for _ in range(max_inputs*10):
+        Nsat = random.randint(1, 3)  # Random Nsat (1 to 3)
+        Nplane = random.choice([1, Nsat])  # Random Nplane (1 or 3)
+        f    = random.randint(0, Nplane - 1)  # Random f (0 to Nplane-1)
+        a    = random.uniform(6878*1e3, 7078*1e3)  # Random semi-major axis (7800 to 8000 km)
+        # Constants
+        J2 = 1.08263e-3  # Earth's J2 coefficient
+        mu = 3.986004415e14  # Earth's gravitational constant (m^3/s^2)
+        Re = 6.371e6  # Earth's radius (m)
+        omega_earth = 1.9856e-7 # Earth's angular velocity (rad/s)
+        # Random semi-major axis (between 6878 km and 7078 km)
+        e = 1e-5  # Small eccentricity
+        n = np.sqrt(mu /a**3)
+        incl =  np.round(np.degrees(np.arccos((-2*omega_earth*(a*(1 - e**2))**2)/(3*J2*Re**2*n))), 4)
+        
+        #incl = np.round(random.uniform(60, 80), 2)  # Random inclination (60 to 80 degrees)
+        RAAN_0 = np.round(random.uniform(0, 360), 2)  # Random RAAN (0 to 360)
+        if Nplane <= Nsat:  # Only add the config if Nplane <= Nsat
+            config = (Nsat, Nplane, f, incl, a, RAAN_0)
+            if config not in random_configs:  # Ensure uniqueness
+                random_configs.append(config)
+    # Evaluate each configuration
 
-#start_time_dt = datetime.now()
-#define_orbit_vector(5, start_time_dt)
+
+    for idx, (Nsat, Nplane, f, incl, a, RAAN_0) in enumerate(random_configs, start=1):
+        if len(results) >= max_inputs:
+            #print("More than 30 results collected. Exiting loop.")
+            break
+
+        #print(f"Configuration {idx}: Nsat={Nsat}, Nplane={Nplane}, f={f}, incl={incl:.1f}, a={a:.1f}")
+        constellation = delta_pattern_hybrid(Nsat, Nplane, f, incl, a, RAAN_0)
+        if constellation is not None:
+            results.append(constellation)
+            saving_inputs.append([Nsat, Nplane, f])
+            
+            #print(f"Output {idx}:")
+            #print(constellation)
+        #print("\n")
+
+    orbits_input_list = []
+    from datetime import datetime
+
+    #print(results)
+    for array in results:
+        orbit_list = []
+        for row in array:
+            # Extracting parameters
+            semi_major_axis = row[5]  # Semi-major axis
+            eccentricity = row[1]  # Eccentricity
+            inclination = row[0]  # Inclination
+            RAAN = row[2]
+            ArgPer = row[3]
+            Theta = row[4]
+            # Constructing each orbit configuration (adding start_time_dt to each)
+            orbit_list.append([inclination, eccentricity, RAAN, ArgPer,Theta, semi_major_axis, start_time_dt])
+            # Adding a second configuration with 90 degree inclination
+        
+        orbits_input_list.append(orbit_list)
+
+    # Printing the result
+    return orbits_input_list, saving_inputs
+
+from datetime import datetime
+
+start_time_dt = datetime.now()
+orbits_input_list, saving_inputs = define_orbit_vector_sunsync(3, start_time_dt)
+
+print(orbits_input_list)
+print(saving_inputs)
+
+
+# Attach function
+def attach_vectors(base_data, index_list):
+    result = []
+    for group, indices in zip(base_data, index_list):
+        new_group = []
+        for idx, vector in enumerate(group):
+            if idx < len(indices):
+                attach_count = indices[idx]
+                attached_vectors = group[:attach_count]  # Attach first 'attach_count' vectors
+                extended_vector = vector + attached_vectors  # Concatenate
+                new_group.append(extended_vector)
+        result.append(new_group)
+    return result
+
+# Execute attachment
+attached_data = attach_vectors(orbits_input_list, saving_inputs)
+
+# Display results
+for group in attached_data:
+    for vector in group:
+        print(vector)
