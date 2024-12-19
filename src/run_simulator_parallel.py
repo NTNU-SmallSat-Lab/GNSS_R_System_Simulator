@@ -41,7 +41,7 @@ def process_orbit_set(orbits_input):
     try:
         print(f"Processing orbit set {orbits_input}...")
         # Run the simulation for the current set of orbital parameters by calling main directly
-        average_power, coverage_percentage, sunlight_percentage, count_avg = main(
+        average_power, coverage_percentage, sunlight_percentage, count_avg, coverage = main(
             start_time_dt, step_size, sim_duration, orbits_input, gnss_tle_file_path, bounding_box
         )
         cleaned_orbits_input = [orbit[:-1] for orbit in orbits_input]  # Remove the last element (datetime) from each orbit

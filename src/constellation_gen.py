@@ -57,7 +57,6 @@ def delta_pattern_hybrid(Nsat, Nplane, f, incl, a, RAAN_0):
 def define_orbit_vector(max_inputs, start_time_dt):
     # Generate 30 random configurations
     random_configs = []
-    saving_inputs = []
     results = []
     for _ in range(max_inputs*10):
         Nsat = random.randint(1, 3)  # Random Nsat (1 to 3)
@@ -82,7 +81,6 @@ def define_orbit_vector(max_inputs, start_time_dt):
         constellation = delta_pattern_hybrid(Nsat, Nplane, f, incl, a, RAAN_0)
         if constellation is not None:
             results.append(constellation)
-            saving_inputs.append([Nsat, Nplane, f])
             #print(f"Output {idx}:")
             #print(constellation)
         #print("\n")
@@ -108,13 +106,12 @@ def define_orbit_vector(max_inputs, start_time_dt):
         orbits_input_list.append(orbit_list)
 
     # Printing the result
-    return orbits_input_list, saving_inputs
+    return orbits_input_list
 
 def define_orbit_vector_sunsync(max_inputs, start_time_dt):
     # Generate 30 random configurations
     random_configs = []
     results = []
-    saving_inputs = []
     for _ in range(max_inputs*10):
         Nsat = random.randint(1, 3)  # Random Nsat (1 to 3)
         Nplane = random.choice([1, Nsat])  # Random Nplane (1 or 3)
@@ -147,9 +144,7 @@ def define_orbit_vector_sunsync(max_inputs, start_time_dt):
         #print(f"Configuration {idx}: Nsat={Nsat}, Nplane={Nplane}, f={f}, incl={incl:.1f}, a={a:.1f}")
         constellation = delta_pattern_hybrid(Nsat, Nplane, f, incl, a, RAAN_0)
         if constellation is not None:
-            results.append(constellation)
-            saving_inputs.append([Nsat, Nplane, f])
-            
+            results.append(constellation)            
             #print(f"Output {idx}:")
             #print(constellation)
         #print("\n")
@@ -175,15 +170,14 @@ def define_orbit_vector_sunsync(max_inputs, start_time_dt):
         orbits_input_list.append(orbit_list)
 
     # Printing the result
-    return orbits_input_list, saving_inputs
+    return orbits_input_list
 
+
+'''
 from datetime import datetime
 
 start_time_dt = datetime.now()
 orbits_input_list, saving_inputs = define_orbit_vector_sunsync(3, start_time_dt)
-
-print(orbits_input_list)
-print(saving_inputs)
 
 
 # Attach function
@@ -207,3 +201,5 @@ attached_data = attach_vectors(orbits_input_list, saving_inputs)
 for group in attached_data:
     for vector in group:
         print(vector)
+
+'''

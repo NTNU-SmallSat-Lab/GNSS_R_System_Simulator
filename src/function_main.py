@@ -209,7 +209,7 @@ def main(start_time_dt, step_size, sim_duration, orbits_input, gnss_tle_file_pat
     print("Simulation complete.")
 
 
-    return average_power, coverage_percentage, sunlight_percentage_avg, count_avg
+    return average_power, coverage_percentage, sunlight_percentage_avg, count_avg, coverage
 
 def save_results_to_file(f, start_time_dt, step_size, sim_duration, bounding_box, orbits_input, gnss_tle_file_path, average_power, coverage_percentage, sunlight_percentage, count_avg):
     #with open(filename, 'a') as f:
