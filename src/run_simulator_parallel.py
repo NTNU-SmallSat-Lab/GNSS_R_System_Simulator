@@ -1,9 +1,10 @@
 import os
 from function_main import main, save_results_to_file
 from datetime import timezone, datetime
-from constellation_gen import define_orbit_vector, define_orbit_vector_sunsync
+from functions.constellation_gen import define_orbit_vector, define_orbit_vector_sunsync
 import traceback
 from multiprocessing import Pool
+
 
 import warnings
 

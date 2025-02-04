@@ -19,7 +19,7 @@ from object_definitions.Reflection_def import Reflection
 from object_definitions.Constants_def import Constants
 from object_definitions.Satellite_def import Satellite
 from object_definitions.SatConstellation_def import SatelliteConstellation
-from object_definitions.Coverage_def import Coverage#, Coverage_OLD
+from object_definitions.Coverage_def import Coverage #, Coverage_OLD
 from object_definitions.Static_classes_def import Plotting
 
 def main(start_time_dt, step_size, sim_duration, orbits_input, gnss_tle_file_path, bounding_box):
