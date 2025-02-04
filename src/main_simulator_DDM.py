@@ -1,12 +1,11 @@
 import os
 from function_main import main, save_results_to_file
 from datetime import timezone, datetime
-from constellation_gen import define_orbit_vector
 
 # Define input parameters
 start_time_dt = datetime(2024, 10, 23, 12, 00, 00, tzinfo=timezone.utc)
 step_size = 30  # Seconds
-sim_duration = 12  # Hours
+sim_duration = 48  # Hours
 bounding_box = [-17, 30, 56, 80]  # [min_lon, max_lon, min_lat, max_lat]
 gnss_tle_file_path = os.path.join("TLE_EPHEMIRIS_files", "GPS_operational.tle")
 
@@ -23,16 +22,22 @@ import numpy as np
 import geopandas as gpd
 
 import matplotlib
-#matplotlib.use('TkAgg', force=True)
-#from astropy import units as u
 from skyfield.api import load
 from tqdm import tqdm
-#from shapely.geometry import Polygon, LineString
 from scipy.spatial.distance import cdist
 
-
+closest_angle = 20  # Target angle degrees to find the closest entries to that reflection angle
+best_i, best_j = None, None
+min_diff = float('inf')  # Start with an infinitely large difference
 for i in range(len(coverage.coverage_vector)):
-    print(coverage.coverage_vector[i].angles)
+    for j in range(len(coverage.coverage_vector[i].angles)):
+        angle = coverage.coverage_vector[i].angles[j][0]
+        print(angle)
+        diff = abs(angle - closest_angle)  # Calculate the difference from 20
+        # If this is the smallest difference, update the indices
+        if diff < min_diff:
+            min_diff = diff
+            best_i, best_j = i, j
 
 
 #############################################################################################################################
@@ -40,7 +45,7 @@ for i in range(len(coverage.coverage_vector)):
 #############################################################################################################################
 Nsat        = len(orbits_input)                                                     # Number of satellites
 ts          = load.timescale()                                                      # This  start time is after both GPS and GALILEO TLE Epoch, so I will use this atm
-start_time_dt = coverage.coverage_vector[385].times[0]
+start_time_dt = coverage.coverage_vector[best_i].times[best_j]                      # Start time of the simulation (selecting the right time)
 # Step size and duration
 step_size = 1e-3  # Step size in seconds (1 millisecond)
 sim_duration = 1 / 3600  # Simulation duration in hours (1 second)
@@ -81,8 +86,8 @@ satellites_LEO_sk = load.tle_file(sat_tle_file_path)
 satellites_GPS_sk = load.tle_file(gps_tle_file_path)
 
 
-satellite_gps = next((sat for sat in satellites_GPS_sk if sat.model.satnum == coverage.coverage_vector[385].tx_satID[0]), None)
-satellite_leo = next((sat for sat in satellites_LEO_sk if sat.model.satnum == coverage.coverage_vector[385].rx_satID[0]), None)
+satellite_gps = next((sat for sat in satellites_GPS_sk if sat.model.satnum == coverage.coverage_vector[best_i].tx_satID[best_j]), None)
+satellite_leo = next((sat for sat in satellites_LEO_sk if sat.model.satnum == coverage.coverage_vector[best_i].rx_satID[best_j]), None)
 
 
 position1 = np.array([satellite_gps.at(t).position.m       for t in times_1])
@@ -93,8 +98,6 @@ velocity2 = np.array([satellite_leo.at(t).velocity.m_per_s for t in times_1])
 
 position1 = np.transpose(position1)
 position2 = np.transpose(position2)
-#velocity1 = np.transpose(velocity1)
-#velocity2 = np.transpose(velocity2)
 
 
 from functions.functions import compute_reflection
@@ -107,7 +110,7 @@ position2 = np.transpose(position2)
 import pandas as pd
 import numpy as np
 
-# Flatten and organize data into a Pandas DataFrame
+# Flatten and organize data into a Pandas DataFrame for saving the results for DDM generation
 data = {
     'Time': np.atleast_2d(times_1).flatten(),  # Flatten the Time array to ensure it is 1D
     'PositionGPS_Sat_x': position1[:, 0],  # Separate components of PositionGPS_Sat

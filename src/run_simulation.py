@@ -2,7 +2,7 @@
 import os
 from function_main import main, save_results_to_file
 from datetime import timezone, datetime
-from constellation_gen import define_orbit_vector
+from functions.constellation_gen import define_orbit_vector
 import traceback
 # Define input parameters
 start_time_dt = datetime(2024, 10, 23, 12, 00, 00, tzinfo=timezone.utc)
@@ -12,7 +12,6 @@ bounding_box = [-17, 30, 56, 80]  # [min_lon, max_lon, min_lat, max_lat]
 gnss_tle_file_path = os.path.join("TLE_EPHEMIRIS_files", "GPS_operational.tle")
 
 # Define multiple orbits_input sets
-
 orbits_input_list = define_orbit_vector(1, start_time_dt)
 
 print(len(orbits_input_list))
