@@ -21,8 +21,8 @@ print(f"Latitude: {lat}, Longitude: {lon}, Altitude: {alt}")
 
 import numpy as np
 
-def compute_reflection(finalPositionGPS, finalPositionSat, ellipse, angle, times):
-    radius = 6378137  # Earth radius in meters
+def compute_reflection(finalPositionGPS: np.ndarray, finalPositionSat: np.ndarray, ellipse: int, angle: float, times: list) -> tuple:
+    EARTH_RADIUS = 6378137  # Earth radius in meters
     # Preallocate outputs for efficiency
     theta_vec = np.full((len(finalPositionSat[0]), 3), np.nan)
     specular_point_vec = np.full((len(finalPositionSat[0]), 3), np.nan)
@@ -34,7 +34,7 @@ def compute_reflection(finalPositionGPS, finalPositionSat, ellipse, angle, times
     theta = np.degrees(np.arccos(cos_theta))
     # Loop through each satellite position to compute reflection points
     for i in range(finalPositionSat.shape[1]):
-        has_los = check_los_satellites(finalPositionSat[:, i] / 1e3, finalPositionGPS[:, i] / 1e3, radius / 1e3)
+        has_los = check_los_satellites(finalPositionSat[:, i] / 1e3, finalPositionGPS[:, i] / 1e3, EARTH_RADIUS / 1e3)
         if theta[i] < angle and has_los:
             # Depending on 'ellipse' flag, call appropriate reflection calculation
             '''
