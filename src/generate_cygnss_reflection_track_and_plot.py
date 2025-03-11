@@ -10,7 +10,7 @@ from functions.functions import compute_reflection
 import satellite_parameter_utils as utils
 
 from typing import Dict, List, Tuple
-
+import numpy as np
 import matplotlib.pyplot as plt
 import pymap3d
 from mpl_toolkits.basemap import Basemap
