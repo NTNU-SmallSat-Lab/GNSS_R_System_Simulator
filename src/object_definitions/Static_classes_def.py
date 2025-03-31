@@ -5,35 +5,103 @@ import cartopy.feature as cfeature
 
 import matplotlib
 matplotlib.use('TkAgg', force=True)
-from matplotlib             import pyplot as plt
-from skyfield.api           import load
-
+from matplotlib                       import pyplot as plt
+from skyfield.api                     import load
+from object_definitions.Constants_def import Constants
 class Plotting:
     @staticmethod
-    def plot_reflection_traces(tx_sat_const, rx_sat_const, reflection_vec, file_name):
+    def plot_reflection_traces_gnss_const(rx_SatConst, tx_SatConst, reflection_vec, file_name="Reflection_traces.png", title=None):
+        '''
+        Plot the reflection traces for a given GNSS constellation.
+        '''
         plt.figure(figsize=(12, 6))
         ax = plt.axes(projection=ccrs.PlateCarree())
         ax.add_feature(cfeature.COASTLINE)
         ax.add_feature(cfeature.BORDERS, linestyle=':')
         ax.set_global()
-        
-        for i_sat in range(rx_sat_const.no_satellites):
-            for i_gnss in range(tx_sat_const.no_satellites):
-                ax.scatter(reflection_vec[i_sat*tx_sat_const.no_satellites + i_gnss].refl_LL_vec[:, 1], reflection_vec[i_sat*tx_sat_const.no_satellites + i_gnss].refl_LL_vec[:, 0], color='red', s=1, transform=ccrs.PlateCarree())
+
+        for i_sat in range(tx_SatConst.no_satellites):
+            for i_gnss in range(rx_SatConst.no_satellites):
+                ax.scatter(reflection_vec[i_sat*rx_SatConst.no_satellites + i_gnss].refl_LL_vec[:, 1], reflection_vec[i_sat*rx_SatConst.no_satellites + i_gnss].refl_LL_vec[:, 0], color='red', s=1, transform=ccrs.PlateCarree())
         #        ax.scatter(refl_gps.refl_LL_vec[:, 1], refl_gps.refl_LL_vec[:, 0], color='red', s=1, transform=ccrs.PlateCarree())
-        
+
         # Plot reflection points
         ax.set_xlabel('Longitude')
         ax.set_ylabel('Latitude')
         gridlines              = ax.gridlines(draw_labels=True, linestyle='--', color='gray', alpha=0.7)
         gridlines.top_labels   = False  # Disable top labels
         gridlines.right_labels = False  # Disable right-side labels
-        
-        plt.title('Specular Reflection Points for GPS and LEO Satellite Over Time')
-        plt.savefig("Reflection_traces.png", dpi=300)
+
+        if title is None:
+            title_string = f'Specular Reflection Points for {tx_SatConst.satConfigName} constellation and {rx_SatConst.no_satellites} LEO satellites'
+        else:
+            title_string = title
+        plt.title(title_string)
+        save_path = os.path.join(Constants.output_folder_path, file_name)
+        plt.savefig(save_path, dpi=600)
 
     @staticmethod
-    def plot_coverage(coverage_obj, reflection_vec, bounding_box, file_name):
+    def plot_reflection_traces_total(rx_SatConst, tx_SatConstDict, reflection_dict, file_name="Reflection_traces_total.png", title=None):
+        '''
+        Plot the reflection traces for all GNSS constellations.
+        '''
+        def _color(gnss_const):
+            if gnss_const == 'GPS':
+                color = 'red'
+            elif gnss_const == 'GLONASS':
+                color = 'orange'
+            elif gnss_const == 'GALILEO':
+                color = 'blue'
+            elif gnss_const == 'BEIDOU':
+                color = 'green'
+            elif gnss_const == 'QZSS':
+                color = 'purple'
+            elif gnss_const == 'IRNSS':
+                color = 'pink'
+            else:
+                color = None
+            return color
+        
+        plt.figure(figsize=(12, 6))
+        ax = plt.axes(projection=ccrs.PlateCarree())
+        ax.add_feature(cfeature.COASTLINE)
+        ax.add_feature(cfeature.BORDERS, linestyle=':')
+        ax.set_global()
+
+        # Loop through the reflection vectors for each GNSS constellation
+        for gnss_key in tx_SatConstDict:
+            tx_sat_const       = tx_SatConstDict[gnss_key]
+            reflections_vector = reflection_dict[gnss_key]
+            col                = _color(gnss_key)
+            for i_sat in range(rx_SatConst.no_satellites):
+                for i_gnss in range(tx_sat_const.no_satellites):
+                    ax.scatter(reflections_vector[i_sat*tx_sat_const.no_satellites + i_gnss].refl_LL_vec[:, 1], reflections_vector[i_sat*tx_sat_const.no_satellites + i_gnss].refl_LL_vec[:, 0], color=col, s=1, transform=ccrs.PlateCarree())
+        #        ax.scatter(refl_gps.refl_LL_vec[:, 1], refl_gps.refl_LL_vec[:, 0], color='red', s=1, transform=ccrs.PlateCarree())
+
+        ax.set_xlabel('Longitude')
+        ax.set_ylabel('Latitude')
+        gridlines              = ax.gridlines(draw_labels=True, linestyle='--', color='gray', alpha=0.7)
+        gridlines.top_labels   = False  # Disable top labels
+        gridlines.right_labels = False  # Disable right-side labels
+
+        if title is None:
+            constellations = ', '.join(tx_SatConstDict.keys())
+            title_string = f'Specular Reflection Points for the constellations: {constellations} and {rx_SatConst.no_satellites} LEO satellites'
+        else:
+            title_string = title
+        plt.title(title_string)
+
+        # Add a legend
+        legend_labels = [f'{gnss_key}' for gnss_key in tx_SatConstDict.keys()]
+        legend_colors = [_color(gnss_key) for gnss_key in tx_SatConstDict.keys()]
+        handles       = [plt.Line2D([0], [0], marker='o', color='w', label=label, markerfacecolor=color, markersize=5) for label, color in zip(legend_labels, legend_colors)]
+        ax.legend(handles=handles, loc='upper right', fontsize=8, title="Constellations")
+
+        save_path = os.path.join(Constants.output_folder_path, file_name)
+        plt.savefig(save_path, dpi=600)
+
+    @staticmethod
+    def plot_coverage(coverage_obj, reflection_vec, bounding_box, file_name="Coverage1.png"):
         [min_lon, max_lon, min_lat, max_lat] = bounding_box
         grid_gdf = coverage_obj.grid_gdf
         # Initialize figure and axis with projection
@@ -81,4 +149,4 @@ class Plotting:
             intersecting_gdf.plot(ax=ax, edgecolor='red', facecolor='none', linestyle='-', label="Intersecting Rectangles")
         
         '''
-        plt.savefig("Coverage1.png", dpi = 300)
+        plt.savefig(file_name, dpi = 300)

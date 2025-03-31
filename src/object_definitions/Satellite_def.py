@@ -9,7 +9,7 @@ from object_definitions.ReadWriteSatData import ReadWriteSatData
 from skyfield.api      import load, wgs84
 
 class Satellite:
-    def __init__(self, satID, orbit_n=None, satName=None, tle_file_path=None, satNo_in_tle=0):
+    def __init__(self, satID, orbit_n=None, satName=None, tle_file_path=None, satNo_in_tle=0, verbose=False):
         """
         =========================================================================================================
         Satellite class:
@@ -38,12 +38,20 @@ class Satellite:
                 raise FileNotFoundError(f"TLE file not found: {tle_file_path}")
             if orbit_n is not None:
                 raise ValueError("Cannot initialize Satellite with both TLE file and Orbit_specification object")
-            print(f"Initializing Satellite with TLE file: {tle_file_path}")
+            if verbose == True:
+                print(f"Initializing Satellite with TLE file: {tle_file_path}")
             self.__initWithTLE(tle_file_path, satNo_in_tle, satName)
         else:
             # Initialize satellite with Orbit_specification object
-            print(f"Initializing Satellite with Orbit_specification object")
+            if verbose == True:
+                print(f"Initializing Satellite with Orbit_specification object")
             self.__initWithOrbit(satID, orbit_n, satName)
+
+        # Load 
+        file_path = os.path.join(Constants.skyfield_data, 'de421.bsp')
+        self.planets = load(file_path) # TODO move to constants
+        #earth   = planets['earth']
+        #sun     = planets['sun']
 
         self.sensors        = []
         self.battery        = []
@@ -165,6 +173,21 @@ class Satellite:
         self.positions_eci   = np.transpose(position)
         self.velocities_eci  = np.transpose(velocity)
 
+    def calculate_sunlight_time(self, times) -> np.ndarray:
+        """
+        =========================================================================
+        Calculate the time when the satellite is in sunlight.
+        =    times:      Time vector for the calculation of the sunlight time   =
+        =       - Skyfield timescale object (list)                              =
+        =                                                                       =
+        =    Return:     numpy array with sunlite True or False                 =
+        =========================================================================
+        """
+    
+        # Compute how long the satellite is in sunlight
+        sunlit = self.skf.at(times).is_sunlit(self.planets)
+        return sunlit
+
     def __initWithTLE(self, tle_file_path, satNo_in_tle, satName=None):
         """
         =========================================================================
@@ -174,7 +197,7 @@ class Satellite:
         sat_data_all = ReadWriteSatData.read_tle_data(tle_file_path)
         if sat_data_all is None:
             raise ValueError("Invalid TLE data")
-        
+
         if (len(sat_data_all) > 1 and satName is None):
             print("Warning: Multiple satellites found in TLE file. Using the first satellite data only.     \n    => If all satellites should be initialized, use the SatelliteConfiguration class")
 
@@ -243,3 +266,4 @@ class Satellite:
                 print("Warning: Orbit_specification epoch is not specified for satellite: ", self.satName, 
                       " To generate the skyfield satellite object, specify the epoch.")
                 
+

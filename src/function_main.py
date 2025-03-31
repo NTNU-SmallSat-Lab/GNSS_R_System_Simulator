@@ -34,7 +34,7 @@ def main(start_time_dt, step_size, sim_duration, orbits_input, gnss_tle_file_pat
     #############################################################################################################################
     Nsat        = len(orbits_input)                                                     # Number of satellites
     ts          = load.timescale()                                                      # This  start time is after both GPS and GALILEO TLE Epoch, so I will use this atm
-    duration    = int(sim_duration * Constants.Sep_per_hour)                            # Duration in seconds
+    duration    = int(sim_duration * Constants.Sec_per_hour)                            # Duration in seconds
     num_steps   = (duration) // step_size                                                 # derive no. of steps from duration and step size
     # Generate the time series starting at 3:00 PM on October 23, 2024
     times_1     = ts.utc(start_time_dt.year, start_time_dt.month, start_time_dt.day, start_time_dt.hour, start_time_dt.minute, range(0, num_steps * step_size, step_size))

@@ -14,7 +14,7 @@ class SatelliteConstellation:
                 But not both !
     =========================================================================================================
     """
-    def __init__(self, satArray=None, tle_file=None, satConfigName=None):
+    def __init__(self, satArray=None, tle_file=None, satConfigName=None, verbose=False):
         # Check if the TLE file is provided / Robustness checks
         if tle_file is not None and satArray is not None:
             raise ValueError("Cannot initialize SatelliteConfiguration with both TLE file and Satellite array")
@@ -23,12 +23,13 @@ class SatelliteConstellation:
         elif satArray is None and tle_file is not None:
             if os.path.exists(tle_file):
                 # Read the TLE data from the file
-                print(f"Initializing Satellite Configuration with TLE file: {tle_file}")
+                if verbose == True:
+                    print(f"Initializing Satellite Configuration with TLE file: {tle_file}")
                 satList  = rw.read_tle_data(tle_file)
                 satArray = []
                 satNo   = 0
                 for sat_data in satList:
-                    sat = Satellite(sat_data.satCatalogNumber, satName=sat_data.satName, tle_file_path=tle_file, satNo_in_tle=satNo)
+                    sat = Satellite(sat_data.satCatalogNumber, satName=sat_data.satName, tle_file_path=tle_file, satNo_in_tle=satNo, verbose=verbose)
                     satArray.append(sat)
                     satNo += 1
             else:

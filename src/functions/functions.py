@@ -81,10 +81,6 @@ def check_los_satellites(r1, r2, R_earth):
             return False  # No line of sight, obstructed by Earth
     return True  # LOS is clear
 
-
-
-
-
 def get_reflection_point_FF(satPos, gpsPos):
     # Convert positions to column vectors
     satCoord = np.array(satPos).reshape(-1, 1)
@@ -193,3 +189,4 @@ def get_reflection_point2D(satCoord1, GPSCoord1):
                 N = x * A + y * B
                 return Re * N, A, B
     return None, None, None
+
