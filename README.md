@@ -1,5 +1,5 @@
 ## GNSS-R System simulator
-This simulator simulates:
+This simulator is intended to simulate GNSS-R scenarios:
 - GNSS satellite constellation
 [GPS, GALILEO, GLONASS, BEIDOU]
 - GNSS-R satellite constellation

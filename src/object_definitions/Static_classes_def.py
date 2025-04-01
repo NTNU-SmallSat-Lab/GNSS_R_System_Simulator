@@ -2,17 +2,26 @@ import os
 import numpy           as np
 import cartopy.crs     as ccrs
 import cartopy.feature as cfeature
+import geopandas       as gpd
 
 import matplotlib
 matplotlib.use('TkAgg', force=True)
 from matplotlib                       import pyplot as plt
 from skyfield.api                     import load
 from object_definitions.Constants_def import Constants
+
 class Plotting:
     @staticmethod
-    def plot_reflection_traces_gnss_const(rx_SatConst, tx_SatConst, reflection_vec, file_name="Reflection_traces.png", title=None):
+    def plot_reflection_traces_gnss_const(rx_SatConst, tx_SatConst, reflection_vec, file_name="Reflection_traces.png", title=None) -> None:
         '''
         Plot the reflection traces for a given GNSS constellation.
+
+        INPUTS:
+            rx_SatConst:     Satellite constellation object for the receiver (LEO) satellites.
+            tx_SatConst:     Satellite constellation object for the transmitter (GNSS) satellites.
+            reflection_vec:  List of reflection vectors for the GNSS and GNSS-R (LEO) constellation.
+            file_name:       Name of the output file to save the plot (optional).
+            title:           Title of the plot (optional).
         '''
         plt.figure(figsize=(12, 6))
         ax = plt.axes(projection=ccrs.PlateCarree())
@@ -44,6 +53,13 @@ class Plotting:
     def plot_reflection_traces_total(rx_SatConst, tx_SatConstDict, reflection_dict, file_name="Reflection_traces_total.png", title=None):
         '''
         Plot the reflection traces for all GNSS constellations.
+
+        INPUTS:
+            rx_SatConst:     Satellite constellation object for the receiver (LEO) satellites.
+            tx_SatConstDict: Dictionary of satellite constellation objects for the transmitter (GNSS) satellites.
+            reflection_dict: Dictionary of reflection vectors for the GNSS and GNSS-R (LEO) constellation.
+            file_name:       Name of the output file to save the plot (optional).
+            title:           Title of the plot (optional).
         '''
         def _color(gnss_const):
             if gnss_const == 'GPS':
@@ -101,9 +117,18 @@ class Plotting:
         plt.savefig(save_path, dpi=600)
 
     @staticmethod
-    def plot_coverage(coverage_obj, reflection_vec, bounding_box, file_name="Coverage1.png"):
+    def plot_coverage_shapefile(coverage_obj, reflection_vec, bounding_box, file_name="Coverage1.png"):
+        '''
+        Plot the coverage area of the GNSS constellation and the reflection vectors.
+        
+        INPUTS:
+            coverage_obj:    Coverage object containing the grid and coverage information.
+            reflection_vec:  List of reflection vectors for the GNSS and GNSS-R (LEO) constellation.
+            bounding_box:    Bounding box coordinates for the plot (min_lon, max_lon, min_lat, max_lat).
+            file_name:       Name of the output file to save the plot (optional).
+        '''
         [min_lon, max_lon, min_lat, max_lat] = bounding_box
-        grid_gdf = coverage_obj.grid_gdf
+        grid_gdf                             = coverage_obj.grid_gdf
         # Initialize figure and axis with projection
         fig, ax = plt.subplots(figsize=(10, 10), subplot_kw={'projection': ccrs.PlateCarree()})
         ax.add_feature(cfeature.COASTLINE)
@@ -149,4 +174,109 @@ class Plotting:
             intersecting_gdf.plot(ax=ax, edgecolor='red', facecolor='none', linestyle='-', label="Intersecting Rectangles")
         
         '''
-        plt.savefig(file_name, dpi = 300)
+        file_path = os.path.join(Constants.output_folder_path, file_name)
+#        plt.title(f'Coverage Area with Reflection Vectors')
+        plt.savefig(file_path, dpi = 600)
+    @staticmethod
+    def plot_coverage_gridded_shapefile(coverage_obj, reflection_obj, file_name="Coverage2.png"):
+        '''
+        Plot the coverage area of the GNSS constellation and the reflection vectors using a gridded shapefile.
+        Matches the original code's visualization style.
+    
+        INPUTS:
+            coverage_obj:    Coverage object containing the grid and coverage information.
+            reflection_obj:  List of reflection vectors for the GNSS and GNSS-R (LEO) constellation.
+            bounding_box:    Bounding box for the plot region [min_lon, max_lon, min_lat, max_lat].
+            file_name:       Name of the output file to save the plot (optional).
+        '''
+        def _get_color(count): # TODO move to Coverage_def.py or plotting_def.py
+            if count == 1:
+                return 'red', 1  # Color for 1-time intersection
+            elif count > 1:
+                return 'blue', 0.5  # Color for more than 1-time intersection
+            else:
+                return 'none', 0  # If the cell isn't intersected at all
+
+        # Use the grid directly from the coverage object
+        grid_gdf = coverage_obj.grid_gdf
+
+        # Create intersection count dictionary
+        intersection_count = {}
+        min_length         = min(len(grid_gdf), len(coverage_obj.coverage_vector))
+
+        for i in range(min_length):
+            idx = grid_gdf.index[i]
+            intersection_count[idx] = len(coverage_obj.coverage_vector[i].times)
+
+        # Define color based on the count
+        plt.figure(figsize=(12, 6))
+        ax = plt.axes(projection=ccrs.PlateCarree())
+
+        # Add map features
+        ax.add_feature(cfeature.COASTLINE)
+        ax.add_feature(cfeature.BORDERS, linestyle=':')
+        ax.set_global()
+
+        # Set extent based on bounding box
+        ax.set_extent([coverage_obj.bounding_box[0], coverage_obj.bounding_box[1], coverage_obj.bounding_box[2], coverage_obj.bounding_box[3]])
+
+        # Plot the grid background
+        grid_gdf.plot(ax=ax, edgecolor='lightgray', facecolor='lightgray', 
+                         linestyle='-', alpha=0.5, label="Grid Background")
+
+        # First plot all cells with count=1 (red)
+        for i in range(min_length):
+            idx   = grid_gdf.index[i]
+            count = intersection_count[idx]
+            color, alpha_val = _get_color(count)
+
+            if color != 'none':  # If there's at least one intersection
+                coverage_obj.coverage_vector[i].shape.plot(
+                ax=ax, edgecolor='red', facecolor=color, alpha=alpha_val)
+
+        # Then plot cells with count>1 (blue) on top
+        for i in range(min_length):
+            idx              = grid_gdf.index[i]
+            count            = intersection_count[idx]
+            color, alpha_val = _get_color(count)
+            
+            if color == 'blue':  # Only plot blue cells (more than 1 intersection)
+                coverage_obj.coverage_vector[i].shape.plot(
+                ax=ax, edgecolor='blue', facecolor=color, alpha=alpha_val)
+
+        # Plot reflection lines
+        for i in range(len(reflection_obj)):
+            # Skip NaN values to avoid plotting issues
+            valid_mask = ~np.isnan(reflection_obj[i].refl_LL_vec).any(axis=1)
+            if np.any(valid_mask):
+                lon = reflection_obj[i].refl_LL_vec[valid_mask, 1]
+                lat = reflection_obj[i].refl_LL_vec[valid_mask, 0]
+                ax.plot(lon, lat, color='red', transform=ccrs.PlateCarree())
+
+        # Add labels and gridlines
+        ax.set_title('Coverage of grid cells by reflection lines')
+        ax.set_xlabel('Longitude')
+        ax.set_ylabel('Latitude')
+        
+        gl = ax.gridlines(draw_labels=True, linewidth=0.5, color='gray', alpha=0.5, linestyle='--')
+        gl.top_labels   = False
+        gl.right_labels = False
+        
+        ## Add legend
+        #from matplotlib.patches import Patch
+        #legend_elements = [
+        #    Patch(facecolor='red', edgecolor='red', alpha=0.3, label='1 intersection'),
+        #    Patch(facecolor='blue', edgecolor='blue', alpha=0.3, label='2+ intersections')
+        #]
+        #ax.legend(handles=legend_elements, loc='upper right')
+        
+        plt.tight_layout()
+
+        file_path = os.path.join(Constants.output_folder_path, file_name)
+        plt.savefig(file_path, dpi=600)
+
+        print(f"Coverage plot saved to {file_path}")
+
+        # Close the plot to free up memory
+        plt.close()
+        ###########################################################################################################################

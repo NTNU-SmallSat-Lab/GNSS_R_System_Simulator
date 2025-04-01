@@ -30,8 +30,8 @@ def compute_reflection(finalPositionGPS, finalPositionSat, ellipse, angle, times
     dot_product = np.einsum('ij,ij->j', finalPositionGPS, finalPositionSat)
     magnitude_a = np.linalg.norm(finalPositionGPS, axis=0)
     magnitude_b = np.linalg.norm(finalPositionSat, axis=0)
-    cos_theta = dot_product / (magnitude_a * magnitude_b)
-    theta = np.degrees(np.arccos(cos_theta))
+    cos_theta   = dot_product / (magnitude_a * magnitude_b)
+    theta       = np.degrees(np.arccos(cos_theta))
     # Loop through each satellite position to compute reflection points
     for i in range(finalPositionSat.shape[1]):
         has_los = check_los_satellites(finalPositionSat[:, i] / 1e3, finalPositionGPS[:, i] / 1e3, radius / 1e3)

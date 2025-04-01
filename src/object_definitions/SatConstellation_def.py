@@ -123,7 +123,4 @@ class SatelliteConstellation:
 # - get_satellite_by_id
 # - get_satellite_by_name
 
-# - propagate_constellation
-
 # - get_satellite_positions
-

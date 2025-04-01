@@ -62,7 +62,8 @@ def initialize():
                            'orbits':               orbits_input,
                            'bounding_box':         bounding_box,
                            'No_satellites':        len(orbits_input),
-                           'GNSS_constellations':  gnss_constellation}
+                           'GNSS_constellations':  gnss_constellation,
+                           'shapefile_path':       config['COVERAGE']['shapefile_path']}
 
     return config, simulation_settings
 
