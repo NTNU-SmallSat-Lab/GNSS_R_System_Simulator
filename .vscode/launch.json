@@ -2,10 +2,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python Debugger: test_main.py",
+            "name": "Python Debugger: run_sim.py",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/src/test_main.py",
+            "program": "${workspaceFolder}/src/run_simulation.py",
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": []
