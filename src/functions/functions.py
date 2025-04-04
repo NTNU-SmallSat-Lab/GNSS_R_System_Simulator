@@ -1,7 +1,9 @@
-import numpy as np
+import numpy    as np
 import pymap3d
-from pyproj import Transformer
-# Define the transformer for ECEF (EPSG:4978) to LLA (EPSG:4326)
+
+from pyproj                                  import Transformer
+from object_definitions.SatConstellation_def import SatelliteConstellation
+from object_definitions.Constants_def        import Constants
 
 '''
 def ecef_to_lla(x, y, z):
@@ -18,11 +20,9 @@ x, y, z = vec[0], vec[1], vec[2]
 lat, lon, alt = ecef_to_lla(x, y, z)
 print(f"Latitude: {lat}, Longitude: {lon}, Altitude: {alt}")
 '''
-
-import numpy as np
+#TODO clean up this file
 
 def compute_reflection(finalPositionGPS, finalPositionSat, ellipse, angle, times):
-    radius = 6378137  # Earth radius in meters
     # Preallocate outputs for efficiency
     theta_vec = np.full((len(finalPositionSat[0]), 3), np.nan)
     specular_point_vec = np.full((len(finalPositionSat[0]), 3), np.nan)
@@ -34,7 +34,7 @@ def compute_reflection(finalPositionGPS, finalPositionSat, ellipse, angle, times
     theta       = np.degrees(np.arccos(cos_theta))
     # Loop through each satellite position to compute reflection points
     for i in range(finalPositionSat.shape[1]):
-        has_los = check_los_satellites(finalPositionSat[:, i] / 1e3, finalPositionGPS[:, i] / 1e3, radius / 1e3)
+        has_los = check_los_satellites(finalPositionSat[:, i] / 1e3, finalPositionGPS[:, i] / 1e3, Constants.Radius_earth / 1e3)
         if theta[i] < angle and has_los:
             # Depending on 'ellipse' flag, call appropriate reflection calculation
             '''
@@ -129,35 +129,35 @@ def get_reflection_point_FF(satPos, gpsPos):
 
 def angle_between_vectors(v1, v2):
     # Calculate the angle between two vectors in degrees
-    dot_product = np.dot(v1, v2)
-    magnitude_a = np.linalg.norm(v1)
-    magnitude_b = np.linalg.norm(v2)
-    cos_theta = dot_product / (magnitude_a * magnitude_b)
+    dot_product   = np.dot(v1, v2)
+    magnitude_a   = np.linalg.norm(v1)
+    magnitude_b   = np.linalg.norm(v2)
+    cos_theta     = dot_product / (magnitude_a * magnitude_b)
     theta_radians = np.arccos(cos_theta)
     return np.degrees(theta_radians)
 
 def skew_matrix(v):
     # Returns the skew symmetric matrix of the vector v
-    return np.array([[0, -v[2], v[1]],
-                     [v[2], 0, -v[0]],
+    return np.array([[0,    -v[2], v[1]],
+                     [v[2],  0,   -v[0]],
                      [-v[1], v[0], 0]])
 
 def getRotationEcefToPlaneCoords(satCoord, GPSCoord):
     # Calculate the rotation matrix to transform from ECEF to plane coordinates
     plane = np.cross(satCoord.flatten(), GPSCoord.flatten())
     plane = plane / np.linalg.norm(plane)
-    z = np.array([0, 0, 1])
+    z     = np.array([0, 0, 1])
 
     vec = np.cross(plane, z)
-    s = np.linalg.norm(vec)
-    c = np.dot(plane, z)
+    s   = np.linalg.norm(vec)
+    c   = np.dot(plane, z)
 
-    vec2 = vec / np.linalg.norm(vec)
+    vec2  = vec / np.linalg.norm(vec)
     theta = np.arccos(np.dot(plane, z) / np.linalg.norm(plane))
-    c2 = np.cos(theta)
-    s2 = np.sin(theta)
+    c2    = np.cos(theta)
+    s2    = np.sin(theta)
 
-    Sv = skew_matrix(vec2)
+    Sv  = skew_matrix(vec2)
     Rot = np.eye(3) + s2 * Sv + Sv @ Sv * (1 - c2)
     return Rot
 
@@ -190,3 +190,59 @@ def get_reflection_point2D(satCoord1, GPSCoord1):
                 return Re * N, A, B
     return None, None, None
 
+## NOTE: CLEANED UP AFTER THIS POINT
+def load_gnss_constellation_dict(gnss_costl_configs):
+    '''
+    Load GNSS constellation configurations.
+
+    INPUT:
+        gnss_costl_configs: Dictionary containing GNSS constellation configurations
+                            read from the configuration file.
+    OUTPUT:
+        gnss_constl_dict: Dictionary containing GNSS constellation objects.
+    '''
+    gnss_constl_dict = {}
+    for name, tle_file_dict in gnss_costl_configs.items():
+        print(f"GNSS constellation: \"{name}\" loaded from: {tle_file_dict['tle_file']}.")
+        gnss_constl_dict[name] = SatelliteConstellation(
+            tle_file=tle_file_dict['tle_file'], 
+            satConfigName=name
+        )
+    return gnss_constl_dict
+
+def propagate_all_orbits(sat_const, gnss_constl_dict, start_time, duration_h, step_size): # TODO move to functions.py
+    '''
+    Propagate orbits for satellite constellation and GNSS constellations.
+    '''
+    duration = int(duration_h * Constants.Sec_per_hour)
+    # Propagate the satellite constellation (GNSS-R / LEO)
+    print(f"Propagating satellite constellation: \"{sat_const.satConfigName}\"")
+    sat_const.propagate_constellation(start_time, duration, step_size)
+
+    # Propagate all GNSS constellations
+    for name, gnss_const in gnss_constl_dict.items():
+        print(f"Propagating GNSS constellation: \"{name}\"")
+        gnss_const.propagate_constellation(start_time, duration, step_size)
+
+def color_gnss_const(gnss_const): # TODO move to functions_def.py
+    '''
+    Assign a color to the GNSS constellation based on its name.
+
+    INPUTS:
+        gnss_const: Name of the GNSS constellation (e.g., 'GPS', 'GLONASS', etc.).
+    '''
+    if gnss_const == 'GPS':
+            color = 'red'
+    elif gnss_const == 'GLONASS':
+        color = 'orange'
+    elif gnss_const == 'GALILEO':
+        color = 'blue'
+    elif gnss_const == 'BEIDOU':
+        color = 'green'
+    elif gnss_const == 'QZSS':
+        color = 'purple'
+    elif gnss_const == 'IRNSS':
+        color = 'pink'
+    else:
+        color = None
+    return color
