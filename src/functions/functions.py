@@ -24,7 +24,7 @@ print(f"Latitude: {lat}, Longitude: {lon}, Altitude: {alt}")
 
 def compute_reflection(finalPositionGPS, finalPositionSat, ellipse, angle, times):
     # Preallocate outputs for efficiency
-    theta_vec = np.full((len(finalPositionSat[0]), 3), np.nan)
+    theta_vec          = np.full((len(finalPositionSat[0]), 3), np.nan)
     specular_point_vec = np.full((len(finalPositionSat[0]), 3), np.nan)
     # Calculate the angles (theta) between GPS and satellite positions
     dot_product = np.einsum('ij,ij->j', finalPositionGPS, finalPositionSat)
@@ -45,8 +45,8 @@ def compute_reflection(finalPositionGPS, finalPositionSat, ellipse, angle, times
             '''
             if ellipse == 0:
                 reflection_point, theta_2_circ, theta_3_circ = get_reflection_point_FF(finalPositionGPS[:, i], finalPositionSat[:, i])
-                theta_vec[i, :] = [theta_2_circ, theta_3_circ, theta[i]]
-                specular_point_vec[i, :] = reflection_point
+                theta_vec[i, :]                              = [theta_2_circ, theta_3_circ, theta[i]]
+                specular_point_vec[i, :]                     = reflection_point
     #print(theta_vec)
     # Convert ECEF specular points to latitude and longitude
         #print(specular_point_vec[i, 0], specular_point_vec[i, 1], specular_point_vec[i, 2])
@@ -74,7 +74,7 @@ def check_los_satellites(r1, r2, R_earth):
 
     # Check if any point along the line passes through Earth
     for t in t_values:
-        r_t = r1 + t * d  # Parametric equation of the line
+        r_t                      = r1 + t * d                # Parametric equation of the line
         distance_to_earth_center = np.linalg.norm(r_t)
 
         if distance_to_earth_center < R_earth:
@@ -82,12 +82,13 @@ def check_los_satellites(r1, r2, R_earth):
     return True  # LOS is clear
 
 def get_reflection_point_FF(satPos, gpsPos):
+    '''
+    This function calculates the reflection point between a satellite and a GPS position
+    (Same method as in FreeFlyer).
+    '''
     # Convert positions to column vectors
     satCoord = np.array(satPos).reshape(-1, 1)
     GPSCoord = np.array(gpsPos).reshape(-1, 1)
-
-    # Radius of Earth in meters
-    R_earth = 6378.15 * 1e3
     
     # Check for line of sight (LOS)
     d = satCoord - GPSCoord
@@ -97,7 +98,7 @@ def get_reflection_point_FF(satPos, gpsPos):
     for t in t_values:
         r_t = GPSCoord + t * d
         distance_to_earth_center = np.linalg.norm(r_t)
-        if distance_to_earth_center < R_earth:
+        if distance_to_earth_center < Constants.Radius_earth:
             # No line of sight, obstructed by Earth
             return np.array([np.nan, np.nan, np.nan]), np.nan, np.nan
 
@@ -128,7 +129,9 @@ def get_reflection_point_FF(satPos, gpsPos):
     return ReflectionPoint, theta_degrees2, theta_degrees3
 
 def angle_between_vectors(v1, v2):
-    # Calculate the angle between two vectors in degrees
+    '''
+    Calculate the angle between two vectors in degrees
+    '''
     dot_product   = np.dot(v1, v2)
     magnitude_a   = np.linalg.norm(v1)
     magnitude_b   = np.linalg.norm(v2)
@@ -137,13 +140,17 @@ def angle_between_vectors(v1, v2):
     return np.degrees(theta_radians)
 
 def skew_matrix(v):
-    # Returns the skew symmetric matrix of the vector v
+    '''
+    Returns the skew symmetric matrix of the vector v
+    '''
     return np.array([[0,    -v[2], v[1]],
                      [v[2],  0,   -v[0]],
                      [-v[1], v[0], 0]])
 
 def getRotationEcefToPlaneCoords(satCoord, GPSCoord):
-    # Calculate the rotation matrix to transform from ECEF to plane coordinates
+    '''
+    Calculate the rotation matrix to transform from ECEF to plane coordinates
+    '''
     plane = np.cross(satCoord.flatten(), GPSCoord.flatten())
     plane = plane / np.linalg.norm(plane)
     z     = np.array([0, 0, 1])
@@ -163,10 +170,8 @@ def getRotationEcefToPlaneCoords(satCoord, GPSCoord):
 
 def get_reflection_point2D(satCoord1, GPSCoord1):
     # Calculates the reflection point in 2D
-    Re = 6371000  # Approximate Earth radius in meters
-
-    A = satCoord1[:2] / Re
-    B = GPSCoord1[:2] / Re
+    A = satCoord1[:2] / Constants.Radius_earth
+    B = GPSCoord1[:2] / Constants.Radius_earth
 
     u = np.dot(A, A)
     v = np.dot(A, B)
@@ -187,7 +192,7 @@ def get_reflection_point2D(satCoord1, GPSCoord1):
             y = (1 + x - 2 * u * x**2) / (1 + 2 * v * x)
             if y > 0:
                 N = x * A + y * B
-                return Re * N, A, B
+                return Constants.Radius_earth * N, A, B
     return None, None, None
 
 ## NOTE: CLEANED UP AFTER THIS POINT

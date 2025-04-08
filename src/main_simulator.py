@@ -77,7 +77,8 @@ def main_calculate_coverage_norwegian_coast(sim_settings):
     ####################################
     # 6. Calculate reflection points and coverage
     ####################################
-    coverage = Coverage(sat_const, gnss_constl_dict, sim_settings['shapefile_path'], sim_settings['bounding_box'], grid_size_deg=1)
+#    coverage = Coverage(sat_const, gnss_constl_dict, sim_settings['shapefile_path'], sim_settings['bounding_box'], grid_size_deg=1)
+    coverage = Coverage(sat_const, gnss_constl_dict, sim_settings['shapefile_path'], sim_settings['bounding_box'], grid_size_m=1000)
     coverage.calculate_reflection_points_and_coverage(times_datetime, verbose=True)
 
     ####################################
@@ -98,6 +99,31 @@ def main_calculate_coverage_norwegian_coast(sim_settings):
     # 10. Plot orbits
     ####################################
     Plotting.plot_orbits(sat_const)
+
+def Skagerrak_to_BarentsSea():
+    '''
+    This function calculates the probability of detecting a ship traveling from the
+      Skagerrak sea (Denmark/Norway) to the Barents Sea (Norway/Russia).
+    '''
+    # 1: Calculate ship trajectory from Skagerrak to Barents Sea
+    ship_trajectory = ShipTrajectory()
+
+    # 2: Propagate ship trajectory
+
+    # 3: Propagate Satellite constellations
+
+    # 4: Calculate the coverage of the satellite constellation over the ship trajectory
+
+    # 5: Calculate the probability of detecting the ship using the satellite constellation
+
+    # 6: Save the results
+
+    # 7: Go to step 2 and repeat until the ship reaches the Barents Sea
+
+    # 8: Plot the ship trajectory and coverage area
+
+    # 9: Save the results to a file
+    pass
 
 if  __name__ == "__main__":
     config, settings = initialize()

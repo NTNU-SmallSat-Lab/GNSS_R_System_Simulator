@@ -98,7 +98,11 @@ class Coverage:
                 continue
             # Safely unpack the point
             lat, lon = point            
-        ''' # TODO: Make sure self.reflection_dict is not empty before this loop
+        ''' 
+        if self.reflection_dict is None:
+            print("Reflection dictionary is empty. Coverage is zero.")
+            return
+        
         for gnss_name, gnss_value in self.gnss_constellation.items():
             refl_vector = self.reflection_dict[gnss_name] # Reflection vector for the current GNSS constellation
             for i in range(len(refl_vector)):
@@ -457,7 +461,30 @@ class Coverage:
         '''
         Function to create gridded shapefile
         '''
-        pass
+        # Check if grid_size_m is None, if so skip this function
+        if self.grid_size_m is None:
+            print("Grid size is not specified. Skipping the creation of the gridded shapefile.")
+            return
+        
+        # Get the bounds of the shapefile (minx, miny, maxx, maxy)
+        minx, miny, maxx, maxy = self.gdf.total_bounds
+
+        # Generate the gridded shapefile (list of polygons)
+        grid_polygons = []
+        for x0 in np.arange(minx, maxx, self.grid_size_m):
+            for y0 in np.arange(miny, maxy, self.grid_size_m):
+                x1 = x0 + self.grid_size_m # TODO: make sure the x0 and x1 etc are in cartesian coordinates (meters) and not in lat/lon (otherwise calculate grid size dependent on lat/lon)
+                y1 = y0 + self.grid_size_m
+                grid_polygons.append(Polygon([(x0, y0), (x1, y0), (x1, y1), (x0, y1)]))
+
+        # Create a GeoDataFrame for the gridded shapefile (fishnet)
+        grid_gdf = gpd.GeoDataFrame({'geometry': grid_polygons}, crs=self.gdf.crs)
+        # Filter out grid cells that do not intersect with the input shapefile
+        grid_gdf = grid_gdf[grid_gdf.intersects(self.gdf.unary_union)]
+
+        # Save the grid as a shapefile
+        grid_gdf.to_file(self.gridded_shapefile_path, driver='ESRI Shapefile')
+        self.grid_gdf = grid_gdf  # Store the grid GeoDataFrame in the class
 
     def __create_coverage_shapefile_deg(self):
         '''
