@@ -122,7 +122,7 @@ class Plotting:
         ax = fig.add_subplot(111, projection='3d')
     
         # Earth radius in km
-        earth_radius = Constants.R_earth * 1e-3
+        earth_radius = Constants.R_EARTH_MEAN * 1e-3
         
         # Plot the Earth as a sphere
         u = np.linspace(0, 2 * np.pi, 100)

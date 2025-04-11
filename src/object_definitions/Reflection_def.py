@@ -138,7 +138,7 @@ class Reflection:
         for t in t_values:
             r_t                      = GPSCoord + t * d
             distance_to_earth_center = np.linalg.norm(r_t)
-            if distance_to_earth_center < Constants.Radius_earth:
+            if distance_to_earth_center < Constants.RADIUS_EARTH_EQUAT:
                 # No line of sight, obstructed by Earth
                 return np.array([np.nan, np.nan, np.nan]), np.nan, np.nan
     
@@ -194,8 +194,8 @@ class Reflection:
     @staticmethod
     def get_reflection_point2D(satCoord1, GPSCoord1):
         # Calculates the reflection point in 2D
-        A = satCoord1[:2] / Constants.Radius_earth
-        B = GPSCoord1[:2] / Constants.Radius_earth
+        A = satCoord1[:2] / Constants.RADIUS_EARTH_EQUAT
+        B = GPSCoord1[:2] / Constants.RADIUS_EARTH_EQUAT
 
         u = np.dot(A, A)
         v = np.dot(A, B)
@@ -216,7 +216,7 @@ class Reflection:
                 y = (1 + x - 2 * u * x**2) / (1 + 2 * v * x)
                 if y > 0:
                     N = x * A + y * B
-                    return Constants.Radius_earth * N, A, B
+                    return Constants.RADIUS_EARTH_EQUAT * N, A, B
         return None, None, None
 
     @staticmethod
@@ -246,7 +246,7 @@ class Reflection:
             r_t = r1 + t * d  # Parametric equation of the line
             distance_to_earth_center = np.linalg.norm(r_t)
 
-            if distance_to_earth_center < Constants.Radius_earth:
+            if distance_to_earth_center < Constants.RADIUS_EARTH_EQUAT:
                 return False  # No line of sight, obstructed by Earth
         return True  # LOS is clear
 

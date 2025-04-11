@@ -34,7 +34,7 @@ def compute_reflection(finalPositionGPS, finalPositionSat, ellipse, angle, times
     theta       = np.degrees(np.arccos(cos_theta))
     # Loop through each satellite position to compute reflection points
     for i in range(finalPositionSat.shape[1]):
-        has_los = check_los_satellites(finalPositionSat[:, i] / 1e3, finalPositionGPS[:, i] / 1e3, Constants.Radius_earth / 1e3)
+        has_los = check_los_satellites(finalPositionSat[:, i] / 1e3, finalPositionGPS[:, i] / 1e3, Constants.RADIUS_EARTH_EQUAT / 1e3)
         if theta[i] < angle and has_los:
             # Depending on 'ellipse' flag, call appropriate reflection calculation
             '''
@@ -98,7 +98,7 @@ def get_reflection_point_FF(satPos, gpsPos):
     for t in t_values:
         r_t = GPSCoord + t * d
         distance_to_earth_center = np.linalg.norm(r_t)
-        if distance_to_earth_center < Constants.Radius_earth:
+        if distance_to_earth_center < Constants.RADIUS_EARTH_EQUAT:
             # No line of sight, obstructed by Earth
             return np.array([np.nan, np.nan, np.nan]), np.nan, np.nan
 
@@ -170,8 +170,8 @@ def getRotationEcefToPlaneCoords(satCoord, GPSCoord):
 
 def get_reflection_point2D(satCoord1, GPSCoord1):
     # Calculates the reflection point in 2D
-    A = satCoord1[:2] / Constants.Radius_earth
-    B = GPSCoord1[:2] / Constants.Radius_earth
+    A = satCoord1[:2] / Constants.RADIUS_EARTH_EQUAT
+    B = GPSCoord1[:2] / Constants.RADIUS_EARTH_EQUAT
 
     u = np.dot(A, A)
     v = np.dot(A, B)
@@ -192,7 +192,7 @@ def get_reflection_point2D(satCoord1, GPSCoord1):
             y = (1 + x - 2 * u * x**2) / (1 + 2 * v * x)
             if y > 0:
                 N = x * A + y * B
-                return Constants.Radius_earth * N, A, B
+                return Constants.RADIUS_EARTH_EQUAT * N, A, B
     return None, None, None
 
 ## NOTE: CLEANED UP AFTER THIS POINT
@@ -219,7 +219,7 @@ def propagate_all_orbits(sat_const, gnss_constl_dict, start_time, duration_h, st
     '''
     Propagate orbits for satellite constellation and GNSS constellations.
     '''
-    duration = int(duration_h * Constants.Sec_per_hour)
+    duration = int(duration_h * Constants.SEC_PER_HOUR)
     # Propagate the satellite constellation (GNSS-R / LEO)
     print(f"Propagating satellite constellation: \"{sat_const.satConfigName}\"")
     sat_const.propagate_constellation(start_time, duration, step_size)
@@ -251,3 +251,66 @@ def color_gnss_const(gnss_const): # TODO move to functions_def.py
     else:
         color = None
     return color
+
+def delta_lon_from_distance(lat, x_dist) -> float:
+    """
+    Calculate the change in longitude corresponding to a distance in meters.
+    This function assumes a elliptical Earth model.
+
+    INPUTS:
+      lat:         [float]                 Latitude in degrees
+      x_distance : [float]                 Distance in meters in the east-west direction
+
+    OUTPUT:
+      np.float:     [degrees]               delta_lon
+    """
+    # Convert latitude from degrees to radians
+    lat_rad = np.radians(lat)
+
+    # Calculate the radius of the Earth at the given latitude
+    e2 = 2*(Constants.EARTH_FLATTENING) - (Constants.EARTH_FLATTENING)**2  # Earth eccentricity squared
+    a  = Constants.RADIUS_EARTH_EQUAT                                      # Semi-major axis of the Earth in meters
+
+    # Calculate the radius of curvature in the prime vertical
+    N = a / np.sqrt(1 - e2 * np.sin(lat_rad)**2)
+
+    # Calculate changes in lon
+    delta_lon_rad = x_dist / (N * np.cos(lat_rad))
+
+    # Convert to degrees
+    delta_lon = np.degrees(delta_lon_rad)
+
+    return delta_lon
+
+def delta_lat_from_distance(lat, y_dist) -> float:
+    """
+    Calculate the change in latitude corresponding to a distance in meters.
+    This function assumes a elliptical Earth model.
+
+    INPUTS:
+      lat:         [float]                 Latitude in degrees
+      y_distance : [float]                 Distance in meters in the north-south direction
+
+    OUTPUT:
+      np.float:     [degrees]               delta_lat
+    """
+    # Convert latitude from degrees to radians
+    lat_rad = np.radians(lat)
+    
+    # Calculate the Earth's eccentricity squared
+    e2 = 2*Constants.EARTH_FLATTENING - Constants.EARTH_FLATTENING**2
+    
+    # Semi-major axis of the Earth (equatorial radius)
+    a = Constants.RADIUS_EARTH_EQUAT  # in meters
+    
+    # Calculate the meridional radius of curvature
+    # This is the radius of curvature along a north-south line
+    M = a * (1 - e2) / np.power(1 - e2 * np.sin(lat_rad)**2, 1.5)
+
+    # Calculate changes in latitude (radians)
+    delta_lat_rad = y_dist / M
+
+    # Convert to degrees
+    delta_lat = np.degrees(delta_lat_rad)
+
+    return delta_lat

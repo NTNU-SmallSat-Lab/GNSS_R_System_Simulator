@@ -226,7 +226,7 @@ class Satellite:
         self.satID          = sat_data.satCatalogNumber
         self.satName        = sat_data.satName
         self.classification = sat_data.classification
-        semi_major_axis     = (Constants.GM_earth_tt / (sat_data.meanMotion * 2 * pi / Constants.Sec_per_day) ** 2) ** (1/3)
+        semi_major_axis     = (Constants.GM_EARTH_TT / (sat_data.meanMotion * 2 * pi / Constants.SEC_PER_DAY) ** 2) ** (1/3)
         self.orbit_n        = Orbit_specification(sat_data.inclination, sat_data.eccentricity, sat_data.raan, sat_data.argOfPerigee, sat_data.meanAnomaly, semi_major_axis, sat_data.epoch)
         self.launch_year    = sat_data.launchYear # TODO as datetime object
         self.lauch_Noyear   = sat_data.lauchNoInYear

@@ -9,9 +9,9 @@ from datetime                          import timezone, datetime
 ## UPDATE THE SIMULATIOR VERSION HERE ##
 __version__ = "0.1.0"
 
-def initialize():
+def initialize(config_file_name='Configuration.ini'):
     config = cp.ConfigParser()
-    config.read('Configuration.ini')
+    config.read(config_file_name)
 
     start_time_dt          = datetime.strptime(config['SIMULATION SETTINGS']['startTime'], '%d.%m.%Y %H:%M:%S') # Start time: Year, Month, Day, Hour, Minute, Second
     start_time_dt          = start_time_dt.replace(tzinfo=timezone.utc)                                         # Add timezone information

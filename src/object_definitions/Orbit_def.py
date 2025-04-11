@@ -32,13 +32,13 @@ class Orbit_specification:
         self.a         = a                                                                            # Semi-major axis in m
         self.epoch_str = self.conv_DateTime_to_Epoch(epochTime) if epochTime else None                # Eopch in YYDDD.DDDDDDDD format (TLE format)
         self.dt_start  = epochTime if epochTime else None                                             # Start time in datetime format
-        self.n         = Constants.Sec_per_day / (2*np.pi*np.sqrt(self.a**3 / Constants.GM_earth_tt)) # Mean motion in rev/day
+        self.n         = Constants.SEC_PER_DAY / (2*np.pi*np.sqrt(self.a**3 / Constants.GM_EARTH_TT)) # Mean motion in rev/day
 
     def conv_DateTime_to_Epoch(self, dt_epoch):
         # Convert datetime to TLE epoch_str format YYDDD.DDDDDDDD
         tle_year                 = dt_epoch.year % 100
         start_of_year            = datetime(dt_epoch.year, 1, 1, tzinfo=timezone.utc)
-        days_since_start_of_year = (dt_epoch - start_of_year).total_seconds() / Constants.Sec_per_day + 1 # Add 1 day to accont for the first day of the year
+        days_since_start_of_year = (dt_epoch - start_of_year).total_seconds() / Constants.SEC_PER_DAY + 1 # Add 1 day to accont for the first day of the year
 
         # Format strings to TLE Epoch format
         epoch_year_str = f"{tle_year:02d}"
