@@ -41,6 +41,7 @@ def main_calculate_coverage_norwegian_coast(sim_settings):
                 for i in range(sim_settings['No_satellites'])]
     sat_const = SatelliteConstellation(satConfigName="LEO GNSS-R constellation", satArray=sat_array)
     sat_const.generate_constellation_TLE()
+    sat_const.set_simulation_duration(sim_settings['start_time'], sim_settings['sim_duration'], sim_settings['step_size'])
 
     ####################################
     # 3. Propagate orbits
@@ -49,30 +50,18 @@ def main_calculate_coverage_norwegian_coast(sim_settings):
                             sim_settings['sim_duration'], sim_settings['step_size'])
 
     ####################################
-    # 4. Setup time parameters (skyfield)
-    #################################### # TODO move this to a function (e.g. in propagate orbits)
-    duration    = int(sim_settings['sim_duration'] * Constants.Sec_per_hour)                            # Duration in seconds
-    num_steps   = (duration) // sim_settings['step_size']                                               # derive no. of steps from duration and step size
-    # Generate the time series (skyfield timescale object) for the simulation
-    # The time series is generated from the start time to the end time with a step size of sim_settings['step_size']
-    times_skyfield     = load.timescale().utc(                                                          # This  start time is after both GPS and GALILEO TLE Epoch, so I will use this atm
-        sim_settings['start_time'].year,
-        sim_settings['start_time'].month,
-        sim_settings['start_time'].day,
-        sim_settings['start_time'].hour,
-        sim_settings['start_time'].minute,
-        range(0, num_steps * sim_settings['step_size'],sim_settings['step_size'])
-    )
-    # Convert the skyfield timescale to a list of UTC datetime objects (one datetime object for each time step)
-    times_datetime = [time.utc_datetime() for time in times_skyfield]
+    # 4. Calculate sunlight time
+    ####################################
+    for sat_idx in range(sat_const.no_satellites):
+        sat_const.satellites[sat_idx].calculate_sunlight_time()
+        print(f"Not sunlit count for satellite {sat_idx}: ",     np.sum(sat_const.satellites[sat_idx].sunlit_count == False))
+        print(f"Sunlit count for satellite {sat_idx}: ",         np.sum(sat_const.satellites[sat_idx].sunlit_count == True))
+        print(f"Sunlit percentage for satellite {sat_idx}: ",    sat_const.satellites[sat_idx].sunlit_fraction * 100)
 
     ####################################
-    # 5. Calculate sunlight time
-    #################################### # TODO improve this also
-    satellite_idx = 0
-    sunlit = sat_const.satellites[satellite_idx].calculate_sunlight_time(times_skyfield)
-    print(f"Not_sunlit count for satellite {satellite_idx}: ", np.sum(sunlit == False))
-    print(f"Sunlit count for satellite {satellite_idx}: ",     np.sum(sunlit == True))
+    # 5. Setup time parameters (skyfield)
+    ####################################                                                               # TODO move this to a function (e.g. in propagate orbits)
+    times_datetime = [time.utc_datetime() for time in sat_const.times_skyfield]                        # TODO remove this line, it is not needed
 
     ####################################
     # 6. Calculate reflection points and coverage
