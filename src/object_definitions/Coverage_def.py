@@ -466,7 +466,7 @@ class Coverage:
         # Close the plot to free up memory
         plt.close()
 
-    def _create_coverage_shapefile_m(self): # TODO: CHECK THIS FUNCTION
+    def _create_coverage_shapefile_m(self):
         '''
         Function to create gridded shapefile with equal-sized cells in meters.
         Each cell will have sides of approximately grid_size_m meters,

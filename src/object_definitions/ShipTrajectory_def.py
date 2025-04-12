@@ -2,19 +2,20 @@ import os, json
 import warnings
 warnings.filterwarnings('ignore', 'Geometry is in a geographic CRS', UserWarning)
 import pickle
-
-import numpy             as np
-import pandas            as pd
-import geopandas         as gpd
-import matplotlib.pyplot as plt
-import networkx          as nx
-import shapely.ops       as ops
 import random
+
+import numpy               as np
+import pandas              as pd
+import geopandas           as gpd
+import matplotlib.pyplot   as plt
+import networkx            as nx
+import shapely.ops         as ops
+import functions.functions as fn
 
 from tqdm              import tqdm
 from datetime          import datetime, timedelta
 from math              import radians, cos, sin, asin, sqrt, atan2, degrees
-from shapely.geometry  import Point, LineString, Polygon
+from shapely.geometry  import Point, LineString
 from scipy.spatial     import Delaunay
 
 from object_definitions.Constants_def import Constants
@@ -47,27 +48,26 @@ class ShipTrajectory:
         shapefile_path         (dict):     Dictionary to store shapefile paths for different trajectory types.
     """
 
-    def __init__(self,                ship_id,                 ship_speed_knot, start_position,           start_time,                       end_position, 
-                 interval_minutes=10, grid_resolution_deg=2.0, delta_deg=6.0,   fast_path_gen_method=True, mesh_connection_radius=2_000_000, water_buffer_deg=0.05, 
+    def __init__(self,                ship_id,                ship_speed_knot,           start_position,            start_time,                      end_position, 
+                 interval_minutes=10, grid_resolution_km=100, delta_boudingBox_km=500, fast_path_gen_method=True, mesh_connection_radius_km=2_000, water_buffer_km=22.2, 
                  trajectory_type=["points", "save_class_to_file"], save_graph=False)                                         -> None:
         self.ship_id                = ship_id                         # Unique identifier for the ship
-        self.start_time             = start_time                      # Start time of the ship journey
-        self.end_time               = None                            # End time of the ship journey Will be set after route planning
-        self.start_position         = start_position                  # Ship start positon (latitude, longitude), if the start position is on land, the nearest water point will be used
-        self.end_position           = end_position                    # Ship end position  (latitude, longitude), if the end position is on land, the nearest water point will be used
         self.ship_speed             = ship_speed_knot * 0.51444       # Ship speed in knots (will be converted to to [m/s])
-        self.coastline_path         = Constants.earth_coastline_path  # Path to the coastline shapefile, used for land avoidance [Path defined in Constants_def.py]
-        self.water_buffer           = water_buffer_deg                # degrees (~5km safety distance from shore)
-        self.fast_method            = fast_path_gen_method            # Flag [boolean] to indicate if simplified path generation is used (faster computation / longer, more simple ship route)
-        self.mesh_connection_radius = mesh_connection_radius          # Connection radius for grid points (default: 2'000 km)
+        self.start_position         = start_position                  # Ship start positon (latitude, longitude), if the start position is on land, the nearest water point will be used
+        self.start_time             = start_time                      # Start time of the ship journey
+        self.end_position           = end_position                    # Ship end position  (latitude, longitude), if the end position is on land, the nearest water point will be used
         self.interval_minutes       = interval_minutes                # Time interval in minutes for trajectory generation
-        self.grid_resolution        = grid_resolution_deg             # Grid resolution in degrees for navigation mesh
-        self.delta_deg              = delta_deg                       # Additional margin in degrees for the bounding box
+        self.grid_resolution        = grid_resolution_km * 1e3        # Grid resolution in km for navigation mesh (default: 100 km) [this has a BIG IMPACT ON THE PERFORMANCE of the path generation]
+        self.delta_m                = delta_boudingBox_km * 1e3       # Additional margin in km for the bounding box (default: 1000 km | kept big to avoid being 'trapped' in a bay / corner / fjord)
+        self.fast_method            = fast_path_gen_method            # Flag [boolean] to indicate if simplified path generation is used (faster computation / longer, more simple ship route)
+        self.mesh_connection_radius = mesh_connection_radius_km * 1e3 # Connection radius for grid points in km (default: 2'000 km)
+        self.water_buffer           = water_buffer_km * 1e3           # Safety distance from shore in meters (default: 22.2 km = 12 nm (Territorial Sea))
 
         self.ocean_polygons         = None                            # Loaded coastline data (geopandas object), will be loaded from shapefile        
+        self.end_time               = None                            # End time of the ship journey Will be set after route planning
 
         # Load coastline data if provided
-        if self.coastline_path and os.path.exists(self.coastline_path):
+        if Constants.earth_coastline_path and os.path.exists(Constants.earth_coastline_path):
             self.load_coastline_data()
         else:
             warnings.warn("No valid coastline data provided. Update path in Constants_def.py [earth_coastline_path]")
@@ -129,10 +129,10 @@ class ShipTrajectory:
                 self.route_distance         = metadata['route_distance_m']
                 self.fast_method            = metadata['fast_method']
                 self.mesh_connection_radius = metadata['mesh_connection_radius']
-                self.water_buffer           = metadata['water_buffer_deg']
+                self.water_buffer           = metadata['water_buffer']
                 self.waypoints              = metadata['waypoints']
                 self.grid_resolution        = metadata['grid_resolution']
-                self.delta_deg              = metadata['delta_deg']
+                self.delta_m                = metadata['delta_m']
             print(f"Loaded trajectory data for ship {self.ship_id} from file")
 
         except Exception as e:
@@ -146,7 +146,7 @@ class ShipTrajectory:
             coastline_path (str): Path to the coastline shapefile
         """
         try:
-            ocean_data = gpd.read_file(self.coastline_path)
+            ocean_data = gpd.read_file(Constants.earth_coastline_path)
             print(f"Loaded coastline data with {len(ocean_data)} features")
 
             # If there are multiple polygons, merge them into a single geometry
@@ -332,14 +332,14 @@ class ShipTrajectory:
             norm_x = vector_x / length
             norm_y = vector_y / length
             
-            # Move 5km (~0.05 degrees) beyond the coastline
+            # Move "self.water_buffer" beyond the coastline
             safe_x = nearest_boundary.x + norm_x * self.water_buffer
             safe_y = nearest_boundary.y + norm_y * self.water_buffer
-            
+
             return (safe_y, safe_x)  # Back to (lat, lon) order
-        
+
         return (point[0] + self.water_buffer, point[1])  # Fallback to original point (this should not happen)
-    
+
     def plan_route(self, save_graph=False)                                         -> None:
         """
         Plan a route that avoids land.
@@ -373,10 +373,15 @@ class ShipTrajectory:
         print("Planning route to avoid land")
 
         # Define the bounding box with margin
-        min_lat = min(start_safe[0], end_safe[0]) - self.delta_deg
-        max_lat = max(start_safe[0], end_safe[0]) + self.delta_deg
-        min_lon = min(start_safe[1], end_safe[1]) - self.delta_deg
-        max_lon = max(start_safe[1], end_safe[1]) + self.delta_deg
+        min_lat_noBuffer = min(start_safe[0],  end_safe[0])
+        max_lat_noBuffer = max(start_safe[0],  end_safe[0])
+        min_lon_noBuffer = min(start_safe[1],  end_safe[1])
+        max_lon_noBuffer = max(start_safe[1],  end_safe[1])
+
+        min_lat = min_lat_noBuffer - fn.delta_lat_from_distance(min_lat_noBuffer, self.delta_m)
+        max_lat = max_lat_noBuffer + fn.delta_lat_from_distance(max_lat_noBuffer, self.delta_m)
+        min_lon = min_lon_noBuffer - fn.delta_lon_from_distance(max_lat_noBuffer, self.delta_m) # Use max latitude for delta_lon because it results in a bigger delta_lon
+        max_lon = max_lon_noBuffer + fn.delta_lon_from_distance(max_lat_noBuffer, self.delta_m) # Use max latitude for delta_lon because it results in a bigger delta_lon
 
         # Create initial navigation graph with adaptive mesh
         G = nx.Graph()
@@ -410,6 +415,12 @@ class ShipTrajectory:
         # ax.set_ylabel("Latitude")
         # plt.show()
         # fig.savefig(os.path.join(Constants.autogen_ship_shapefiles, f'{self.ship_id}_graph.png'), dpi=300, bbox_inches='tight')
+        # # Save the figure as a pickle file for later use
+        # with open(os.path.join(Constants.autogen_ship_shapefiles, f'{self.ship_id}_navGraphFig.pickle'), 'wb') as f:
+        #     pickle.dump(fig, f)
+        # # Save the graph as a pickle file for later use
+        # with open(os.path.join(Constants.autogen_ship_shapefiles, f'{self.ship_id}_graph.pickle'), 'wb') as f:
+        #     pickle.dump(G, f)
 
         # Find the shortest path
         try:
@@ -446,16 +457,25 @@ class ShipTrajectory:
         Create a grid of points and return those in water.
         """
         valid_points = []
+        print(f"Creating navigation mesh with resolution of {self.grid_resolution * 1e-3} km")
 
-        # Regular grid
-        lat_points = np.arange(min_lat, max_lat, self.grid_resolution)
-        lon_points = np.arange(min_lon, max_lon, self.grid_resolution)
+        # Loop over latitude bands with adaptive longitude spacing
+        current_lat = min_lat
+        while current_lat <= max_lat:
+            # Calculate the longitude increment based on current latitude
+            lon_increment = fn.delta_lon_from_distance(current_lat, self.grid_resolution)
 
-        # Add points that are in water
-        for lat in tqdm(lat_points, desc="Creating grid points"):
-            for lon in lon_points:
-                if self.is_point_in_ocean((lat, lon)):
-                    valid_points.append((lat, lon))
+            # Create points along this latitude band
+            current_lon = min_lon
+            while current_lon <= max_lon:
+                if self.is_point_in_ocean((current_lat, current_lon)):
+                    valid_points.append((current_lat, current_lon))
+
+                current_lon += lon_increment
+
+            # Move to next latitude band
+            lat_increment = fn.delta_lat_from_distance(current_lat, self.grid_resolution)
+            current_lat  += lat_increment
 
         print(f"Created navigation mesh with {len(valid_points)} valid water points")
         return valid_points
@@ -498,10 +518,10 @@ class ShipTrajectory:
 
             # Get positions
             start_comp_points = [G.nodes[n]["pos"] for n in start_comp_nodes]
-            end_comp_points = [G.nodes[n]["pos"] for n in end_comp_nodes]
+            end_comp_points   = [G.nodes[n]["pos"] for n in end_comp_nodes]
 
             # Combine points for triangulation
-            all_points = start_comp_points + end_comp_points
+            all_points       = start_comp_points + end_comp_points
             all_points_array = np.array(all_points)
 
             # Create Delaunay triangulation
@@ -578,7 +598,7 @@ class ShipTrajectory:
                         point_id = f"{point[0]:.4f}_{point[1]:.4f}"
                         if point_id != mid_id:
                             mid_dist = self._calculate_havresin_distance(midpoint, point)
-                            if mid_dist < self.grid_resolution * 3 and not self.intersects_land(midpoint, point):
+                            if mid_dist < self.grid_resolution and not self.intersects_land(midpoint, point):
                                 G.add_edge(mid_id, point_id, weight=mid_dist)
 
         except Exception as e:
@@ -625,7 +645,7 @@ class ShipTrajectory:
                     G.add_edge(point_id, "end", weight=dist_to_end)
                     end_connections += 1
 
-        print(f"Connected start to {start_connections} points and end to {end_connections} points")
+            print(f"Connected start to {start_connections} points and end to {end_connections} points")
 
         # If start or end has no connections, try harder with closest points
         if start_connections == 0:
@@ -635,7 +655,7 @@ class ShipTrajectory:
                     dist     = self._calculate_havresin_distance(start_pos, point)
                     point_id = f"{point[0]:.4f}_{point[1]:.4f}"
                     G.add_edge("start", point_id, weight=dist)
-                    print(f"Forced connection from start to point at distance {dist:.2f} km")
+                    print(f"Added edge from start to a point at distance {1e-3*dist:.2f} km")
                     start_connections += 1
                     if start_connections >= 3:  # Get at least 3 connections
                         break
@@ -647,7 +667,7 @@ class ShipTrajectory:
                     dist     = self._calculate_havresin_distance(end_pos, point)
                     point_id = f"{point[0]:.4f}_{point[1]:.4f}"
                     G.add_edge(point_id, "end", weight=dist)
-                    print(f"Forced connection from end to point at distance {dist:.2f} km")
+                    print(f"Added edge from end to point at distance {1e-3*dist:.2f} km")
                     end_connections += 1
                     if end_connections >= 3:  # Get at least 3 connections
                         break
@@ -1052,10 +1072,10 @@ class ShipTrajectory:
             'time_interval_minutes':  self.interval_minutes,
             'fast_method':            self.fast_method,
             'mesh_connection_radius': self.mesh_connection_radius,
-            'water_buffer_deg':       self.water_buffer,
+            'water_buffer':           self.water_buffer,
             'waypoints':              self.waypoints,
             'grid_resolution':        self.grid_resolution,
-            'delta_deg':              self.delta_deg,
+            'delta_m':                self.delta_m,
             'generated_on':           datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
         }
@@ -1073,7 +1093,7 @@ class ShipTrajectory:
         print(f"Created metadata JSON at {metadata_output_path}")
         self.shapefile_path['time_series_metadata'] = metadata_output_path
 
-    def plot_route(self, show_trajectory=True, show_waypoints=True, title=None)                 -> None:
+    def plot_route(self, show_trajectory=True, show_waypoints=True, title=None, show=False)       -> None:
         """
         Plot the ship's route on a map.
 
@@ -1145,7 +1165,8 @@ class ShipTrajectory:
             print(f"Route plot saved to {save_path}")
 
         # Show plot
-        plt.show()
+        if show==True:
+            plt.show()
 
 # Example usage:
 if __name__ == "__main__":

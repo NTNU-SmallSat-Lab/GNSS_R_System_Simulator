@@ -126,6 +126,10 @@ class Reflection:
         self.power         = power                              # Power of the reflection   []
 
     def get_reflection_point_FF(self, satPos, gpsPos):
+        '''
+        This function calculates the reflection point between a satellite and a GNSS satellite position
+        (Same method as in FreeFlyer).
+        '''
         # Convert positions to column vectors
         satCoord = np.array(satPos).reshape(-1, 1)
         GPSCoord = np.array(gpsPos).reshape(-1, 1)
@@ -133,7 +137,7 @@ class Reflection:
         # Check for line of sight (LOS)
         d        = satCoord - GPSCoord
         t_values = np.linspace(0, 1, 200)  # Sample points along the line
-    
+
         # Verify LOS by checking if any point along the line passes through Earth
         for t in t_values:
             r_t                      = GPSCoord + t * d

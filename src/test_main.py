@@ -4,7 +4,6 @@ from object_definitions.Reflection_def        import Reflection
 from object_definitions.Orbit_def             import Orbit_specification
 from object_definitions.Constants_def         import Constants
 from object_definitions.Satellite_def         import Satellite
-from object_definitions.GnssConstellation_def import GNSSConstellation
 from object_definitions.ReadWriteSatData      import ReadWriteSatData
 from object_definitions.SatConstellation_def  import SatelliteConstellation
 from FF_sockets.FF_TLE_to_Eph                 import FF_TLE_to_Eph
@@ -222,16 +221,7 @@ def testFreeFlyerConnection() -> bool:
     if not (eph_file_path2 == os.path.join(Constants.tle_eph_folder_path, f"ephemeris_satID_{sat_1.satID}.e")):
         passed = 0
     return passed
-def testGNSSConstellation()   -> bool:
-    passed = 1
-    gps_constellation = GNSSConstellation('GPS')
-    if not (isinstance(gps_constellation, GNSSConstellation) and gps_constellation.constellation_name == 'GPS'):
-        passed = 0
 
-    glonass_constellation = GNSSConstellation('GLONASS', datetime(2021, 10, 31, 5, 5, 57, tzinfo=timezone.utc))
-    if not (isinstance(glonass_constellation, GNSSConstellation) and glonass_constellation.constellation_name == 'GLONASS' and glonass_constellation.epoch == datetime(2021, 10, 31, 5, 5, 57, tzinfo=timezone.utc)):
-        passed = 0
-    return passed
 def testSatConstelation()     -> bool:
     passed = 1
     # Initialize with an array of Satellite objects

@@ -53,8 +53,8 @@ def main_calculate_coverage_norwegian_coast(sim_settings):
     ####################################
     # 4. Setup time parameters (skyfield)
     #################################### # TODO move this to a function (e.g. in propagate orbits)
-    duration    = int(sim_settings['sim_duration'] * Constants.SEC_PER_HOUR)                            # Duration in seconds
-    num_steps   = (duration) // sim_settings['step_size']                                               # derive no. of steps from duration and step size
+    duration  = int(sim_settings['sim_duration'] * Constants.SEC_PER_HOUR)                            # Duration in seconds
+    num_steps = (duration) // sim_settings['step_size']                                               # derive no. of steps from duration and step size
     # Generate the time series (skyfield timescale object) for the simulation
     # The time series is generated from the start time to the end time with a step size of sim_settings['step_size']
     times_skyfield     = load.timescale().utc(                                                          # This  start time is after both GPS and GALILEO TLE Epoch, so I will use this atm
@@ -126,8 +126,7 @@ def Skagerrak_to_BarentsSea(settings):
         start_time           = settings['start_time'], # Start time (UTC)
         end_position         = Murmansk,               # End position (latitude, longitude)
         interval_minutes     = 10,                     # Time interval in minutes between each position
-        grid_resolution_deg  = 2.0,                    # Grid resolution in degrees latitude/longitude
-        water_buffer_deg     = 2.0,                    # Min. distance from shore in degrees latitude/longitude
+        grid_resolution_km   = 150,                    # Grid resolution in degrees latitude/longitude
         fast_path_gen_method = False                   # Use fast path generation method (True) or slow method which is more accurate (False)
     )
     ship.plot_route()
@@ -137,14 +136,14 @@ def Skagerrak_to_BarentsSea(settings):
 
     # 3. Create satellite constellation
     sat_array = [Satellite(i, orbit_n=settings['orbits'][i]) 
-                for i in range(settings['No_satellites'])]
+                           for i in range(settings['No_satellites'])]
     sat_const = SatelliteConstellation(satConfigName="LEO GNSS-R constellation", satArray=sat_array)
     sat_const.generate_constellation_TLE()
 
     # 4. Propagate orbits
     fn.propagate_all_orbits(sat_const, gnss_constl_dict, settings['start_time'], 
                             settings['sim_duration'], settings['step_size'])
-    
+
     ####################################
     # 4. Setup time parameters (skyfield)
     #################################### # TODO move this to a function (e.g. in propagate orbits)
@@ -218,4 +217,3 @@ if  __name__ == "__main__":
     #main_calculate_coverage_norwegian_coast(settings)
     config, settings = initialize('Configuration_ship.ini')
     Skagerrak_to_BarentsSea(settings)
- 
