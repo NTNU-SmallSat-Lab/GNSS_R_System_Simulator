@@ -122,42 +122,26 @@ def Skagerrak_to_BarentsSea(settings):
                            for i in range(settings['No_satellites'])]
     sat_const = SatelliteConstellation(satConfigName="LEO GNSS-R constellation", satArray=sat_array)
     sat_const.generate_constellation_TLE()
+    sat_const.set_simulation_duration(settings['start_time'], settings['sim_duration'], settings['step_size'])
 
     # 4. Propagate orbits
     fn.propagate_all_orbits(sat_const, gnss_constl_dict, settings['start_time'], 
                             settings['sim_duration'], settings['step_size'])
 
     ####################################
-    # 4. Setup time parameters (skyfield)
-    #################################### # TODO move this to a function (e.g. in propagate orbits)
-    duration    = int(settings['sim_duration'] * Constants.SEC_PER_HOUR)                            # Duration in seconds
-    num_steps   = (duration) // settings['step_size']                                               # derive no. of steps from duration and step size
-    # Generate the time series (skyfield timescale object) for the simulation
-    # The time series is generated from the start time to the end time with a step size of sim_settings['step_size']
-    times_skyfield     = load.timescale().utc(                                                          # This  start time is after both GPS and GALILEO TLE Epoch, so I will use this atm
-        settings['start_time'].year,
-        settings['start_time'].month,
-        settings['start_time'].day,
-        settings['start_time'].hour,
-        settings['start_time'].minute,
-        range(0, num_steps * settings['step_size'],settings['step_size'])
-    )
-    # Convert the skyfield timescale to a list of UTC datetime objects (one datetime object for each time step)
-    times_datetime = [time.utc_datetime() for time in times_skyfield]
-
-    ####################################
     # 5. Calculate sunlight time
     #################################### # TODO improve this also
-    satellite_idx = 0
-    sunlit        = sat_const.satellites[satellite_idx].calculate_sunlight_time(times_skyfield)
-    print(f"Not_sunlit count for satellite {satellite_idx}: ", np.sum(sunlit == False))
-    print(f"Sunlit count for satellite {satellite_idx}: ",     np.sum(sunlit == True))
+    for sat_idx in range(sat_const.no_satellites):
+        sat_const.satellites[sat_idx].calculate_sunlight_time()
+        print(f"Not sunlit count for satellite {sat_idx}: ",     np.sum(sat_const.satellites[sat_idx].sunlit_count == False))
+        print(f"Sunlit count for satellite {sat_idx}: ",         np.sum(sat_const.satellites[sat_idx].sunlit_count == True))
+        print(f"Sunlit percentage for satellite {sat_idx}: ",    sat_const.satellites[sat_idx].sunlit_fraction * 100)
 
     ####################################
     # 6. Calculate reflection points and coverage
     ####################################
     coverage = Coverage(sat_const, gnss_constl_dict, settings['shapefile_path'], settings['bounding_box'], grid_size_m=30_000)
-    coverage.calculate_reflection_points_and_coverage(times_datetime, verbose=True)
+    coverage.calculate_reflection_points_and_coverage(verbose=True)
 
     ####################################
     # 7. Plot reflection points
@@ -196,7 +180,7 @@ def Skagerrak_to_BarentsSea(settings):
     pass
 
 if  __name__ == "__main__":
-    config, settings = initialize('Configuration_norwCoast.ini')
-    main_calculate_coverage_norwegian_coast(settings)
-    #config, settings = initialize('Configuration_ship.ini')
-    #Skagerrak_to_BarentsSea(settings)
+    #config, settings = initialize('Configuration_norwCoast.ini')
+    #main_calculate_coverage_norwegian_coast(settings)
+    config, settings = initialize('Configuration_ship.ini')
+    Skagerrak_to_BarentsSea(settings)

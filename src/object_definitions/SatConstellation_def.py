@@ -67,7 +67,7 @@ class SatelliteConstellation:
             True if the simulation duration is set successfully, False otherwise
         """
         if isinstance(startTime, (datetime)) and isinstance(duration, (int, float)) and isinstance(stepSize, (int)):
-            self.duration_sec = int(duration * Constants.Sec_per_hour)               # Duration in seconds
+            self.duration_sec = int(duration * Constants.SEC_PER_HOUR)               # Duration in seconds
             num_steps         = (self.duration_sec) // stepSize                      # derive no. of steps from duration and step size
             self.times_skyfield = load.timescale().utc(                          # This  start time is after both GPS and GALILEO TLE Epoch, so I will use this atm
                 startTime.year,
