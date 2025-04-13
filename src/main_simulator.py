@@ -37,7 +37,7 @@ def main_calculate_coverage_norwegian_coast(sim_settings):
     ####################################
     # 2. Create satellite constellation
     ####################################
-    sat_array = [Satellite(i, orbit_n=sim_settings['orbits'][i]) 
+    sat_array = [Satellite(i, orbit_n=sim_settings['orbits'][i])
                 for i in range(sim_settings['No_satellites'])]
     sat_const = SatelliteConstellation(satConfigName="LEO GNSS-R constellation", satArray=sat_array)
     sat_const.generate_constellation_TLE()
@@ -59,18 +59,13 @@ def main_calculate_coverage_norwegian_coast(sim_settings):
         print(f"Sunlit percentage for satellite {sat_idx}: ",    sat_const.satellites[sat_idx].sunlit_fraction * 100)
 
     ####################################
-    # 5. Setup time parameters (skyfield)
-    ####################################                                                               # TODO move this to a function (e.g. in propagate orbits)
-    times_datetime = [time.utc_datetime() for time in sat_const.times_skyfield]                        # TODO remove this line, it is not needed
-
-    ####################################
-    # 6. Calculate reflection points and coverage
+    # 5. Calculate reflection points and coverage
     ####################################
     coverage = Coverage(sat_const, gnss_constl_dict, sim_settings['shapefile_path'], sim_settings['bounding_box'], grid_size_deg=1)
-    coverage.calculate_reflection_points_and_coverage(times_datetime, verbose=True)
+    coverage.calculate_reflection_points_and_coverage(verbose=True)
 
     ####################################
-    # 7. Plot reflection points
+    # 6. Plot reflection points
     ####################################
     coverage.plot_reflection_points()
     coverage.plot_coverage_shapefile(gnss_constellation="GPS", file_name="Coverage.png")
@@ -79,12 +74,12 @@ def main_calculate_coverage_norwegian_coast(sim_settings):
     coverage.plot_coverage_gridded_shapefile(file_name="Coverage_grid_GPS_GALIEO.png")
 
     ####################################
-    # 9. Calculate statistics
+    # 7. Calculate statistics
     ####################################
     coverage.calculate_statistics()
 
     ####################################
-    # 10. Plot orbits
+    # 8. Plot orbits
     ####################################
     Plotting.plot_orbits(sat_const)
 

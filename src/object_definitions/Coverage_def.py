@@ -148,11 +148,12 @@ class Coverage:
                             self.coverage_dict[gnss_name][rect_idx].angles.append(angle)
                             self.coverage_dict[gnss_name][rect_idx].power.append(power)
 
-    def calculate_reflection_points_and_coverage(self, times, earth_model='spherical', angle=45, verbose=False):
+    def calculate_reflection_points_and_coverage(self, earth_model='spherical', angle=45, verbose=False):
         '''
         Calculate reflection points between satellites.
         '''
         # Calculate the total number of calculations to be performed
+        times              = [time.utc_datetime() for time in self.sat_constellation.times_skyfield]
         total_computations = 0
         for gnss_name, gnss_const in self.gnss_constellation.items():
             total_computations += len(self.sat_constellation.satellites) * len(gnss_const.satellites)
