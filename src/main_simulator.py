@@ -39,10 +39,11 @@ def main_calculate_coverage_norwegian_coast(sim_settings):
     ####################################
     # 2. Create satellite constellation
     ####################################
-    sat_array = [Satellite(i, orbit_n=sim_settings['orbits'][i]) 
+    sat_array = [Satellite(i, orbit_n=sim_settings['orbits'][i])
                 for i in range(sim_settings['No_satellites'])]
     sat_const = SatelliteConstellation(satConfigName="LEO GNSS-R constellation", satArray=sat_array)
     sat_const.generate_constellation_TLE()
+    sat_const.set_simulation_duration(sim_settings['start_time'], sim_settings['sim_duration'], sim_settings['step_size'])
 
     ####################################
     # 3. Propagate orbits
@@ -51,40 +52,22 @@ def main_calculate_coverage_norwegian_coast(sim_settings):
                             sim_settings['sim_duration'], sim_settings['step_size'])
 
     ####################################
-    # 4. Setup time parameters (skyfield)
-    #################################### # TODO move this to a function (e.g. in propagate orbits)
-    duration  = int(sim_settings['sim_duration'] * Constants.SEC_PER_HOUR)                            # Duration in seconds
-    num_steps = (duration) // sim_settings['step_size']                                               # derive no. of steps from duration and step size
-    # Generate the time series (skyfield timescale object) for the simulation
-    # The time series is generated from the start time to the end time with a step size of sim_settings['step_size']
-    times_skyfield     = load.timescale().utc(                                                          # This  start time is after both GPS and GALILEO TLE Epoch, so I will use this atm
-        sim_settings['start_time'].year,
-        sim_settings['start_time'].month,
-        sim_settings['start_time'].day,
-        sim_settings['start_time'].hour,
-        sim_settings['start_time'].minute,
-        range(0, num_steps * sim_settings['step_size'],sim_settings['step_size'])
-    )
-    # Convert the skyfield timescale to a list of UTC datetime objects (one datetime object for each time step)
-    times_datetime = [time.utc_datetime() for time in times_skyfield]
+    # 4. Calculate sunlight time
+    ####################################
+    for sat_idx in range(sat_const.no_satellites):
+        sat_const.satellites[sat_idx].calculate_sunlight_time()
+        print(f"Not sunlit count for satellite {sat_idx}: ",     np.sum(sat_const.satellites[sat_idx].sunlit_count == False))
+        print(f"Sunlit count for satellite {sat_idx}: ",         np.sum(sat_const.satellites[sat_idx].sunlit_count == True))
+        print(f"Sunlit percentage for satellite {sat_idx}: ",    sat_const.satellites[sat_idx].sunlit_fraction * 100)
 
     ####################################
-    # 5. Calculate sunlight time
-    #################################### # TODO improve this also
-    satellite_idx = 0
-    sunlit        = sat_const.satellites[satellite_idx].calculate_sunlight_time(times_skyfield)
-    print(f"Not_sunlit count for satellite {satellite_idx}: ", np.sum(sunlit == False))
-    print(f"Sunlit count for satellite {satellite_idx}: ",     np.sum(sunlit == True))
+    # 5. Calculate reflection points and coverage
+    ####################################
+    coverage = Coverage(sat_const, gnss_constl_dict, sim_settings['shapefile_path'], sim_settings['bounding_box'], grid_size_deg=1)
+    coverage.calculate_reflection_points_and_coverage(verbose=True)
 
     ####################################
-    # 6. Calculate reflection points and coverage
-    ####################################
-#    coverage = Coverage(sat_const, gnss_constl_dict, sim_settings['shapefile_path'], sim_settings['bounding_box'], grid_size_deg=1)
-    coverage = Coverage(sat_const, gnss_constl_dict, sim_settings['shapefile_path'], sim_settings['bounding_box'], grid_size_m=30_000)
-    coverage.calculate_reflection_points_and_coverage(times_datetime, verbose=True)
-
-    ####################################
-    # 7. Plot reflection points
+    # 6. Plot reflection points
     ####################################
     coverage.plot_reflection_points()
     coverage.plot_coverage_shapefile(gnss_constellation="GPS", file_name="Coverage.png")
@@ -93,12 +76,12 @@ def main_calculate_coverage_norwegian_coast(sim_settings):
     coverage.plot_coverage_gridded_shapefile(file_name="Coverage_grid_GPS_GALIEO.png")
 
     ####################################
-    # 9. Calculate statistics
+    # 7. Calculate statistics
     ####################################
     coverage.calculate_statistics()
 
     ####################################
-    # 10. Plot orbits
+    # 8. Plot orbits
     ####################################
     Plotting.plot_orbits(sat_const)
 
@@ -213,7 +196,7 @@ def Skagerrak_to_BarentsSea(settings):
     pass
 
 if  __name__ == "__main__":
-    #config, settings = initialize('Configuration_norwCoast.ini')
-    #main_calculate_coverage_norwegian_coast(settings)
-    config, settings = initialize('Configuration_ship.ini')
-    Skagerrak_to_BarentsSea(settings)
+    config, settings = initialize('Configuration_norwCoast.ini')
+    main_calculate_coverage_norwegian_coast(settings)
+    #config, settings = initialize('Configuration_ship.ini')
+    #Skagerrak_to_BarentsSea(settings)
