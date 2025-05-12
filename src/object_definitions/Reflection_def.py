@@ -9,16 +9,20 @@ class Reflection:
         Reflection class:
             - Defines a reflection object: Initialized with the following parameters:
                 INPUTS:
-                - tx_satID: Transmitting satellite ID (GNSS satellite IS)
-                - rx_satID: Receiving satellite ID    (LEO satellite ID)
-                - Earth model                         (spherical or elliptical)
-                - angle                               (Cutoff angle) (default: 45 degrees)
-                - gnss_const: GNSS constellation      (GPS, GLONASS, GALILEO, BEIDOU) (optional)
-                
-                CLASS VARIABLES:
-                - time_vec: Time vector               (vector with UTC datetime objects, when reflection occurs)
-                - refl_ECI_vec: Reflection points    (vector containing ECEF coordinates of point reflections)
-                - refl_LL_vec: Reflection points      (vector containing Lat-Lon coordinates of point reflections)
+                - tx_satID:     Transmitting satellite ID (GNSS satellite IS)
+                - rx_satID:     Receiving satellite ID    (LEO satellite ID)
+                - earth model:                            (spherical or elliptical)
+                - angle:                                  (Cutoff angle) (default: 45 degrees)
+                - gnss_const:   GNSS constellation        (GPS, GLONASS, GALILEO, BEIDOU) (optional)
+
+                ATTRIBUTES:
+                - earth_model:  Earth model               (spherical or elliptical)
+                - time_vec:     Time vector               (vector with UTC datetime objects, when reflection occurs)
+                - refl_ECI_vec: Reflection points         (vector containing ECEF coordinates of point reflections) # TODO ECI or ECEF?
+                - refl_LL_vec:  Reflection points         (vector containing Lat-Lon coordinates of point reflections)
+
+            NOTE: One reflection object contains all the reflections for one given GNSS satellite and one given LEO 
+                  satellite in a certain time period.
         =========================================================================================================
         """
         # ENTRY point to the Object (Initialization)

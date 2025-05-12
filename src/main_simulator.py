@@ -8,12 +8,13 @@ matplotlib.use('TkAgg', force=True)
 from __init__               import initialize
 from skyfield.api           import load
 
-from object_definitions.Constants_def         import Constants
-from object_definitions.Satellite_def         import Satellite
-from object_definitions.SatConstellation_def  import SatelliteConstellation
-from object_definitions.Coverage_def          import Coverage
-from object_definitions.Static_classes_def    import Plotting
-from object_definitions.ShipTrajectory_def    import ShipTrajectory
+from object_definitions.Constants_def             import Constants
+from object_definitions.Satellite_def             import Satellite
+from object_definitions.SatConstellation_def      import SatelliteConstellation
+from object_definitions.Coverage_def              import Coverage
+from object_definitions.Static_classes_def        import Plotting
+from object_definitions.ShipTrajectory_def        import ShipTrajectory
+from object_definitions.MovingTargetDetection     import MovingTargetDetection
 
 #############################################################################################################################
 ##################################################### - MAIN FUNCTION - #####################################################
@@ -102,7 +103,7 @@ def Skagerrak_to_BarentsSea(settings):
 
     # 1: Calculate ship trajectory from Skagerrak to Barents Sea
     # Create ship trajectory
-    ship = ShipTrajectory(
+    shipTrajectory = ShipTrajectory(
         ship_id              = "DarkShip_001",         # Ship ID
         ship_speed_knot      = 15.0,                   # 15 knots ship speed
         start_position       = Helgoland,              # Start position (latitude, longitude)
@@ -112,7 +113,7 @@ def Skagerrak_to_BarentsSea(settings):
         grid_resolution_km   = 150,                    # Grid resolution in degrees latitude/longitude
         fast_path_gen_method = False                   # Use fast path generation method (True) or slow method which is more accurate (False)
     )
-    ship.plot_route()
+    shipTrajectory.plot_route()
 
     # 2: Load simulation settings
     gnss_constl_dict = fn.load_gnss_constellation_dict(settings['GNSS_constellations'])
@@ -138,24 +139,30 @@ def Skagerrak_to_BarentsSea(settings):
         print(f"Sunlit percentage for satellite {sat_idx}: ",    sat_const.satellites[sat_idx].sunlit_fraction * 100)
 
     ####################################
-    # 6. Calculate reflection points and coverage
+    # 6. Moving target coverage
     ####################################
-    coverage = Coverage(sat_const, gnss_constl_dict, settings['shapefile_path'], settings['bounding_box'], grid_size_m=30_000)
-    coverage.calculate_reflection_points_and_coverage(verbose=True)
+    moving_target_detection = MovingTargetDetection(sat_const, gnss_constl_dict, shipTrajectory, grid_size_m=30_000)
+    moving_target_detection.calculate_moving_target_reflection_intersection(verbose=True)
 
-    ####################################
-    # 7. Plot reflection points
-    ####################################
-    coverage.plot_reflection_points()
-    coverage.plot_coverage_shapefile(gnss_constellation="GPS", file_name="Coverage.png")
-    coverage.plot_coverage_shapefile(file_name="Coverage_both.png")
-    coverage.plot_coverage_gridded_shapefile(gnss_constellation="GPS", file_name="Coverage_grid_GPS.png")
-    coverage.plot_coverage_gridded_shapefile(file_name="Coverage_grid_GPS_GALIEO.png")
+    moving_target_detection.plot_coverage_shapefile(gnss_constellation="GALILEO", file_name="Coverage.png")
 
-    ####################################
-    # 9. Calculate statistics
-    ####################################
-    coverage.calculate_statistics()
+#    ####################################
+#    # 6. Calculate reflection points and coverage
+#    ####################################
+
+#    ####################################
+#    # 7. Plot reflection points
+#    ####################################
+#    coverage.plot_reflection_points()
+#    coverage.plot_coverage_shapefile(gnss_constellation="GPS", file_name="Coverage.png")
+#    coverage.plot_coverage_shapefile(file_name="Coverage_both.png")
+#    coverage.plot_coverage_gridded_shapefile(gnss_constellation="GPS", file_name="Coverage_grid_GPS.png")
+#    coverage.plot_coverage_gridded_shapefile(file_name="Coverage_grid_GPS_GALIEO.png")
+
+#    ####################################
+#    # 9. Calculate statistics
+#    ####################################
+#    coverage.calculate_statistics()
 
     ####################################
     # 10. Plot orbits

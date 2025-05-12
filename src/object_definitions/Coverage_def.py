@@ -86,8 +86,8 @@ class Coverage:
         # Make a list of coverage_struct instanced with the length N
         ####################################################################################################################
         for gnss_name, gnss_value in self.gnss_constellation.items():
-            N               = len(self.grid_gdf)
-            coverage_vector = [coverage_struct() for _ in range(N)]
+            N                             = len(self.grid_gdf)
+            coverage_vector               = [coverage_struct() for _ in range(N)]
             self.coverage_dict[gnss_name] = coverage_vector
 
         # Initialize coverage vector for storing coverage over each grid-cell in the gridded shapefile
@@ -115,7 +115,7 @@ class Coverage:
         for gnss_name, gnss_value in self.gnss_constellation.items():
             refl_vector = self.reflection_dict[gnss_name] # Reflection vector for the current GNSS constellation
             for i in range(len(refl_vector)):
-                validity_mask, ref_points_in_box = self.validity_mask2(refl_vector[i], self.bounding_box)
+                validity_mask, ref_points_in_box = self.validity_mask(refl_vector[i], self.bounding_box)
                 # Assembly of points in the bounding box for one GNSS-R satellite and one GNSS satellite
                 refl_clusters = self.__get_reflection_clusters(refl_vector[i], validity_mask)
                 for cluster in refl_clusters:
@@ -561,27 +561,14 @@ class Coverage:
         plt.savefig("rectangles_from_grid_points.png")
 
     @staticmethod
-    def validity_mask(reflection_obj, bounding_box) -> np.ndarray:
-        if not np.isnan(reflection_obj.refl_LL_vec).all():
-            refl_in_bounding_box                        = []
-            [min_lon, max_lon, min_lat, max_lat] = bounding_box
-
-            for lat, lon in reflection_obj.refl_LL_vec: # TODO: IMPROVE THIS Why append points in box for both valid and invalid points? Better skip invalid points???
-                if min_lat <= lat <= max_lat and min_lon <= lon <= max_lon:
-                     refl_in_bounding_box.append((lat, lon))
-                else:
-                    refl_in_bounding_box.append((np.nan, np.nan))
-
-            refl_in_bb    = np.array(refl_in_bounding_box)
-            validity_mask = ~np.isnan(refl_in_bb[:,0])                                       # Check latitude for NaN 
-        else:
-            # There are only NaN values in the refl_LL_vec
-            validity_mask = np.zeros(len(reflection_obj.refl_LL_vec))
-            refl_in_bb    = np.array(refl_in_bounding_box)
-        return validity_mask, refl_in_bb
-
-    @staticmethod
-    def validity_mask2(reflection_obj, bounding_box):
+    def validity_mask(reflection_obj, bounding_box):
+        """
+        Create a validity mask for the reflection points based on the bounding box.
+        
+        INPUT:
+            reflection_obj: Reflection object containing the reflection points.
+            bounding_box:   Tuple containing the bounding box coordinates (min_lon, max_lon, min_lat, max_lat).
+        """
         refl_LL_vec = np.array(reflection_obj.refl_LL_vec)
     
         if not np.isnan(refl_LL_vec).all():

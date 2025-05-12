@@ -26,7 +26,7 @@ class ShipTrajectory:
     and generate a shapefile for a certain time period.
     Includes land avoidance for realistic maritime routing.
 
-    Attributes:
+    ATTRIBUTES:
         ship_id                (str):      Unique identifier for the ship.
         start_time             (datetime): Start time of the trajectory.
         end_time               (datetime): End time of the trajectory.
@@ -94,13 +94,13 @@ class ShipTrajectory:
         else:
             self.plan_route(save_graph)  # Default connection radius for grid points
             self.generate_trajectory_equal_time()
-            if trajectory_type.__contains__("points"):
+            if trajectory_type.__contains__("points"):     # TODO not necesarry
                 self.create_shapefile(trajectory_type="points")
-            if trajectory_type.__contains__("line"):
+            if trajectory_type.__contains__("line"):       # TODO not necesarry
                 self.create_shapefile(trajectory_type="line")
-            if trajectory_type.__contains__("waypoints"):
+            if trajectory_type.__contains__("waypoints"):  # TODO not necesarry
                 self.create_shapefile(trajectory_type="waypoints")
-            if trajectory_type.__contains__("save_class_to_file"):
+            if trajectory_type.__contains__("save_class_to_file"): # TODO this should be the default
                 self.create_trajectory_files()
 
     def load_class_from_file(self)                                                                                           -> None:
@@ -109,30 +109,32 @@ class ShipTrajectory:
         """
         # Load the shapefile using geopandas
         try:
-            shapefile_track = gpd.read_file(os.path.join(Constants.autogen_ship_shapefiles, f'{self.ship_id}_trajectory.shp'))
-            trajectory_points      = shapefile_track.geometry.values.tolist()
-            self.trajectory_points = [(np.float64(point.y), np.float64(point.x)) for point in trajectory_points]
-            self.timestamps        = shapefile_track['timestamp'].values.tolist()
-            geometry               = shapefile_track['geometry'].values.tolist()
-            self.end_position      = geometry[-1].coords[0]                        # Last point in the trajectory
-            self.start_position    = geometry[0].coords[0]                         # First point in the trajectory
+            self.shapefile_path['time_series'] = os.path.join(Constants.autogen_ship_shapefiles, f'{self.ship_id}_trajectory.shp')
+            shapefile_time_series              = gpd.read_file(self.shapefile_path['time_series'])
+            trajectory_points                  = shapefile_time_series.geometry.values.tolist()
+            self.trajectory_points             = [(np.float64(point.y), np.float64(point.x)) for point in trajectory_points]
+            self.timestamps                    = [datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S') 
+                                                   for dt_str in shapefile_time_series['datetime_s'].values.tolist()]
+            geometry                           = shapefile_time_series['geometry'].values.tolist()
+            self.end_position                  = geometry[-1].coords[0]                        # Last point in the trajectory
+            self.start_position                = geometry[0].coords[0]                         # First point in the trajectory
 
             # Load metadata from JSON file
             with open(os.path.join(Constants.autogen_ship_shapefiles, f'{self.ship_id}_trajectory_metadata.json'), 'r') as f:
                 metadata = json.load(f)
-                self.ship_id                = metadata['ship_id']
-                self.start_position         = metadata['start_position']
-                self.end_position           = metadata['end_position']
-                self.start_time             = metadata['start_time']
-                self.end_time               = metadata['end_time']
-                self.ship_speed             = metadata['ship_speed_m_s']
-                self.route_distance         = metadata['route_distance_m']
-                self.fast_method            = metadata['fast_method']
-                self.mesh_connection_radius = metadata['mesh_connection_radius']
-                self.water_buffer           = metadata['water_buffer']
-                self.waypoints              = metadata['waypoints']
-                self.grid_resolution        = metadata['grid_resolution']
-                self.delta_m                = metadata['delta_m']
+                self.ship_id                       = metadata['ship_id']
+                self.start_position                = metadata['start_position']
+                self.end_position                  = metadata['end_position']
+                self.start_time                    = metadata['start_time']
+                self.end_time                      = metadata['end_time']
+                self.ship_speed                    = metadata['ship_speed_m_s']
+                self.route_distance                = metadata['route_distance_m']
+                self.fast_method                   = metadata['fast_method']
+                self.mesh_connection_radius        = metadata['mesh_connection_radius']
+                self.water_buffer                  = metadata['water_buffer']
+                self.waypoints                     = metadata['waypoints']
+                self.grid_resolution               = metadata['grid_resolution']
+                self.delta_m                       = metadata['delta_m']
             print(f"Loaded trajectory data for ship {self.ship_id} from file")
 
         except Exception as e:
@@ -162,11 +164,11 @@ class ShipTrajectory:
     def _calculate_havresin_distance(self, pos1, pos2)                                          -> float:
         """ 
         Calculate the havresin distance between two points in meter.
-        
+
         INPUT:
             pos1 (tuple): First position (latitude, longitude)
             pos2 (tuple): Second position (latitude, longitude)
-            
+
         OUTPUT:
             float: Distance in meter
         """
@@ -184,63 +186,60 @@ class ShipTrajectory:
         distance  = Constants.RADIUS_EARTH_EQUAT * c  # in meters
 
         return float(distance)
-    
+
     def calculate_bearing(self, pos1, pos2):
         """
         Calculate the bearing (heading) from pos1 to pos2.
-        
+
         INPUT:
             pos1 (tuple): First position (latitude, longitude)
             pos2 (tuple): Second position (latitude, longitude)
-            
+
         OUTPUT:
             float: Bearing in degrees (0-360)
         """
         lat1_rad, lon1_rad = radians(pos1[0]), radians(pos1[1])
         lat2_rad, lon2_rad = radians(pos2[0]), radians(pos2[1])
-        
+
         dlon_rad = lon2_rad - lon1_rad
-        
+
         y = sin(dlon_rad) * cos(lat2_rad)
         x = cos(lat1_rad) * sin(lat2_rad) - sin(lat1_rad) * cos(lat2_rad) * cos(dlon_rad)
-        
+
         bearing = degrees(atan2(y, x))
-        
+
         # Convert to 0-360 degrees
         bearing = (bearing + 360) % 360
-        
+
         return bearing
-    
+
     def get_position_at_distance(self, start_pos, bearing, distance):
         """
         Calculate the position after moving a certain distance along a bearing.
-        
+
         INPUT:
             start_pos (tuple): Starting position (latitude, longitude)
-            bearing (float): Bearing in degrees
-            distance (float): Distance in nautical miles
-            
+            bearing   (float): Bearing in degrees
+            distance  (float): Distance in km
+
         OUTPUT:
             tuple: New position (latitude, longitude)
         """
         lat1_rad, lon1_rad = radians(start_pos[0]), radians(start_pos[1])
         bearing_rad = radians(bearing)
-        
-        # Earth radius in nautical miles
-        r = 3440.07
-        
+
         # Angular distance in radians
-        d = distance / r
+        d = distance / Constants.R_EARTH_MEAN
         
         lat2_rad = asin(sin(lat1_rad) * cos(d) + cos(lat1_rad) * sin(d) * cos(bearing_rad))
         lon2_rad = lon1_rad + atan2(sin(bearing_rad) * sin(d) * cos(lat1_rad),
                             cos(d) - sin(lat1_rad) * sin(lat2_rad))
-        
+
         # Convert back to degrees
         lat2_rad, lon2_rad = degrees(lat2_rad), degrees(lon2_rad)
-        
+
         return (lat2_rad, lon2_rad)
-    
+
     def intersects_land(self, point1, point2)                                                   -> bool:
         """
         Check if the line between two points intersects with land.
@@ -1012,7 +1011,7 @@ class ShipTrajectory:
         print(f"Created shapefile at {output_path}")
         self.shapefile_path[trajectory_type] = output_path
 
-    def create_trajectory_files(self, file_name=None)                 -> None:
+    def create_trajectory_files(self)                 -> None:
         """
         Create a time series of ship positions that can be used to simulate GNSS tracking.
 
@@ -1032,7 +1031,7 @@ class ShipTrajectory:
         geometry = [Point(lon, lat) for lat, lon in self.trajectory_points]
         data = {
             'ship_id':        [self.ship_id] * len(trajectory),
-            'timestamp':      self.timestamps,
+            'timestamp':      self.timestamps,                                                        #TODO remove this
             'datetime_str':   [t.strftime('%Y-%m-%d %H:%M:%S') for t in self.timestamps],
             'latitude':       [pos[0] for pos in self.trajectory_points],
             'longitude':      [pos[1] for pos in self.trajectory_points],
@@ -1041,12 +1040,10 @@ class ShipTrajectory:
         gdf = gpd.GeoDataFrame(data, crs="EPSG:4326")
 
         # Save to shapefile
-        if file_name is None:
-            file_name = f"{self.ship_id}_trajectory.shp"
-        else:
-            # Ensure it has .shp extension
-            if not file_name.endswith('.shp'):
-                file_name += '.shp'
+        file_name = f"{self.ship_id}_trajectory.shp"
+        if not file_name.endswith('.shp'):
+            # Robustness: This should not be needed!
+            file_name += '.shp'
 
         output_path = os.path.join(Constants.autogen_ship_shapefiles, file_name)
         if Constants.autogen_ship_shapefiles and not os.path.exists(Constants.autogen_ship_shapefiles):
@@ -1076,8 +1073,7 @@ class ShipTrajectory:
             'waypoints':              self.waypoints,
             'grid_resolution':        self.grid_resolution,
             'delta_m':                self.delta_m,
-            'generated_on':           datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
+            'generated_on':           datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         }
         
         # Add waypoints if available

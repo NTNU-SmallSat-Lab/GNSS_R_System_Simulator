@@ -17,7 +17,11 @@
             "program": "${workspaceFolder}/src/main_simulator.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": []
+            "args": [],
+            "env": {
+                "DISPLAY": ":1",
+                "MPLBACKEND": "Qt5Agg"
+            }
         }
     ]
 }
