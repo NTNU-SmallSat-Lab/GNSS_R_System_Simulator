@@ -138,13 +138,13 @@ def Skagerrak_to_BarentsSea(settings):
         print(f"Sunlit count for satellite {sat_idx}: ",         np.sum(sat_const.satellites[sat_idx].sunlit_count == True))
         print(f"Sunlit percentage for satellite {sat_idx}: ",    sat_const.satellites[sat_idx].sunlit_fraction * 100)
 
-    ####################################
-    # 6. Moving target coverage
-    ####################################
-    moving_target_detection = MovingTargetDetection(sat_const, gnss_constl_dict, shipTrajectory, grid_size_m=30_000)
+    ##########################################
+    # 6. Moving target detection probablility
+    ##########################################
+    moving_target_detection = MovingTargetDetection(sat_const, gnss_constl_dict, shipTrajectory, footprint_size_m=300_000, create_shapefile_for_visualization=True)
     moving_target_detection.calculate_moving_target_reflection_intersection(verbose=True)
-
-    moving_target_detection.plot_coverage_shapefile(gnss_constellation="GALILEO", file_name="Coverage.png")
+    moving_target_detection.plot_detection_points(file_name="Coverage.png")
+    moving_target_detection.plot_time_until_detection(gnss_constellation="GALILEO", file_name="Coverage_time_until_detection.png")
 
 #    ####################################
 #    # 6. Calculate reflection points and coverage

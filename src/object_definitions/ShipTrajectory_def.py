@@ -16,7 +16,7 @@ from tqdm              import tqdm
 from datetime          import datetime, timedelta
 from math              import radians, cos, sin, asin, sqrt, atan2, degrees
 from shapely.geometry  import Point, LineString
-from scipy.spatial     import Delaunay
+from scipy.spatial     import Delaunay, cKDTree
 
 from object_definitions.Constants_def import Constants
 #from Coverage_def   import Coverage
@@ -50,7 +50,7 @@ class ShipTrajectory:
 
     def __init__(self,                ship_id,                ship_speed_knot,           start_position,            start_time,                      end_position, 
                  interval_minutes=10, grid_resolution_km=100, delta_boudingBox_km=500, fast_path_gen_method=True, mesh_connection_radius_km=2_000, water_buffer_km=22.2, 
-                 trajectory_type=["points", "save_class_to_file"], save_graph=False)                                         -> None:
+                 trajectory_type=[], save_graph=False)                                         -> None:
         self.ship_id                = ship_id                         # Unique identifier for the ship
         self.ship_speed             = ship_speed_knot * 0.51444       # Ship speed in knots (will be converted to to [m/s])
         self.start_position         = start_position                  # Ship start positon (latitude, longitude), if the start position is on land, the nearest water point will be used
@@ -80,7 +80,7 @@ class ShipTrajectory:
         self.timestamps        = []                                   # List of timestamps for trajectory points (datetime objects), generated with "self.generate_trajectory_equal_time()" or "self.generate_trajectory_equal_distance()"
         self.waypoints         = []                                   # List of waypoints (latitude, longitude), generated with "self.plan_route()"
         self.route_distance    = None                                 # Total route distance in meters, calculated with "self.plan_route()"
-        self.shapefile_path    = {}                                   # Dictionary to store shapefile paths for different trajectory types (points, lines, waypoints, save_class_to_file)
+        self.shapefile_path    = {}                                   # Dictionary to store shapefile paths for different trajectory types (points, lines, waypoints)
 
         self.initialize(trajectory_type, save_graph)
 
@@ -94,14 +94,13 @@ class ShipTrajectory:
         else:
             self.plan_route(save_graph)  # Default connection radius for grid points
             self.generate_trajectory_equal_time()
-            if trajectory_type.__contains__("points"):     # TODO not necesarry
+            self.create_trajectory_files()
+            if trajectory_type.__contains__("points"):
                 self.create_shapefile(trajectory_type="points")
-            if trajectory_type.__contains__("line"):       # TODO not necesarry
+            if trajectory_type.__contains__("line"):
                 self.create_shapefile(trajectory_type="line")
-            if trajectory_type.__contains__("waypoints"):  # TODO not necesarry
+            if trajectory_type.__contains__("waypoints"):
                 self.create_shapefile(trajectory_type="waypoints")
-            if trajectory_type.__contains__("save_class_to_file"): # TODO this should be the default
-                self.create_trajectory_files()
 
     def load_class_from_file(self)                                                                                           -> None:
         """
@@ -161,7 +160,7 @@ class ShipTrajectory:
             self.ocean_polygons = None
             return False
 
-    def _calculate_havresin_distance(self, pos1, pos2)                                          -> float:
+    def _calculate_havresin_distance(self, pos1, pos2)                                                                       -> float:
         """ 
         Calculate the havresin distance between two points in meter.
 
@@ -197,6 +196,8 @@ class ShipTrajectory:
 
         OUTPUT:
             float: Bearing in degrees (0-360)
+
+        TODO: THIS METHOD IS NOT USED YET BUT MAY BE USEFUL FOR IMPLAMENTATION OF RCS
         """
         lat1_rad, lon1_rad = radians(pos1[0]), radians(pos1[1])
         lat2_rad, lon2_rad = radians(pos2[0]), radians(pos2[1])
@@ -213,34 +214,7 @@ class ShipTrajectory:
 
         return bearing
 
-    def get_position_at_distance(self, start_pos, bearing, distance):
-        """
-        Calculate the position after moving a certain distance along a bearing.
-
-        INPUT:
-            start_pos (tuple): Starting position (latitude, longitude)
-            bearing   (float): Bearing in degrees
-            distance  (float): Distance in km
-
-        OUTPUT:
-            tuple: New position (latitude, longitude)
-        """
-        lat1_rad, lon1_rad = radians(start_pos[0]), radians(start_pos[1])
-        bearing_rad = radians(bearing)
-
-        # Angular distance in radians
-        d = distance / Constants.R_EARTH_MEAN
-        
-        lat2_rad = asin(sin(lat1_rad) * cos(d) + cos(lat1_rad) * sin(d) * cos(bearing_rad))
-        lon2_rad = lon1_rad + atan2(sin(bearing_rad) * sin(d) * cos(lat1_rad),
-                            cos(d) - sin(lat1_rad) * sin(lat2_rad))
-
-        # Convert back to degrees
-        lat2_rad, lon2_rad = degrees(lat2_rad), degrees(lon2_rad)
-
-        return (lat2_rad, lon2_rad)
-
-    def intersects_land(self, point1, point2)                                                   -> bool:
+    def intersects_land(self, point1, point2)                                                                                -> bool:
         """
         Check if the line between two points intersects with land.
         
@@ -272,8 +246,8 @@ class ShipTrajectory:
     
         # If one or both points are on land, the line intersects land
         return True
-    
-    def is_point_in_ocean(self, point)                                                          -> bool:
+
+    def is_point_in_ocean(self, point)                                                                                       -> bool:
         """
         Check if a point is on land.
         
@@ -292,8 +266,8 @@ class ShipTrajectory:
         
         # Check if the point is on land
         return self.ocean_polygons.contains(point_geom)
-    
-    def get_safe_water_point(self, point)                                                       -> tuple:
+
+    def get_safe_water_point(self, point)                                                                                    -> tuple:
         """
         If a point is on land (not in the ocean), find the nearest water point.
         
@@ -339,7 +313,7 @@ class ShipTrajectory:
 
         return (point[0] + self.water_buffer, point[1])  # Fallback to original point (this should not happen)
 
-    def plan_route(self, save_graph=False)                                         -> None:
+    def plan_route(self, save_graph=False)                                                                                   -> None:
         """
         Plan a route that avoids land.
         Uses a simplified path finding approach with a mesh of navigable points.
@@ -412,7 +386,7 @@ class ShipTrajectory:
         # ax.set_title("Navigation Mesh with Valid Water Points")
         # ax.set_xlabel("Longitude")
         # ax.set_ylabel("Latitude")
-        # plt.show()
+        # plt.show(block=True)
         # fig.savefig(os.path.join(Constants.autogen_ship_shapefiles, f'{self.ship_id}_graph.png'), dpi=300, bbox_inches='tight')
         # # Save the figure as a pickle file for later use
         # with open(os.path.join(Constants.autogen_ship_shapefiles, f'{self.ship_id}_navGraphFig.pickle'), 'wb') as f:
@@ -451,7 +425,7 @@ class ShipTrajectory:
             self.waypoints = None
             return
 
-    def _create_grid_points(self, min_lat, max_lat, min_lon, max_lon)               -> list:
+    def _create_grid_points(self, min_lat, max_lat, min_lon, max_lon)                                                        -> list:
         """
         Create a grid of points and return those in water.
         """
@@ -479,7 +453,7 @@ class ShipTrajectory:
         print(f"Created navigation mesh with {len(valid_points)} valid water points")
         return valid_points
 
-    def _bridge_components(self, G, valid_points)                                   -> nx.Graph:
+    def _bridge_components(self, G, valid_points)                                                                            -> nx.Graph:
         """
         Attempt to bridge disconnected components using Delaunay triangulation
         to identify potential passages.
@@ -604,7 +578,7 @@ class ShipTrajectory:
             print(f"Error in component bridging: {e}")
         return G
 
-    def _connect_grid_points(self, G, valid_points, start_pos, end_pos, save_graph)                         -> None:
+    def _connect_grid_points(self, G, valid_points, start_pos, end_pos, save_graph)                                      -> None:
         """
         Connect points in the navigation graph with an improved approach focusing on
         creating a path between start and end positions.
@@ -618,24 +592,41 @@ class ShipTrajectory:
         OUTPUT:
             None: (modifies the graph G)
         """
-        # Add all valid points to the graph
+        # Pre-compute points IDs and all nodes to add
+        point_ids    = {}
+        nodes_to_add = []
         for point in valid_points:
-            point_id = f"{point[0]:.4f}_{point[1]:.4f}"
-            G.add_node(point_id, pos=point)
+            point_id         = f"{point[0]:.4f}_{point[1]:.4f}"
+            point_ids[point] = point_id
+            nodes_to_add.append((point_id, {"pos": point}))
+        
+        # Add all nodes in a single batch operation
+        G.add_nodes_from(nodes_to_add)
+
+        # Build KD-Tree for efficient nearest neighbor search
+        points_array = np.array(valid_points)
+        kdtree       = cKDTree(points_array)
 
         # 1. Connect start and end to nearby points (more aggressively)
         start_connections = 0
         end_connections   = 0
 
         # First pass - try with normal radius
-        if self.fast_method == True:    
-            for point in tqdm(valid_points, desc="Connecting edges to start/end"):
-                point_id = f"{point[0]:.4f}_{point[1]:.4f}"
+        if self.fast_method == True:
+            radius_in_degrees = self.mesh_connection_radius / 111000  # Approximate conversion km to degrees
 
-                # Connect to start if possible
-                dist_to_start = self._calculate_havresin_distance(start_pos, point)
-                if dist_to_start < self.mesh_connection_radius and not self.intersects_land(start_pos, point):
-                    G.add_edge("start", point_id, weight=dist_to_start)
+            # Find points within the connection radius
+            start_indices = kdtree.query_ball_point(start_pos, radius_in_degrees)
+            end_indices   = kdtree.query_ball_point([end_pos[0], end_pos[1]], radius_in_degrees)
+
+            # Connect start to nearby points
+            for idx in start_indices:
+                point    = valid_points[idx]
+                point_id = point_ids[point]
+
+                dist_to_end = self._calculate_havresin_distance(end_pos, point)
+                if dist_to_end  < self.mesh_connection_radius and not self.intersects_land(end_pos, point):
+                    G.add_edge(point_id, "end", weight=dist_to_end)
                     start_connections += 1
 
                 # Connect to end if possible
@@ -648,11 +639,13 @@ class ShipTrajectory:
 
         # If start or end has no connections, try harder with closest points
         if start_connections == 0:
-            closest_to_start = sorted(valid_points, key=lambda p: self._calculate_havresin_distance(start_pos, p))
-            for point in closest_to_start[:10]:  # Try the 10 closest points
+            # Find 10 closest points to start
+            distances, indices = kdtree.query([start_pos[0], start_pos[1]], k=min(20, len(valid_points)))
+            for i in range(len(indices)):
+                point = valid_points[indices[i]]
                 if not self.intersects_land(start_pos, point):
-                    dist     = self._calculate_havresin_distance(start_pos, point)
-                    point_id = f"{point[0]:.4f}_{point[1]:.4f}"
+                    dist = self._calculate_havresin_distance(start_pos, point)
+                    point_id = point_ids[point]
                     G.add_edge("start", point_id, weight=dist)
                     print(f"Added edge from start to a point at distance {1e-3*dist:.2f} km")
                     start_connections += 1
@@ -660,11 +653,13 @@ class ShipTrajectory:
                         break
 
         if end_connections == 0:
-            closest_to_end = sorted(valid_points, key=lambda p: self._calculate_havresin_distance(end_pos, p))
-            for point in closest_to_end[:10]:  # Try the 10 closest points
+            # Find 10 closest points to end
+            distances, indices = kdtree.query([end_pos[0], end_pos[1]], k=min(20, len(valid_points)))
+            for i in range(len(indices)):
+                point = valid_points[indices[i]]
                 if not self.intersects_land(end_pos, point):
-                    dist     = self._calculate_havresin_distance(end_pos, point)
-                    point_id = f"{point[0]:.4f}_{point[1]:.4f}"
+                    dist = self._calculate_havresin_distance(end_pos, point)
+                    point_id = point_ids[point]
                     G.add_edge(point_id, "end", weight=dist)
                     print(f"Added edge from end to point at distance {1e-3*dist:.2f} km")
                     end_connections += 1
@@ -673,29 +668,28 @@ class ShipTrajectory:
 
         # 2. Connect grid points efficiently
         # First identify points connected to start and end for priority
-        connected_to_start = set()
-        connected_to_end   = set()
-
-        for node in G.neighbors("start"):
-            connected_to_start.add(node)
-
-        for node in G.neighbors("end"):
-            connected_to_end.add(node)
+        connected_to_start = set(G.neighbors("start"))
+        connected_to_end   = set(G.neighbors("end"))
 
         # Connect these high-priority points first (from start to end)
         edge_count = 0
 
+        # Use batch edge addition for priority connections
+        priority_edges = []
+
         # Connect from start connections to end connections (high priority)
         for start_node in tqdm(connected_to_start, desc="Finding route start-point to end-point"):
-            start_pos = G.nodes[start_node]["pos"]
+            start_position = G.nodes[start_node]["pos"]
             for end_node in connected_to_end:
-                end_pos = G.nodes[end_node]["pos"]
-
-                dist = self._calculate_havresin_distance(start_pos, end_pos)
-                if dist < self.mesh_connection_radius and not self.intersects_land(start_pos, end_pos):
-                    G.add_edge(start_node, end_node, weight=dist)
+                end_position = G.nodes[end_node]["pos"]
+    
+                dist = self._calculate_havresin_distance(start_position, end_position)
+                if dist < self.mesh_connection_radius and not self.intersects_land(start_position, end_position):
+                    priority_edges.append((start_node, end_node, {"weight": dist}))
                     edge_count += 1
 
+        # Add all priority edges in batch
+        G.add_edges_from(priority_edges)
         print(f"Added {edge_count} priority connections from start to end regions")
 
         # If path exists after priority connections, we can stop
@@ -707,37 +701,47 @@ class ShipTrajectory:
         print("Adding regular grid connections...")
         normal_edges = 0
 
-        # Use a nearby point approach for efficiency
+        # Use a KD-Tree for efficient nearest neighbor search
+        radius_in_degrees = self.mesh_connection_radius / 111000  # Approximate conversion km to degrees
+
+        # Use batch edge addition for regular grid
+        grid_edges = []
+
+        # Use a nearby point approach for efficiency / Process each point
         for i, p1 in enumerate(tqdm(valid_points, desc="Creating edges")): # NOTE: This is very slow
-            p1_id = f"{p1[0]:.4f}_{p1[1]:.4f}"
+#            p1_id = f"{p1[0]:.4f}_{p1[1]:.4f}"
+            p1_id = point_ids[p1]
 
-            # Only check nearby points to improve performance
-            nearby_points = []
-            for p2 in valid_points:
-                # Quick approximate distance check
-                if abs(p1[0] - p2[0]) > self.mesh_connection_radius/60 or abs(p1[1] - p2[1]) > self.mesh_connection_radius/60:
-                    continue
-                nearby_points.append(p2)
+            # Use KD-Tree to find points within connection radius
+            nearby_indices = kdtree.query_ball_point([p1[0], p1[1]], radius_in_degrees)
 
-            for p2 in nearby_points:
-                p2_id = f"{p2[0]:.4f}_{p2[1]:.4f}"
+            for idx in nearby_indices:
+                p2 = valid_points[idx]
+                p2_id = point_ids[p2]
 
                 # Skip self-connections
                 if p1_id == p2_id:
                     continue
 
-                # Only process each pair once
-                if G.has_edge(p1_id, p2_id):
-                    continue
+                # Only process each pair once (using node ID comparison to ensure consistency)
+                if p1_id > p2_id and not G.has_edge(p1_id, p2_id):
+                    # Calculate actual distance
+                    dist = self._calculate_havresin_distance(p1, p2)
 
-                # Calculate actual distance
-                dist = self._calculate_havresin_distance(p1, p2)
+                    # Connect if close enough and no land intersection
+                    if dist < self.mesh_connection_radius and not self.intersects_land(p1, p2):
+                        grid_edges.append((p1_id, p2_id, {"weight": dist}))
+                        normal_edges += 1
 
-                # Connect if close enough and no land intersection
-                if dist < self.mesh_connection_radius and not self.intersects_land(p1, p2):
-                    G.add_edge(p1_id, p2_id, weight=dist)
-                    normal_edges += 1
+                        # Add edges in batches to reduce memory pressure
+                        if len(grid_edges) >= 10000:
+                            G.add_edges_from(grid_edges)
+                            grid_edges = []
 
+        # Add any remaining edges
+        if grid_edges:
+            G.add_edges_from(grid_edges)
+    
         print(f"Added {normal_edges} regular grid connections")
         # Save the graph
         if save_graph == True:
@@ -748,8 +752,7 @@ class ShipTrajectory:
             with open(os.path.join(Constants.autogen_ship_shapefiles, f'{self.ship_id}_graph.pickle'), 'wb') as f:
                 pickle.dump(G, f)
 
-
-    def simplify_path(self, waypoints)                                                          -> list:
+    def simplify_path(self, waypoints)                                                                                       -> list:
         """
         Simplify a path by removing unnecessary points.
 
@@ -773,7 +776,7 @@ class ShipTrajectory:
         result.append(waypoints[-1])
         return result
 
-    def generate_trajectory_equal_dist(self, interval_meters=100)                               -> list:
+    def generate_trajectory_equal_dist(self, interval_meters=100)                                                            -> list:
         """
         Generate points along the trajectory at regular distance intervals.
         Uses waypoints for land avoidance if available.
@@ -857,7 +860,7 @@ class ShipTrajectory:
     
         return list(zip(self.timestamps, self.trajectory_points))
 
-    def generate_trajectory_equal_time(self)                               -> None:
+    def generate_trajectory_equal_time(self)                                                                                 -> None:
         """
         Generate points along the trajectory at regular time intervals.
         Uses waypoints for land avoidance if available.
@@ -940,7 +943,7 @@ class ShipTrajectory:
                 self.trajectory_points.append(self.waypoints[-1])
                 self.timestamps.append(self.end_time)
 
-    def create_shapefile(self, output_filename=None, trajectory_type='points', crs="EPSG:4326")      -> None:
+    def create_shapefile(self, output_filename=None, trajectory_type='points', crs="EPSG:4326")                              -> None:
         """
         Create a shapefile from the trajectory.
 
@@ -953,6 +956,9 @@ class ShipTrajectory:
 
         OUTPUT:
             -
+
+        NOTE: This method is not relevant for the GNSS simulation,
+                but is used for visualization purposes (creating shapefiles to be used in GIS software).
         """
         # Generate trajectory if it hasn't been generated yet
         if not self.trajectory_points:
@@ -1011,7 +1017,7 @@ class ShipTrajectory:
         print(f"Created shapefile at {output_path}")
         self.shapefile_path[trajectory_type] = output_path
 
-    def create_trajectory_files(self)                 -> None:
+    def create_trajectory_files(self)                                                                                        -> None:
         """
         Create a time series of ship positions that can be used to simulate GNSS tracking.
 
@@ -1089,7 +1095,7 @@ class ShipTrajectory:
         print(f"Created metadata JSON at {metadata_output_path}")
         self.shapefile_path['time_series_metadata'] = metadata_output_path
 
-    def plot_route(self, show_trajectory=True, show_waypoints=True, title=None, show=False)       -> None:
+    def plot_route(self, show_trajectory=True, show_waypoints=True, title=None, show=False)                                  -> None:
         """
         Plot the ship's route on a map.
 
@@ -1170,7 +1176,6 @@ if __name__ == "__main__":
     Murmansk  = (69.345572, 33.646450)
     oslo      = (59.9139,   10.7522)
     stavanger = (58.9700,   5.7331)
-
 
     # Create ship trajectory
     ship = ShipTrajectory(
