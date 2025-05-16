@@ -2,19 +2,23 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python Debugger: run_sim.py",
+            "name": "Area coverage",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/src/run_simulation.py",
+            "program": "${workspaceFolder}/SRC/main_simulaton_areaCoverage.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": []
+            "args": [],
+            "env": {
+                "DISPLAY": ":1",
+                "MPLBACKEND": "Qt5Agg"
+            }
         },
         {
-            "name": "Python: main Simulator",
+            "name": "Ship detection",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/src/main_simulator.py",
+            "program": "${workspaceFolder}/SRC/main_simulaton_movingTarget.py",
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": [],

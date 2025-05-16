@@ -1,4 +1,5 @@
-## GNSS-R System simulator
+# <div align="center">GNSS-R System Simulator</div>
+
 This simulator is intended to simulate GNSS-R scenarios:
 - GNSS satellite constellations [GPS, GALILEO, GLONASS, BEIDOU]
 - GNSS-R satellite constellations
@@ -8,4 +9,4 @@ These allow to calculate the specular reflections on earth (earth can be specifi
 
 ## Objects Description
 
-# Satellite
+## Satellite

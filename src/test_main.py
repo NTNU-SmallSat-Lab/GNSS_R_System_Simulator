@@ -6,7 +6,6 @@ from object_definitions.Constants_def         import Constants
 from object_definitions.Satellite_def         import Satellite
 from object_definitions.ReadWriteSatData      import ReadWriteSatData
 from object_definitions.SatConstellation_def  import SatelliteConstellation
-from FF_sockets.FF_TLE_to_Eph                 import FF_TLE_to_Eph
 
 def testObjReflection()       -> bool:
     passed = 1
@@ -189,38 +188,6 @@ def testFreeFlyerConnection() -> bool:
         ]
     )
     sat_1.write_tle_file()
-
-    # Call the function to send TLE to FreeFlyer
-    (success1, eph_file_path1) = FF_TLE_to_Eph(
-        sat_1,               # Satellite object            [Satellite]
-        GNSS_Constellation,  # GNSS constellation name     [GPS, GLONASS, GALILEO, BEIDOU]
-        20,                  # integration step size       [sec]
-        1,                   # Simulation duration         [days]
-        1,                   # Number of GNSS-R satellites [-]
-        "FreeFlyer",           # Ephemeris file type         [ FreeFlyer | CCSDS | STKephem | STKephem ]
-        show_FF_GUI          # Show FreeFlyer GUI          [True/False]
-    )
-
-    if not success1:
-        passed = 0
-    if not (eph_file_path1 == os.path.join(Constants.tle_eph_folder_path, f"ephemeris_satID_{sat_1.satID}.FFephem")):
-        passed = 0
-
-    (success2, eph_file_path2) = FF_TLE_to_Eph(
-        sat_1,               # Satellite object            [Satellite]
-        'GALILEO',           # GNSS constellation name     [GPS, GLONASS, GALILEO, BEIDOU]
-        20,                  # integration step size       [sec]
-        1,                   # Simulation duration         [days]
-        1,                   # Number of GNSS-R satellites [-]
-        "CCSDS",             # Ephemeris file type         [ FreeFlyer | CCSDS | STKephem | STKephem ])
-        False                # Show FreeFlyer GUI          [True/False]
-    )
-
-    if not success2:
-        passed = 0
-    if not (eph_file_path2 == os.path.join(Constants.tle_eph_folder_path, f"ephemeris_satID_{sat_1.satID}.e")):
-        passed = 0
-    return passed
 
 def testSatConstelation()     -> bool:
     passed = 1

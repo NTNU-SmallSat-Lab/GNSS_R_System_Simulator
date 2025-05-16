@@ -1,9 +1,9 @@
-import os, math
+import os
 from object_definitions.Satellite_def    import Satellite
 from object_definitions.Constants_def    import Constants
 from object_definitions.ReadWriteSatData import ReadWriteSatData as rw
 from skyfield.api                        import load
-from datetime                            import datetime, timedelta
+from datetime                            import datetime
 
 class SatelliteConstellation:
     """

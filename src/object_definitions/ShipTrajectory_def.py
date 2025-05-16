@@ -16,6 +16,7 @@ from tqdm              import tqdm
 from datetime          import datetime, timedelta
 from math              import radians, cos, sin, asin, sqrt, atan2, degrees
 from shapely.geometry  import Point, LineString
+from bisect            import bisect_left
 from scipy.spatial     import Delaunay, cKDTree
 
 from object_definitions.Constants_def import Constants
@@ -83,6 +84,18 @@ class ShipTrajectory:
         self.shapefile_path    = {}                                   # Dictionary to store shapefile paths for different trajectory types (points, lines, waypoints)
 
         self.initialize(trajectory_type, save_graph)
+
+    def get_travel_duration_hours(self)                                                                 -> float:
+        """
+        This method calculates the travel duration in hours based on the start and end time of the ship's journey.
+        """
+        if self.start_time and self.end_time:
+            end_time_dt     = datetime.strptime(self.end_time, '%Y-%m-%d %H:%M:%S')
+            start_time_dt   = datetime.strptime(self.start_time, '%Y-%m-%d %H:%M:%S')
+            travel_duration = (end_time_dt - start_time_dt).total_seconds() / Constants.SEC_PER_HOUR
+            return travel_duration
+        else:
+            raise ValueError("Start time or end time not set. Cannot calculate travel duration.")
 
     def initialize(self, trajectory_type, save_graph)                                                                        -> None:
         """
@@ -1170,6 +1183,45 @@ class ShipTrajectory:
         if show==True:
             plt.show()
 
+    def get_position_at_time(self, timestamp)                                                                                  -> tuple:
+        """
+        Get the ship's position at a specific timestamp.
+
+        INPUT:
+            timestamp (datetime): The timestamp to check
+
+        OUTPUT:
+            tuple: (latitude, longitude) of the ship at the given timestamp
+        """
+        # Make sure timestamps are not none
+        if not self.timestamps:
+            print("Error: No timestamps available. Please generate the trajectory first.")
+            return None
+        # Make sure timestamps are sorted
+        if not all(self.timestamps[i] <= self.timestamps[i+1] for i in range(len(self.timestamps) - 1)):
+            print("Error: Timestamps are not sorted. Please generate the trajectory first.")
+            return None
+        if not isinstance(timestamp, datetime):
+            print("Error: Timestamp must be a datetime object.")
+            return None
+        # Get the closest timestamp
+        idx = bisect_left(self.timestamps, timestamp)
+        if idx == 0:
+            return self.trajectory_points[0]
+        elif idx == len(self.timestamps):
+            return self.trajectory_points[-1]
+        else:
+            # Check which timestamp is closer
+            if abs(self.timestamps[idx] - timestamp) < abs(self.timestamps[idx - 1] - timestamp):
+                return self.trajectory_points[idx]
+            else:
+                return self.trajectory_points[idx - 1]
+
+        # Find the closest point in time
+        closest_point = min(self.timestamps, key=lambda t: abs(t - timestamp))
+        index         = self.timestamps.index(closest_point)
+        return self.trajectory_points[index]
+    
 # Example usage:
 if __name__ == "__main__":
     helgoland = (54.199416, 7.892937) 

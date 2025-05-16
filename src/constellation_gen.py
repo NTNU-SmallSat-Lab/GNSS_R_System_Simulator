@@ -1,8 +1,6 @@
 import numpy as np
-#import matplotlib.pyplot as plt
-#from mpl_toolkits.mplot3d import Axes3D
-import random 
-from object_definitions.Constants_def import Constants
+import random
+#from object_definitions.Constants_def import Constants
 
 
 def wrapto360(angle):
@@ -107,8 +105,3 @@ def define_orbit_vector(max_inputs, start_time_dt):
 
     # Printing the result
     return orbits_input_list
-
-#from datetime import datetime
-
-#start_time_dt = datetime.now()
-#define_orbit_vector(5, start_time_dt)
