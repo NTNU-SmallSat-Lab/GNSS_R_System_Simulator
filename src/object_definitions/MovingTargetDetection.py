@@ -6,16 +6,14 @@ import cartopy.feature     as cfeature
 import cartopy.crs         as ccrs
 import functions.functions as fn
 import datetime            as dt
-from typing                                import Annotated
+#from typing                                import Annotated
 from tqdm                                  import tqdm
 from shapely.geometry                      import Polygon, Point
-#from scipy.spatial.distance                import cdist
-from typing                                import List
+#from typing                                import List
 from dataclasses                           import dataclass, field
 #from matplotlib.patches                    import Patch
 from object_definitions.Constants_def      import Constants
 from object_definitions.Reflection_def     import Reflection
-#from object_definitions.Static_classes_def import Plotting
 from object_definitions.ShipTrajectory_def import ShipTrajectory
 from pyproj                                import Geod
 
@@ -52,17 +50,17 @@ class MovingTargetDetection:
                 self.moving_target_object = moving_target_object
                 if moving_target_object.shapefile_path['time_series'] is None:
                     raise ValueError("ERROR: Shapefile path is None in \"moving target object\". \n Please provide an moveing_target_object with a valid shapefile path.")
-                self.gdf_time_series = gpd.read_file(moving_target_object.shapefile_path['time_series'])                    # GeoDataFrame for the input shapefile (outline of the area of interest)
+                self.gdf_time_series = gpd.read_file(moving_target_object.shapefile_path['time_series'])       # GeoDataFrame for the input shapefile (outline of the area of interest)
 
             self.bounding_box               = self._get_bounding_box(1000)                                     # Bounding box for filtering points (min_lon, max_lon, min_lat, max_lat)
-            self.footprint_size_m           = footprint_size_m                                                      # Size of the grid cells in meters
+            self.footprint_size_m           = footprint_size_m                                                 # Size of the grid cells in meters # TODO this should be dynamic to allow different constellations / bands to use different sizes
             self.reflection_dict_timeSorted = {}                                                               # Reflection dictionary for storing reflection vector containing reflection points for each GNSS constellations 
             self.target_detect_dict         = {}                                                               # Coverage vector for storing coverage information over each grid-cell in the gridded shapefile
 
             self.sat_constellation          = sat_const                                                        # Satellite constellation object
             self.gnss_constellation         = gnss_const                                                       # Dictionary with GNSS constellation objects
 
-            self.footprint_resolution       = 64                                                          # Number of points to create a circle (higher resolution for smoother circles) | hardcoded to 64
+            self.footprint_resolution       = 64                                                               # Number of points to create a circle (higher resolution for smoother circles) | hardcoded to 64
             self.initialization()
             if create_shapefile_for_visualization:
                 self._create_coverage_shapefile_circle()
@@ -82,11 +80,58 @@ class MovingTargetDetection:
         A moving target is considered "detected" if the reflection point is within the grid cell
         for a certain time
         """
+        def show_reflection_and_target_position(pos_tgt_i, footprint_reflection, gnss_name):
+            """
+            This function is to show one reflection point and the target position at a given time.
+            It is used for debugging purposes.
+            """
+            """
+            Show the circle polygon on a map.
+            """
+            ## DEBUG plot circle_poly
+            fig, ax = plt.subplots(figsize=(10, 6), subplot_kw={'projection': ccrs.PlateCarree()})
+            
+            # Make sure bounding box is appropriate for your circle
+            # If self.bounding_box is too large compared to your circle, adjust it
+            # Format should be [lon_min, lon_max, lat_min, lat_max]
+            max_lon, min_lon, max_lat, min_lat = self.bounding_box
+            max_lon                            = max(max_lon, footprint_reflection.bounds[2], pos_tgt_i.longitude) + 0.1
+            min_lon                            = min(min_lon, footprint_reflection.bounds[0], pos_tgt_i.longitude) - 0.1
+            max_lat                            = max(max_lat, footprint_reflection.bounds[3], pos_tgt_i.latitude) + 0.1
+            min_lat                            = min(min_lat, footprint_reflection.bounds[1], pos_tgt_i.latitude) - 0.1
+            new_bounding_box                   = (min_lon, max_lon, min_lat, max_lat)
+            ax.set_extent(new_bounding_box, crs=ccrs.PlateCarree())
+
+            ax.set_title('Circle Polygon')
+            ax.set_xlabel('Longitude')
+            ax.set_ylabel('Latitude')
+            ax.add_feature(cfeature.LAND, facecolor='lightgray')
+            ax.add_feature(cfeature.OCEAN, facecolor='lightblue')
+            ax.add_feature(cfeature.LAKES, facecolor='lightblue')
+
+            # Try making the circle more visible
+            ax.plot(*footprint_reflection.exterior.xy, color='red', linewidth=2, label='Circle Polygon', transform=ccrs.PlateCarree())
+            ax.plot(pos_tgt_i.geometry.x, pos_tgt_i.geometry.y, 'o', color='blue', markersize=8, label='Target Position', transform=ccrs.PlateCarree())
+
+            # Print the coordinates to check if they're inside the bounding box
+            print(f"Circle coords range: Lon [{min(footprint_reflection.exterior.xy[0])}-{max(footprint_reflection.exterior.xy[0])}], "
+                    f"Lat [{min(footprint_reflection.exterior.xy[1])}-{max(footprint_reflection.exterior.xy[1])}]")
+            print(f"Bounding box: {self.bounding_box}")
+
+            # Add grid lines for better reference
+            gl              = ax.gridlines(draw_labels=True, linewidth=0.5, alpha=0.7, linestyle='--')
+            gl.top_labels   = False
+            gl.right_labels = False
+
+            ax.legend()
+            plt.tight_layout()
+            plt.show(block=True)
+
         ###########################################
         # 1: Calculate all the reflection points  #
         ###########################################
         # Get the satellite constellation time in UTC format
-        times_sat             = [time.utc_datetime() for time in self.sat_constellation.times_skyfield]
+        times_reflections     = [time.utc_datetime() for time in self.sat_constellation.times_skyfield] # Reflection times are identical to the satellite constellation times
         total_comp_refl       = 0
         reflection_dict       = {} # Dictionary to store the reflection points for each GNSS constellation
 
@@ -120,7 +165,7 @@ class MovingTargetDetection:
                             earth_model=earth_model, angle=max_refl_angle, 
                             gnss_const=gnss_name
                         )
-                        reflection.compute_reflection_coordinates(sat_tx, sat_rx, times_sat)
+                        reflection.compute_reflection_coordinates(sat_tx, sat_rx, times_reflections)
                         reflections_vec.append(reflection)
 
                         # Update progress bar after each reflection calculation
@@ -131,7 +176,7 @@ class MovingTargetDetection:
 
         ################################################################
         # 2: Re-sort reflections_dict to reflection_dict_timeSorted    #
-        ################################################################ # TODO: Make sure duplicates are needed
+        ################################################################
         for gnss_const_name, reflection_objects in reflection_dict.items():
             # Add the gnss_constallation name to reflection_dict_timeSorted (initialize for this constellation)
             self.reflection_dict_timeSorted[gnss_const_name] = {}
@@ -156,6 +201,7 @@ class MovingTargetDetection:
                 # Generate a reflection ID based on the transmitter and receiver satellite IDs
                 refl_id = (refl_obj.tx_satID, refl_obj.rx_satID)
 
+                # Iterate through each time in the reflection object
                 for idx, time_i in enumerate(time_vector_all_refl):
                     # Skip None or invalid times [ROBUSTNESS]
                     if time_i is None or not isinstance(time_i, dt.datetime):
@@ -188,53 +234,70 @@ class MovingTargetDetection:
         #########################################################
         # Iterate through each satellite constellation
         for gnss_name, _ in self.gnss_constellation.items():
-            # Iterate through each time in the moving target trajectory
-            for pos_tgt_i in tqdm(self.gdf_time_series.itertuples(), desc=f"Calculating coverage for {gnss_name} ", unit="time", leave=False):
-#                # Calculate a "circle" around the ship position
-                shape_circle = self._circle_for_traj_point(pos_tgt_i.geometry)
+            # Iterate through each position in the moving target trajectory
+            for pos_tgt_i in tqdm(self.gdf_time_series.itertuples(), desc=f"Detection of moving target using {gnss_name}", unit="time", leave=False):
+                # Get the time for the current position of the moving target / convert to UTC format
+                time_tgt_i = dt.datetime.strptime(pos_tgt_i.datetime_s, '%Y-%m-%d %H:%M:%S').replace(tzinfo=dt.timezone.utc)
 
-                # Get the time of the moving target trajectory
-                time_i = dt.datetime.strptime(pos_tgt_i.datetime_s, '%Y-%m-%d %H:%M:%S').replace(tzinfo=dt.timezone.utc)
-
-                # Find keys within 1 second tolerance
+                ###############################################################################################################
+                # Find the closest time in the reflection trajectory matching the current time at the moving target position  #
+                ###############################################################################################################
                 matching_time_found    = False
-
-                for sat_time in times_sat:
-                    if abs(sat_time - time_i) <= dt.timedelta(seconds=1):
-                        matching_time_found   = True
-                        break
+                # Iterate through the satellite-constellation times
+                    # Make sure times_reflections is not empty [ROBUSTNESS]
+                if times_reflections:
+                    matching_idx = np.argmin([abs(time_tgt_i - t) for t in times_reflections])
+                    # Get the closest time
+                    time_refl_i = times_reflections[matching_idx]
+                    # Check if within tolerance of 1 second
+                    if abs(time_refl_i - time_tgt_i) <= dt.timedelta(seconds=1):
+                        matching_time_found = True
 
                 # Check if the time is in the reflection dictionary (tolerance of 1 second)
-                target_detection = moving_target_detection_struct()
                 if matching_time_found:
-                    # Get the reflection points for this time
-                    refl_points_time_i = self.reflection_dict_timeSorted[gnss_name][time_i]
+                    # Get the reflection points for this time for the current GNSS constellations
+                    refl_points_i = self.reflection_dict_timeSorted[gnss_name][time_refl_i]
+                    
+                    ######################################################################################################
+                    # Check if a reflection point (time_refl_i) is closer than "footprint_size_m" to the moving target   #
+                    ######################################################################################################
+                    for reflection in refl_points_i:
+                        # Get the reflection object
+                        refl_obj = reflection['refl_obj']
 
-                    # Check if the reflection points are within the "circle" at which center the ship/moving target is located
-                    # Iterate through each reflection point
-                    for ref in refl_points_time_i:
-                        refl_obj = ref['refl_obj']  # Get the reflection object
                         # Get the actuall reflection coordinates for the current time
-                        reflection_index = ref['time_index']  # Use the pre-computed index
-#                        reflection_index = np.argmin(np.abs(refl_obj.time_vec - time_i))
-
+                        reflection_index       = reflection['time_index']  # Use the pre-computed index
                         coordinates_reflection = refl_obj.refl_ECI_vec[reflection_index]
-                        # Ensure the reflection coordinates are not Nan (NaN values can occur if the reflection is not valid / not in the field of view etc.)
-                        if not np.any(np.isnan(coordinates_reflection)):
-                            refl_point = Point(refl_obj.refl_LL_vec[reflection_index][0], refl_obj.refl_LL_vec[reflection_index][1])
-                            if shape_circle.intersects(refl_point):
-                                # make a new instance of the dataclass moving_target_detection_struct and append it to the target detection list
+                        if not np.all(np.isnan(coordinates_reflection)):
+                            lon        = refl_obj.refl_LL_vec[reflection_index][1]  # Get longitude (second element)
+                            lat        = refl_obj.refl_LL_vec[reflection_index][0]  # Get latitude (first element)
+                            if np.isnan(lon or lat):
+                                if verbose:
+                                    tqdm.write(f"WARNING: Reflection coordinates are NaN for {gnss_name} at time {time_refl_i}")
+                                continue
+                            # Create a circle around the reflection point
+                            footprint_reflection = self._reflection_point_footprint(Point(lon, lat), gnss_name, band=None)
 
-                                target_detection.position_ecef = refl_obj.refl_ECI_vec[reflection_index]
-                                target_detection.position_ll   = refl_obj.refl_LL_vec[reflection_index]
-                                target_detection.tx_satID      = refl_obj.tx_satID
-                                target_detection.rx_satID      = refl_obj.rx_satID
-                                target_detection.time          = time_i
-                                target_detection.angle         = refl_obj.cutoff_angle
-                                target_detection.shape         = shape_circle
-                                target_detection.power         = refl_obj.power
-                                # Append the target detection to the target detection list
-                                self.target_detect_dict[gnss_name].append(target_detection)
+                            # DEBUG: Plot the footprint and the moving target position
+                            # show_reflection_and_target_position(pos_tgt_i, footprint_reflection, gnss_name)
+                            if footprint_reflection.intersects(pos_tgt_i.geometry):
+                                # Moving Target could be detected! Initialize the moving target detection structure
+                                possible_target_detection = moving_target_detection_struct()
+
+                                possible_target_detection.position_ecef = refl_obj.refl_ECI_vec[reflection_index]
+                                possible_target_detection.position_ll   = refl_obj.refl_LL_vec[reflection_index]
+                                possible_target_detection.tx_satID      = refl_obj.tx_satID
+                                possible_target_detection.rx_satID      = refl_obj.rx_satID
+                                possible_target_detection.time          = time_tgt_i
+                                possible_target_detection.angle         = refl_obj.cutoff_angle
+                                possible_target_detection.shape         = footprint_reflection
+                                possible_target_detection.power         = refl_obj.power
+
+                                # Append the possible target detection to the target detection list
+                                self.target_detect_dict[gnss_name].append(possible_target_detection)
+                else:
+                    time_diff_sec = (time_refl_i - time_tgt_i).total_seconds()
+                    tqdm.write(f"WARNING: No matching time found for target time {time_tgt_i.strftime("%Y-%m-%d %H:%M:%S")} for the {gnss_name} constellation\n     Closest time is {time_refl_i.strftime("%Y-%m-%d %H:%M:%S")} [deltaT = {time_diff_sec} seconds]\n     -> Make sure skyfield times and moving target times are overlapping.")
 
     def plot_detection_points(self, gnss_constellation=None, file_name="Detection_points.png", frame=10_000):
         """
@@ -309,6 +372,16 @@ class MovingTargetDetection:
         # STUB for now
         pass
 
+    def show_reflections_and_target_position_at_time_i(self, time_i, gnss_constellation_name=None):
+        """
+        Show the all reflection points and the target position at a given time.
+
+        INPUTS:
+            time_i:                     Time of the target position    
+        """
+        # Get the reflection points for the given time
+        pass # STUB FOR NOW
+
     def _get_bounding_box(self, buffer_meters=0.0) -> tuple:
         """
         This function calculates a bouding box of the maximal/minimal movement the moving
@@ -344,7 +417,7 @@ class MovingTargetDetection:
         print("Create_shapefile_circles for visualization")
         # Create a new shapefile
         print(f"Creating new gridded shapefile at with equal \"meters\" spacing at: {file_path}")
-        
+
         # Check if footprint_size_m is None, if so skip this function
         if self.footprint_size_m is None:
             print("Grid size in meters is not specified. Skipping the creation of the gridded shapefile.")
@@ -426,10 +499,53 @@ class MovingTargetDetection:
 #        plt.savefig("geodesic_circles_from_points.png")
 #        plt.show(block=True)
 
-    def _circle_for_traj_point(self, point_geom) -> Polygon:
+    def _reflection_point_footprint(self, point_geom, gnss_constellation_name, band) -> Polygon:
         """
         Create a circle around a given point with a specified radius in meters.
         """
+        def show_circle(circle_poly):
+            """
+            Show the circle polygon on a map.
+            """
+            ## DEBUG plot circle_poly
+            fig, ax = plt.subplots(figsize=(10, 6), subplot_kw={'projection': ccrs.PlateCarree()})
+            
+            # Make sure bounding box is appropriate for your circle
+            # If self.bounding_box is too large compared to your circle, adjust it
+            # Format should be [lon_min, lon_max, lat_min, lat_max]
+            max_lon, min_lon, max_lat, min_lat = self.bounding_box
+            max_lon                            = max(max_lon, circle_poly.bounds[2]) + 0.1
+            min_lon                            = min(min_lon, circle_poly.bounds[0]) - 0.1
+            max_lat                            = max(max_lat, circle_poly.bounds[3]) + 0.1
+            min_lat                            = min(min_lat, circle_poly.bounds[1]) - 0.1
+            new_bounding_box                   = (min_lon, max_lon, min_lat, max_lat)
+            ax.set_extent(new_bounding_box, crs=ccrs.PlateCarree())
+
+            ax.set_title('Circle Polygon')
+            ax.set_xlabel('Longitude')
+            ax.set_ylabel('Latitude')
+            ax.add_feature(cfeature.LAND, facecolor='lightgray')
+            ax.add_feature(cfeature.OCEAN, facecolor='lightblue')
+            ax.add_feature(cfeature.LAKES, facecolor='lightblue')
+
+            # Try making the circle more visible
+            ax.plot(*circle_poly.exterior.xy, color='red', linewidth=2, label='Circle Polygon', transform=ccrs.PlateCarree())
+            ax.plot(center_lon, center_lat, 'o', color='blue', markersize=8, label='Center Point', transform=ccrs.PlateCarree())
+
+            # Print the coordinates to check if they're inside the bounding box
+            print(f"Circle coords range: Lon [{min(circle_poly.exterior.xy[0])}-{max(circle_poly.exterior.xy[0])}], "
+                  f"Lat [{min(circle_poly.exterior.xy[1])}-{max(circle_poly.exterior.xy[1])}]")
+            print(f"Bounding box: {self.bounding_box}")
+
+            # Add grid lines for better reference
+            gl              = ax.gridlines(draw_labels=True, linewidth=0.5, alpha=0.7, linestyle='--')
+            gl.top_labels   = False
+            gl.right_labels = False
+
+            ax.legend()
+            plt.tight_layout()
+            plt.show(block=True)
+
         # Get the center of the point
         center_lon = point_geom.centroid.x
         center_lat = point_geom.centroid.y
@@ -458,36 +574,18 @@ class MovingTargetDetection:
         circle_poly = Polygon(circle_points)
 
         ## DEBUG plot circle_poly
-        #fig, ax = plt.subplots(figsize=(10, 6))
-        #ax.set_title('Circle Polygon')
-        #ax.set_xlabel('Longitude')
-        #ax.set_ylabel('Latitude')
-        #ax.plot(*circle_poly.exterior.xy, color='red', label='Circle Polygon')
-        #ax.plot(center_lon, center_lat, 'o', color='blue', label='Center Point')
-        #ax.legend()
-        #plt.show(block=True)
+        # show_circle(circle_poly)
 
         # Create a shapely polygon from the points
         return circle_poly
-
+    
 @dataclass
 class moving_target_detection_struct:
-    position_ecef: np.ndarray = field(default_factory=lambda: np.zeros(3, dtype=np.float32))
-    position_ll:   np.ndarray = field(default_factory=lambda: np.zeros(2, dtype=np.float32))
-    tx_satID:      int      = 0
-    rx_satID:      int      = 0
-    time:          dt       = 0.0
-    angle:         float    = 0.0
-    shape:         float    = 0.0
-    power:         float    = 0.0
-
-#@dataclass
-#class moving_target_detection_struct:
-#    position_ecef: List[float] = field(default_factory=np.array[np.float32, np.float32, np.float32])
-#    position_ll:   np.array[np.float32, np.float32]             = field(default_factory=np.array[np.float32, np.float32])
-#    tx_satID:      float                                        = field(default_factory=float)
-#    rx_satID:      float                                        = field(default_factory=float)
-#    time:          float                                        = field(default_factory=float)
-#    angle:         float                                        = field(default_factory=float)
-#    shape:         float                                        = field(default_factory=float)
-#    power:         float                                        = field(default_factory=float)
+    position_ecef: np.ndarray = field(default_factory=lambda: np.full(3, np.nan, dtype=np.float32))
+    position_ll:   np.ndarray = field(default_factory=lambda: np.full(2, np.nan, dtype=np.float32))
+    tx_satID:      int        = field(default=None)
+    rx_satID:      int        = field(default=None)
+    time:          dt         = None
+    angle:         float      = np.nan
+    shape:         float      = np.nan
+    power:         float      = np.nan
