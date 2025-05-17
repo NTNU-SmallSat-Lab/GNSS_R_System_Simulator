@@ -52,7 +52,7 @@ def Skagerrak_to_BarentsSea(settings):
                            for i in range(settings['No_satellites'])]
     sat_const = SatelliteConstellation(satConfigName="LEO GNSS-R constellation", satArray=sat_array)
     sat_const.generate_constellation_TLE()
-    sat_const.set_simulation_duration(settings['start_time'], settings['sim_duration'], settings['step_size'])
+    sat_const.set_simulation_duration(settings['start_time'], shipTrajectory.get_travel_duration_hours(), settings['step_size'])
 
     # 4. Propagate orbits
     fn.propagate_all_orbits(sat_const, gnss_constl_dict, settings['start_time'], 

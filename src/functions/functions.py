@@ -47,7 +47,6 @@ def skew_matrix(v):
                      [v[2],  0,   -v[0]],
                      [-v[1], v[0], 0]])
 
-## NOTE: CLEANED UP AFTER THIS POINT
 def load_gnss_constellation_dict(gnss_costl_configs):
     '''
     Load GNSS constellation configurations.
@@ -62,8 +61,8 @@ def load_gnss_constellation_dict(gnss_costl_configs):
     for name, tle_file_dict in gnss_costl_configs.items():
         print(f"GNSS constellation: \"{name}\" loaded from: {tle_file_dict['tle_file']}.")
         gnss_constl_dict[name] = SatelliteConstellation(
-            tle_file=tle_file_dict['tle_file'], 
-            satConfigName=name
+            tle_file      = tle_file_dict['tle_file'], 
+            satConfigName = name
         )
     return gnss_constl_dict
 
@@ -71,6 +70,8 @@ def propagate_all_orbits(sat_const, gnss_constl_dict, start_time, duration_h, st
     '''
     Propagate orbits for satellite constellation and GNSS constellations.
     '''
+    # TODO extract start time from the satellite constellation
+
     duration = int(duration_h * Constants.SEC_PER_HOUR)
     # Propagate the satellite constellation (GNSS-R / LEO)
     print(f"Propagating satellite constellation: \"{sat_const.satConfigName}\"")
@@ -80,6 +81,8 @@ def propagate_all_orbits(sat_const, gnss_constl_dict, start_time, duration_h, st
     for name, gnss_const in gnss_constl_dict.items():
         print(f"Propagating GNSS constellation: \"{name}\"")
         gnss_const.propagate_constellation(start_time, duration, step_size)
+        if gnss_const.times_skyfield is None:
+            print(f"WARNING: GNSS constellation \"{name}\" has not been propagated.")
 
 def color_gnss_const(gnss_const):
     '''
