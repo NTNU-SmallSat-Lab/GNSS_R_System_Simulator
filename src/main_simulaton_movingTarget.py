@@ -30,8 +30,9 @@ def Skagerrak_to_BarentsSea(settings):
     Skagerrak   = (58.0,      10.0)        # Approximate center of Skagerrak sea
     Kaliningrad = (55.0,      20.0)        # Coast in front of Kaliningrad (Koenigsberg)
 
+    ########################################################################
     # 1: Calculate ship trajectory from Skagerrak to Barents Sea
-    # Create ship trajectory
+    ########################################################################
     shipTrajectory = ShipTrajectory(
         ship_id              = "DarkShip_001",         # Ship ID
         ship_speed_knot      = 15.0,                   # 15 knots ship speed
@@ -44,22 +45,36 @@ def Skagerrak_to_BarentsSea(settings):
     )
     shipTrajectory.plot_route()
 
+    ####################################
     # 2: Load simulation settings
+    ####################################
     gnss_constl_dict = fn.load_gnss_constellation_dict(settings['GNSS_constellations'])
 
+    ####################################
     # 3. Create satellite constellation
+    ####################################
     sat_array = [Satellite(i, orbit_n=settings['orbits'][i]) 
                            for i in range(settings['No_satellites'])]
     sat_const = SatelliteConstellation(satConfigName="LEO GNSS-R constellation", satArray=sat_array)
     sat_const.generate_constellation_TLE()
-    sat_const.set_simulation_duration(settings['start_time'], shipTrajectory.get_travel_duration_hours(), settings['step_size'])
 
-    # 4. Propagate orbits
-    fn.propagate_all_orbits(sat_const, gnss_constl_dict, settings['start_time'], 
-                            shipTrajectory.get_travel_duration_hours(), settings['step_size'])
+    ########################################################################
+    # 4: Set simulation duration for the GNSS constellations
+    ########################################################################
+    travel_duration_h = shipTrajectory.get_travel_duration_hours() # Add 1 hour for the simulation duration
+    for name, gnss_const in gnss_constl_dict.items():
+        gnss_const.set_simulation_duration(settings['start_time'], travel_duration_h, settings['step_size'])
+        print(f"Simulation duration for GNSS constellation: \"{name}\" set to {gnss_const.duration_sec} seconds.")
+    sat_const.set_simulation_duration(settings['start_time'], travel_duration_h, settings['step_size'])
 
     ####################################
-    # 5. Calculate sunlight time
+    # 5. Propagate orbits
+    ####################################
+    fn.propagate_all_orbits(sat_const, gnss_constl_dict, settings['start_time'], 
+                            travel_duration_h, settings['step_size'])
+
+    ####################################
+    # 6. Calculate sunlight time
     #################################### # TODO improve this also
     for sat_idx in range(sat_const.no_satellites):
         sat_const.satellites[sat_idx].calculate_sunlight_time()
@@ -68,7 +83,7 @@ def Skagerrak_to_BarentsSea(settings):
         print(f"Sunlit percentage for satellite {sat_idx}: ",    sat_const.satellites[sat_idx].sunlit_fraction * 100)
 
     ##########################################
-    # 6. Moving target detection probablility
+    # 7. Moving target detection probablility
     ##########################################
     moving_target_detection = MovingTargetDetection(sat_const, gnss_constl_dict, shipTrajectory, footprint_size_m=300_000, create_shapefile_for_visualization=True)
     moving_target_detection.calculate_moving_target_reflection_intersection(verbose=True)
@@ -77,13 +92,13 @@ def Skagerrak_to_BarentsSea(settings):
     moving_target_detection.plot_time_until_detection(gnss_constellation="GALILEO", file_name="Coverage_time_until_detection.png")
 
 #    ####################################
-#    # 6. Calculate reflection points and coverage
+#    # 8. Calculate reflection points and coverage
 #    ####################################
     coverage = Coverage(sat_const, gnss_constl_dict, settings['shapefile_path'], settings['bounding_box'], grid_size_deg=1)
     coverage.calculate_reflection_points_and_coverage(verbose=True)
 
 #    ####################################
-#    # 7. Plot reflection points
+#    # 9. Plot reflection points
 #    ####################################
 #    coverage.plot_reflection_points()
 #    coverage.plot_coverage_shapefile(gnss_constellation="GPS", file_name="Coverage.png")
@@ -92,12 +107,12 @@ def Skagerrak_to_BarentsSea(settings):
 #    coverage.plot_coverage_gridded_shapefile(file_name="Coverage_grid_GPS_GALIEO.png")
 
 #    ####################################
-#    # 9. Calculate statistics
+#    # 10. Calculate statistics
 #    ####################################
 #    coverage.calculate_statistics()
 
     ####################################
-    # 10. Plot orbits
+    # 11. Plot orbits
     ####################################
     Plotting.plot_orbits(sat_const)
 

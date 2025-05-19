@@ -1,4 +1,4 @@
-import os
+import os, math
 from object_definitions.Satellite_def    import Satellite
 from object_definitions.Constants_def    import Constants
 from object_definitions.ReadWriteSatData import ReadWriteSatData as rw
@@ -67,9 +67,9 @@ class SatelliteConstellation:
             True if the simulation duration is set successfully, False otherwise
         """
         if isinstance(startTime, (datetime)) and isinstance(duration, (int, float)) and isinstance(stepSize, (int)):
-            self.duration_sec = int(duration * Constants.SEC_PER_HOUR)               # Duration in seconds
-            num_steps         = (self.duration_sec) // stepSize                      # derive no. of steps from duration and step size
-            self.times_skyfield = load.timescale().utc(                          # This  start time is after both GPS and GALILEO TLE Epoch, so I will use this atm
+            self.duration_sec = math.ceil(duration * Constants.SEC_PER_HOUR)         # Duration in seconds
+            num_steps         = math.ceil((self.duration_sec) / stepSize)            # derive no. of steps from duration and step size
+            self.times_skyfield = load.timescale().utc(                              # This  start time is after both GPS and GALILEO TLE Epoch, so I will use this atm
                 startTime.year,
                 startTime.month,
                 startTime.day,

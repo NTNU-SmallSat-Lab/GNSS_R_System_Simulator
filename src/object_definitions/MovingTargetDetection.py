@@ -177,7 +177,7 @@ class MovingTargetDetection:
         ################################################################
         # 2: Re-sort reflections_dict to reflection_dict_timeSorted    #
         ################################################################
-        for gnss_const_name, reflection_objects in reflection_dict.items():
+        for gnss_const_name, reflection_objects in tqdm(reflection_dict.items(), desc="Sorting reflection points", unit="constellation"):
             # Add the gnss_constallation name to reflection_dict_timeSorted (initialize for this constellation)
             self.reflection_dict_timeSorted[gnss_const_name] = {}
 
@@ -233,7 +233,7 @@ class MovingTargetDetection:
         # 3: Calculate if the moving target can be detected     #
         #########################################################
         # Iterate through each satellite constellation
-        for gnss_name, _ in self.gnss_constellation.items():
+        for gnss_name, _ in tqdm(self.gnss_constellation.items(), desc="Detection of moving target", unit="constellation"):
             # Iterate through each position in the moving target trajectory
             for pos_tgt_i in tqdm(self.gdf_time_series.itertuples(), desc=f"Detection of moving target using {gnss_name}", unit="time", leave=False):
                 # Get the time for the current position of the moving target / convert to UTC format
