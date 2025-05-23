@@ -85,18 +85,6 @@ class ShipTrajectory:
 
         self.initialize(trajectory_type, save_graph)
 
-    def get_travel_duration_hours(self)                                                                 -> float:
-        """
-        This method calculates the travel duration in hours based on the start and end time of the ship's journey.
-        """
-        if self.start_time and self.end_time:
-            end_time_dt     = datetime.strptime(self.end_time, '%Y-%m-%d %H:%M:%S')
-            start_time_dt   = datetime.strptime(self.start_time, '%Y-%m-%d %H:%M:%S')
-            travel_duration = (end_time_dt - start_time_dt).total_seconds() / Constants.SEC_PER_HOUR
-            return travel_duration
-        else:
-            raise ValueError("Start time or end time not set. Cannot calculate travel duration.")
-
     def initialize(self, trajectory_type, save_graph)                                                                        -> None:
         """
         Initialize the trajectory data.
@@ -114,6 +102,18 @@ class ShipTrajectory:
                 self.create_shapefile(trajectory_type="line")
             if trajectory_type.__contains__("waypoints"):
                 self.create_shapefile(trajectory_type="waypoints")
+
+    def get_travel_duration_hours(self)                                                                 -> float:
+        """
+        This method calculates the travel duration in hours based on the start and end time of the ship's journey.
+        """
+        if self.start_time and self.end_time:
+#            end_time_dt     = datetime.strptime(self.end_time, '%Y-%m-%d %H:%M:%S')
+#            start_time_dt   = datetime.strptime(self.start_time, '%Y-%m-%d %H:%M:%S')
+            travel_duration = (self.end_time - self.start_time).total_seconds() / Constants.SEC_PER_HOUR
+            return travel_duration
+        else:
+            raise ValueError("Start time or end time not set. Cannot calculate travel duration.")
 
     def load_class_from_file(self)                                                                                           -> None:
         """
@@ -137,8 +137,10 @@ class ShipTrajectory:
                 self.ship_id                       = metadata['ship_id']
                 self.start_position                = metadata['start_position']
                 self.end_position                  = metadata['end_position']
-                self.start_time                    = metadata['start_time']
-                self.end_time                      = metadata['end_time']
+                start_time_str                     = metadata['start_time']
+                self.start_time                    = datetime.strptime(start_time_str, '%Y-%m-%d %H:%M:%S')
+                end_time_str                       = metadata['end_time']
+                self.end_time                      = datetime.strptime(end_time_str, '%Y-%m-%d %H:%M:%S')
                 self.ship_speed                    = metadata['ship_speed_m_s']
                 self.route_distance                = metadata['route_distance_m']
                 self.fast_method                   = metadata['fast_method']

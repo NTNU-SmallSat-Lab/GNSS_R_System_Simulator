@@ -71,8 +71,13 @@ def propagate_all_orbits(sat_const, gnss_constl_dict, start_time, duration_h, st
     Propagate orbits for satellite constellation and GNSS constellations.
     '''
     # TODO extract start time from the satellite constellation
+    start_time_skf = sat_const.times_skyfield[0] if sat_const.times_skyfield is not None else None
+    if start_time_skf is None:
+        raise ValueError("Start time for the satellite constellation is not set.")
+    start_time_dt = start_time_skf.utc_datetime()
+    duration   = sat_const.duration_sec
 
-    duration = int(duration_h * Constants.SEC_PER_HOUR)
+    #duration = int(duration_h * Constants.SEC_PER_HOUR)
     # Propagate the satellite constellation (GNSS-R / LEO)
     print(f"Propagating satellite constellation: \"{sat_const.satConfigName}\"")
     sat_const.propagate_constellation(start_time, duration, step_size)

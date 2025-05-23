@@ -92,11 +92,11 @@ def define_orbit_vector(max_inputs, start_time_dt):
         for row in array:
             # Extracting parameters
             semi_major_axis = row[5]  # Semi-major axis
-            eccentricity = row[1]  # Eccentricity
-            inclination = row[0]  # Inclination
-            RAAN = row[2]
-            ArgPer = row[3]
-            Theta = row[4]
+            eccentricity    = row[1]  # Eccentricity
+            inclination     = row[0]  # Inclination
+            RAAN            = row[2]
+            ArgPer          = row[3]
+            Theta           = row[4]
             # Constructing each orbit configuration (adding start_time_dt to each)
             orbit_list.append([inclination, eccentricity, RAAN, ArgPer,Theta, semi_major_axis, start_time_dt])
             # Adding a second configuration with 90 degree inclination

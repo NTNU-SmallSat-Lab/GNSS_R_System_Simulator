@@ -18,7 +18,7 @@ from object_definitions.ShipTrajectory_def import ShipTrajectory
 from pyproj                                import Geod
 
 class MovingTargetDetection:
-    def __init__(self, sat_const, gnss_const, moving_target_object, footprint_size_m=30_000, create_shapefile_for_visualization=False) -> None:
+    def __init__(self, sat_const, gnss_const, moving_target_object, footprint_size_m=30_000, create_shapefile_for_visualization=False, deltaT=60) -> None:
             """
             =========================================================================================================
             MovingTargetDetection class for storing MovingTargetDetection information over a grid defined by a 
@@ -50,10 +50,10 @@ class MovingTargetDetection:
                 self.moving_target_object = moving_target_object
                 if moving_target_object.shapefile_path['time_series'] is None:
                     raise ValueError("ERROR: Shapefile path is None in \"moving target object\". \n Please provide an moveing_target_object with a valid shapefile path.")
-                self.gdf_time_series = gpd.read_file(moving_target_object.shapefile_path['time_series'])       # GeoDataFrame for the input shapefile (outline of the area of interest)
+                self.gdf_time_series    = gpd.read_file(moving_target_object.shapefile_path['time_series'])       # GeoDataFrame for the input shapefile (outline of the area of interest)
 
-            self.bounding_box               = self._get_bounding_box(1000)                                     # Bounding box for filtering points (min_lon, max_lon, min_lat, max_lat)
-            self.footprint_size_m           = footprint_size_m                                                 # Size of the grid cells in meters # TODO this should be dynamic to allow different constellations / bands to use different sizes
+            self.bounding_box               = self._get_bounding_box(buffer_meters=1000)                       # Bounding box for filtering points (min_lon, max_lon, min_lat, max_lat)
+            self.footprint_size_m           = footprint_size_m                                                 # Size of the grid cells in meters # TODO this should be flexible to allow different constellations / bands to use different sizes
             self.reflection_dict_timeSorted = {}                                                               # Reflection dictionary for storing reflection vector containing reflection points for each GNSS constellations 
             self.target_detect_dict         = {}                                                               # Coverage vector for storing coverage information over each grid-cell in the gridded shapefile
 
@@ -61,6 +61,7 @@ class MovingTargetDetection:
             self.gnss_constellation         = gnss_const                                                       # Dictionary with GNSS constellation objects
 
             self.footprint_resolution       = 64                                                               # Number of points to create a circle (higher resolution for smoother circles) | hardcoded to 64
+            self.deltaT_sec                 = deltaT                                                           # Time tolerance in seconds for matching reflection points to moving target positions (default: 60 seconds) | This should match the time step of the simulation
             self.initialization()
             if create_shapefile_for_visualization:
                 self._create_coverage_shapefile_circle()
@@ -73,7 +74,7 @@ class MovingTargetDetection:
         for gnss_name, _ in self.gnss_constellation.items():
             self.target_detect_dict[gnss_name] = []
 
-    def calculate_moving_target_reflection_intersection(self, earth_model='spherical', max_refl_angle=45, verbose=False):
+    def calculate_moving_target_reflection_intersection(self, earth_model='spherical', max_refl_angle=45, verbose=False) -> None:
         """
         Calculate the intersection of the moving target trajectory with the reflection points.
 
@@ -177,13 +178,13 @@ class MovingTargetDetection:
         ################################################################
         # 2: Re-sort reflections_dict to reflection_dict_timeSorted    #
         ################################################################
-        for gnss_const_name, reflection_objects in tqdm(reflection_dict.items(), desc="Sorting reflection points", unit="constellation"):
+        for gnss_const_name, reflection_objects in reflection_dict.items():
             # Add the gnss_constallation name to reflection_dict_timeSorted (initialize for this constellation)
             self.reflection_dict_timeSorted[gnss_const_name] = {}
 
             # Iterate through each reflection object for this constellation
 
-            for refl_obj in reflection_objects:
+            for refl_obj in tqdm(reflection_objects, desc=f"Sorting reflections for {gnss_const_name}", unit="reflection"):
                 # Assure that the "time_vec" is an attribute of the reflection object and not None [ROBUSTNESS]
                 if not hasattr(refl_obj, 'time_vec') or refl_obj.time_vec is None:
                     print(f"Warning: Reflection object missing time_vec attribute for {gnss_const_name}")
@@ -233,9 +234,9 @@ class MovingTargetDetection:
         # 3: Calculate if the moving target can be detected     #
         #########################################################
         # Iterate through each satellite constellation
-        for gnss_name, _ in tqdm(self.gnss_constellation.items(), desc="Detection of moving target", unit="constellation"):
+        for gnss_name, _ in self.gnss_constellation.items():
             # Iterate through each position in the moving target trajectory
-            for pos_tgt_i in tqdm(self.gdf_time_series.itertuples(), desc=f"Detection of moving target using {gnss_name}", unit="time", leave=False):
+            for pos_tgt_i in tqdm(self.gdf_time_series.itertuples(), desc=f"Detection of moving target using {gnss_name}", unit="time-step ", leave=False):
                 # Get the time for the current position of the moving target / convert to UTC format
                 time_tgt_i = dt.datetime.strptime(pos_tgt_i.datetime_s, '%Y-%m-%d %H:%M:%S').replace(tzinfo=dt.timezone.utc)
 
@@ -250,7 +251,7 @@ class MovingTargetDetection:
                     # Get the closest time
                     time_refl_i = times_reflections[matching_idx]
                     # Check if within tolerance of 1 second
-                    if abs(time_refl_i - time_tgt_i) <= dt.timedelta(seconds=1):
+                    if abs(time_refl_i - time_tgt_i) <= dt.timedelta(seconds=self.deltaT_sec):
                         matching_time_found = True
 
                 # Check if the time is in the reflection dictionary (tolerance of 1 second)
@@ -273,7 +274,7 @@ class MovingTargetDetection:
                             lat        = refl_obj.refl_LL_vec[reflection_index][0]  # Get latitude (first element)
                             if np.isnan(lon or lat):
                                 if verbose:
-                                    tqdm.write(f"WARNING: Reflection coordinates are NaN for {gnss_name} at time {time_refl_i}")
+                                    tqdm.write(f"INFORMATION: Reflection coordinates are NaN for {gnss_name}, satellites ID-GNSS {refl_obj.tx_satID}, and ID-GNSS-R {refl_obj.rx_satID} at time {time_refl_i}")
                                 continue
                             # Create a circle around the reflection point
                             footprint_reflection = self._reflection_point_footprint(Point(lon, lat), gnss_name, band=None)
@@ -299,14 +300,18 @@ class MovingTargetDetection:
                     time_diff_sec = (time_refl_i - time_tgt_i).total_seconds()
                     tqdm.write(f"WARNING: No matching time found for target time {time_tgt_i.strftime("%Y-%m-%d %H:%M:%S")} for the {gnss_name} constellation\n     Closest time is {time_refl_i.strftime("%Y-%m-%d %H:%M:%S")} [deltaT = {time_diff_sec} seconds]\n     -> Make sure skyfield times and moving target times are overlapping.")
 
-    def plot_detection_points(self, gnss_constellation=None, file_name="Detection_points.png", frame=10_000):
+    def show_track_and_detection_points(self, gnss_constellation=None, file_name="Detection_points.png"):
         """
         Plot the detection points for each GNSS constellation.
         """
         # Get the bounding box for the plot
-        delta_lat = 0.1
-        delta_lon = 0.1
         min_lon, max_lon, min_lat, max_lat = self.bounding_box
+        delta_lat = 0.5
+        delta_lon = 0.5
+        min_lon  -= delta_lon
+        max_lon  += delta_lon
+        min_lat  -= delta_lat
+        max_lat  += delta_lat
 
         # If a GNSS constellation is provided, plot only the coverage area of that constellation, otherwise plot all constellations
         if gnss_constellation is not None:
@@ -349,38 +354,155 @@ class MovingTargetDetection:
         by_label        = dict(zip(labels, handles))
         ax.legend(by_label.values(), by_label.keys(), loc='upper right')
 
-        plt.show(block=True)
-
         # Plot detection points for each GNSS constellation
         for gnss_name in gnss_const:
             if gnss_name in self.target_detect_dict:
                 for idx, detect_struct in enumerate(self.target_detect_dict[gnss_name]):
-                    for pos_ll in detect_struct.position_ll:
-                        # Check if pos_ll is a valid point
-                        if pos_ll is not None and not np.any(np.isnan(pos_ll)):
-                            # Plot the point (position_ll is [lat, lon] but plot needs [lon, lat])
-                            ax.scatter(pos_ll[1], pos_ll[0], c=fn.color_gnss_const(gnss_name), 
+                    pos_ll = detect_struct.position_ll
+                    # Check if pos_ll is a valid point
+                    if pos_ll is not None and not np.any(np.isnan(pos_ll)):
+                        # Plot the point (position_ll is [lat, lon] but plot needs [lon, lat])
+                        ax.scatter(pos_ll[1], pos_ll[0], c=fn.color_gnss_const(gnss_name), 
                                        s=30, marker='o', alpha=0.7, 
                                        label=f"{gnss_name} Detection" if idx == 0 else "")
-            else:
-                print(f"Warning: Detection points for GNSS constellation {gnss_name} are not calculated.")
+                        
+                        # Draw the footprint circle around the point
+                        footprint_reflection = self._reflection_point_footprint(Point(pos_ll[1], pos_ll[0]), gnss_name, band=None)
+                        ax.plot(*footprint_reflection.exterior.xy, color=fn.color_gnss_const(gnss_name), linewidth=1, alpha=0.5)
+                        # Add a label for the detection point (GNSS constellation)
+                        ax.text(pos_ll[1], pos_ll[0], f"{gnss_name} sat-ID {detect_struct.tx_satID}, GNSS-R sat. {detect_struct.rx_satID}", fontsize=8, ha='right', va='bottom', color=fn.color_gnss_const(gnss_name))
 
-    def plot_time_until_detection(self, gnss_constellation=None, file_name="Detection_points.png"):
-        """
-        Plot the time until detection for each GNSS constellation.
-        """
-        # STUB for now
-        pass
+        # Add a legend (handle duplicates properly)
+        handles, labels = plt.gca().get_legend_handles_labels()
+        by_label        = dict(zip(labels, handles))
+        ax.legend(by_label.values(), by_label.keys(), loc='upper right')
 
-    def show_reflections_and_target_position_at_time_i(self, time_i, gnss_constellation_name=None):
+        plt.show(block=True)
+
+    def show_reflections_and_target_position_at_time_i(self, time_i, gnss_constellation_name=None, file_name=None):
         """
         Show the all reflection points and the target position at a given time.
 
         INPUTS:
-            time_i:                     Time of the target position    
+            time_i:                     (datetime) Time of the target position    
         """
+        if gnss_constellation_name is None:
+            # If no constellation name is provided, show all constellations
+            gnss_constellation_name = list(self.reflection_dict_timeSorted.keys())
+        else:
+            # Check if the constellation name is valid
+            if gnss_constellation_name not in self.reflection_dict_timeSorted:
+                raise ValueError(f"ERROR: GNSS constellation \"{gnss_constellation_name}\" not found in reflection dictionary.")
+
         # Get the reflection points for the given time
-        pass # STUB FOR NOW
+        # Find the closest time in the reflection trajectory matching the current time at the moving target position
+        reflections_time_i = {}
+        for gnss_const in gnss_constellation_name:
+            # Check if the time is in the reflection dictionary (tolerance of 1 second)
+            if time_i not in self.reflection_dict_timeSorted[gnss_const]:
+                time_i_ = min(self.reflection_dict_timeSorted[gnss_const].keys(), key=lambda k: abs(k.timestamp() - time_i.timestamp()))
+            else:
+                time_i_ = time_i
+            reflections_time_i[gnss_const] = self.reflection_dict_timeSorted[gnss_const].get(time_i_, None)
+            if reflections_time_i[gnss_const] is None:
+                print(f"WARNING: No reflections found for time {time_i} in constellation {gnss_const}")
+                return
+
+        # Get the target position at time_i
+        # Check if the time is in the gdf_time_series
+        gdf_time_series_dt = [dt.datetime.strptime(d, '%Y-%m-%d %H:%M:%S').replace(tzinfo=dt.timezone.utc) for d in self.gdf_time_series['datetime_s'].values]
+
+        if time_i not in gdf_time_series_dt:
+            time_i_dt  = min(gdf_time_series_dt, key=lambda k: abs(k.timestamp() - time_i.timestamp()))
+            time_i_str = time_i_dt.strftime('%Y-%m-%d %H:%M:%S')
+            pos_tgt_i  = self.gdf_time_series.loc[self.gdf_time_series['datetime_s'] == time_i_]
+        else:
+            # Get the target position at time_i
+            time_i_str = time_i.strftime('%Y-%m-%d %H:%M:%S')
+            pos_tgt_i = self.gdf_time_series.loc[self.gdf_time_series['datetime_s'] == time_i_str]
+
+        # Plot the target position and the reflection points with footprints
+        fig, ax = plt.subplots(figsize=(10, 6), subplot_kw={'projection': ccrs.PlateCarree()})
+        # Set the map extent to your bounding box (order: west, east, south, north)
+        min_lon, max_lon, min_lat, max_lat = self.bounding_box
+        delta_lat = 0.5
+        delta_lon = 0.5
+        min_lon  -= delta_lon
+        max_lon  += delta_lon
+        min_lat  -= delta_lat
+        max_lat  += delta_lat
+
+        ax.set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
+        ax.set_title(f'Reflections and Target Position at {time_i}')
+        ax.set_xlabel('Longitude')
+        ax.set_ylabel('Latitude')
+        ax.add_feature(cfeature.LAND,      facecolor='lightgray')
+        ax.add_feature(cfeature.OCEAN,     facecolor='lightblue')
+        ax.add_feature(cfeature.LAKES,     facecolor='lightblue')
+        ax.add_feature(cfeature.BORDERS,   linestyle=':')
+        ax.add_feature(cfeature.COASTLINE, linewidth=0.5)
+        # Add grid
+        gl              = ax.gridlines(draw_labels=True, linewidth=0.5, color='gray', alpha=0.5, linestyle='--')
+        gl.top_labels   = False
+        gl.right_labels = False
+        # Plot the trajectory points
+        trajectory_x = [point[1] for point in self.moving_target_object.trajectory_points]
+        trajectory_y = [point[0] for point in self.moving_target_object.trajectory_points] 
+        ax.plot(trajectory_x, trajectory_y, 'b-', linewidth=1.5, alpha=0.7, label='Trajectory')
+        # Add a legend (handle duplicates properly)
+        handles, labels = plt.gca().get_legend_handles_labels()
+        by_label        = dict(zip(labels, handles))
+        ax.legend(by_label.values(), by_label.keys(), loc='upper right')
+        # Plot the target position
+        if not pos_tgt_i.empty:
+            pos_tgt_i = pos_tgt_i.iloc[0]
+            ax.plot(pos_tgt_i.geometry.x, pos_tgt_i.geometry.y, 'o', color='blue', markersize=8, label='Target Position')
+            # Add a label for the target position
+            ax.text(pos_tgt_i.geometry.x, pos_tgt_i.geometry.y, f"Target Position", fontsize=8, ha='right', va='bottom', color='blue')
+        else:
+            print(f"WARNING: No target position found for time {time_i} in the trajectory data.")
+            return
+        # Plot the reflection points and their footprints
+        for gnss_const, reflections in reflections_time_i.items():
+            if reflections is not None:
+                for reflection in reflections:
+                    # Get the reflection object
+                    refl_obj = reflection['refl_obj']
+                    # Get the actual reflection coordinates for the current time
+                    reflection_index       = reflection['time_index']
+                    coordinates_reflection = refl_obj.refl_ECI_vec[reflection_index]
+                    if not np.all(np.isnan(coordinates_reflection)):
+                        lon        = refl_obj.refl_LL_vec[reflection_index][1]
+                        lat        = refl_obj.refl_LL_vec[reflection_index][0]
+                        if np.isnan(lon or lat):
+                            print(f"WARNING: Reflection coordinates are NaN for {gnss_const}, satellites ID-GNSS {refl_obj.tx_satID}, and ID-GNSS-R {refl_obj.rx_satID} at time {time_i}")
+                            continue
+                        # Create a circle around the reflection point
+                        footprint_reflection = self._reflection_point_footprint(Point(lon, lat), gnss_const, band=None)
+                        # Plot the reflection point
+                        ax.scatter(lon, lat, c=fn.color_gnss_const(gnss_const),
+                                      s=30, marker='o', alpha=0.7, 
+                                      label=f"{gnss_const} Reflection" if reflection == reflections[0] else "")
+                        # Draw the footprint circle around the point
+                        ax.plot(*footprint_reflection.exterior.xy, color=fn.color_gnss_const(gnss_const), linewidth=1, alpha=0.5)
+                        # Add a label for the reflection point
+                        ax.text(lon, lat, f"{gnss_const} sat-ID {refl_obj.tx_satID}, GNSS-R sat. {refl_obj.rx_satID}", fontsize=8, ha='right', va='bottom', color=fn.color_gnss_const(gnss_const))
+        # Add a legend (handle duplicates properly)
+        handles, labels = plt.gca().get_legend_handles_labels()
+        by_label        = dict(zip(labels, handles))
+        ax.legend(by_label.values(), by_label.keys(), loc='upper right')
+        plt.show(block=True)
+        # Save the figure
+        plt.show(block=True)
+        # Save the figure if the file name is provided
+        if file_name is not None:
+            file_path = Constants.OUTPUT_PATH + file_name
+            # Check if the file path is valid
+            if not os.path.exists(os.path.dirname(file_path)):
+                os.makedirs(os.path.dirname(file_path))
+            fig.savefig(file_path, dpi=300, bbox_inches='tight')
+        # Close the figure
+        plt.close(fig)
 
     def _get_bounding_box(self, buffer_meters=0.0) -> tuple:
         """
