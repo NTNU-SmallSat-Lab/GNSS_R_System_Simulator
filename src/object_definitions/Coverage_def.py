@@ -14,6 +14,7 @@ from matplotlib.patches                    import Patch
 from object_definitions.Constants_def      import Constants
 from object_definitions.Reflection_def     import Reflection
 from object_definitions.Static_classes_def import Plotting
+from scipy.spatial                         import cKDTree
 
 class Coverage:
     def __init__(self, sat_const, gnss_const, shapefile, bounding_box=None, grid_size_deg=None, grid_size_m=None, overwrite_shapefile=False) -> None:
@@ -112,8 +113,12 @@ class Coverage:
             print("Reflection dictionary is empty. Coverage is zero.")
             return
         
+        # Pre-compute KD-Tree for grid centroids
+        kdtree = self._precompute_grid_kdtree()
+        
         for gnss_name, gnss_value in self.gnss_constellation.items():
             refl_vector = self.reflection_dict[gnss_name] # Reflection vector for the current GNSS constellation
+
             for i in range(len(refl_vector)):
                 validity_mask, ref_points_in_box = self.validity_mask(refl_vector[i], self.bounding_box)
                 # Assembly of points in the bounding box for one GNSS-R satellite and one GNSS satellite
@@ -559,6 +564,16 @@ class Coverage:
         # Add title and legend
         ax.set_title('Fishnet Grid Overlayed on Original Shapefile')
         plt.savefig("rectangles_from_grid_points.png")
+
+    def _precompute_grid_kdtree(self):
+        """
+        Pre-compute KD-Tree for efficient spatial queries on grid centroids.
+        """
+        if not hasattr(self, '_grid_kdtree') or self._grid_kdtree is None:
+            centroids = np.array([(centroid.x, centroid.y) for centroid in self.grid_gdf.centroid])
+            self._grid_kdtree = cKDTree(centroids)
+            self._grid_centroids = centroids
+        return self._grid_kdtree
 
     @staticmethod
     def validity_mask(reflection_obj, bounding_box):

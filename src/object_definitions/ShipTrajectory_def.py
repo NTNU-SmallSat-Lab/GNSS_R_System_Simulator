@@ -52,10 +52,11 @@ class ShipTrajectory:
     def __init__(self,                ship_id,                ship_speed_knot,           start_position,            start_time,                      end_position, 
                  interval_minutes=10, grid_resolution_km=100, delta_boudingBox_km=500, fast_path_gen_method=True, mesh_connection_radius_km=2_000, water_buffer_km=22.2, 
                  trajectory_type=[], save_graph=False)                                         -> None:
+
         self.ship_id                = ship_id                         # Unique identifier for the ship
         self.ship_speed             = ship_speed_knot * 0.51444       # Ship speed in knots (will be converted to to [m/s])
         self.start_position         = start_position                  # Ship start positon (latitude, longitude), if the start position is on land, the nearest water point will be used
-        self.start_time             = start_time                      # Start time of the ship journey
+        self.start_time             = fn.ensure_utc_aware(start_time)    # Start time of the ship journey
         self.end_position           = end_position                    # Ship end position  (latitude, longitude), if the end position is on land, the nearest water point will be used
         self.interval_minutes       = interval_minutes                # Time interval in minutes for trajectory generation
         self.grid_resolution        = grid_resolution_km * 1e3        # Grid resolution in km for navigation mesh (default: 100 km) [this has a BIG IMPACT ON THE PERFORMANCE of the path generation]
@@ -125,7 +126,7 @@ class ShipTrajectory:
             shapefile_time_series              = gpd.read_file(self.shapefile_path['time_series'])
             trajectory_points                  = shapefile_time_series.geometry.values.tolist()
             self.trajectory_points             = [(np.float64(point.y), np.float64(point.x)) for point in trajectory_points]
-            self.timestamps                    = [datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S') 
+            self.timestamps                    = [fn.ensure_utc_aware(datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')) 
                                                    for dt_str in shapefile_time_series['datetime_s'].values.tolist()]
             geometry                           = shapefile_time_series['geometry'].values.tolist()
             self.end_position                  = geometry[-1].coords[0]                        # Last point in the trajectory
@@ -138,9 +139,9 @@ class ShipTrajectory:
                 self.start_position                = metadata['start_position']
                 self.end_position                  = metadata['end_position']
                 start_time_str                     = metadata['start_time']
-                self.start_time                    = datetime.strptime(start_time_str, '%Y-%m-%d %H:%M:%S')
+                self.start_time                    = fn.ensure_utc_aware(datetime.strptime(start_time_str, '%Y-%m-%d %H:%M:%S'))
                 end_time_str                       = metadata['end_time']
-                self.end_time                      = datetime.strptime(end_time_str, '%Y-%m-%d %H:%M:%S')
+                self.end_time                      = fn.ensure_utc_aware(datetime.strptime(end_time_str, '%Y-%m-%d %H:%M:%S'))
                 self.ship_speed                    = metadata['ship_speed_m_s']
                 self.route_distance                = metadata['route_distance_m']
                 self.fast_method                   = metadata['fast_method']
@@ -200,6 +201,38 @@ class ShipTrajectory:
         distance  = Constants.RADIUS_EARTH_EQUAT * c  # in meters
 
         return float(distance)
+    
+    def _calculate_haversine_vectorized(self, pos1_array, pos2_array):
+        """
+        Vectorized Haversine distance calculation for multiple point pairs.
+        """
+        # Convert to radians
+        lat1_rad = np.radians(pos1_array[:, 0])
+        lon1_rad = np.radians(pos1_array[:, 1])
+        lat2_rad = np.radians(pos2_array[:, 0])
+        lon2_rad = np.radians(pos2_array[:, 1])
+
+        # Vectorized Haversine formula
+        delta_phi    = lat2_rad - lat1_rad
+        delta_lambda = lon2_rad - lon1_rad
+    
+        a = np.sin(delta_phi/2)**2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(delta_lambda/2)**2
+        c = 2 * np.arcsin(np.sqrt(np.clip(a, 0, 1)))
+
+        distances = Constants.RADIUS_EARTH_EQUAT * c
+        return distances
+    def _calculate_segment_distances(self):
+        """
+        Calculate all segment distances at once using vectorized operations.
+        """
+        if len(self.waypoints) <= 1:
+            return []
+    
+        waypoints_array = np.array(self.waypoints)
+        pos1_array      = waypoints_array[:-1]  # All except last
+        pos2_array      = waypoints_array[1:]   # All except first
+
+        return self._calculate_haversine_vectorized(pos1_array, pos2_array)
 
     def calculate_bearing(self, pos1, pos2):
         """
@@ -611,10 +644,10 @@ class ShipTrajectory:
         point_ids    = {}
         nodes_to_add = []
         for point in valid_points:
-            point_id         = f"{point[0]:.4f}_{point[1]:.4f}"
+            point_id = f"{point[0]:.4f}_{point[1]:.4f}"
             point_ids[point] = point_id
             nodes_to_add.append((point_id, {"pos": point}))
-        
+
         # Add all nodes in a single batch operation
         G.add_nodes_from(nodes_to_add)
 
@@ -628,7 +661,7 @@ class ShipTrajectory:
 
         # First pass - try with normal radius
         if self.fast_method == True:
-            radius_in_degrees = self.mesh_connection_radius / 111000  # Approximate conversion km to degrees
+            radius_in_degrees = self.mesh_connection_radius / 111000
 
             # Find points within the connection radius
             start_indices = kdtree.query_ball_point(start_pos, radius_in_degrees)
@@ -639,12 +672,16 @@ class ShipTrajectory:
                 point    = valid_points[idx]
                 point_id = point_ids[point]
 
-                dist_to_end = self._calculate_havresin_distance(end_pos, point)
-                if dist_to_end  < self.mesh_connection_radius and not self.intersects_land(end_pos, point):
-                    G.add_edge(point_id, "end", weight=dist_to_end)
+                dist_to_start = self._calculate_havresin_distance(start_pos, point)  # Fixed: was using end_pos
+                if dist_to_start < self.mesh_connection_radius and not self.intersects_land(start_pos, point):
+                    G.add_edge("start", point_id, weight=dist_to_start)  # Fixed: was using "end"
                     start_connections += 1
 
-                # Connect to end if possible
+            # Connect end to nearby points
+            for idx in end_indices:
+                point    = valid_points[idx]
+                point_id = point_ids[point]
+
                 dist_to_end = self._calculate_havresin_distance(end_pos, point)
                 if dist_to_end < self.mesh_connection_radius and not self.intersects_land(end_pos, point):
                     G.add_edge(point_id, "end", weight=dist_to_end)
@@ -654,21 +691,19 @@ class ShipTrajectory:
 
         # If start or end has no connections, try harder with closest points
         if start_connections == 0:
-            # Find 10 closest points to start
             distances, indices = kdtree.query([start_pos[0], start_pos[1]], k=min(20, len(valid_points)))
             for i in range(len(indices)):
                 point = valid_points[indices[i]]
                 if not self.intersects_land(start_pos, point):
-                    dist = self._calculate_havresin_distance(start_pos, point)
+                    dist     = self._calculate_havresin_distance(start_pos, point)
                     point_id = point_ids[point]
                     G.add_edge("start", point_id, weight=dist)
                     print(f"Added edge from start to a point at distance {1e-3*dist:.2f} km")
                     start_connections += 1
-                    if start_connections >= 3:  # Get at least 3 connections
+                    if start_connections >= 3:
                         break
 
         if end_connections == 0:
-            # Find 10 closest points to end
             distances, indices = kdtree.query([end_pos[0], end_pos[1]], k=min(20, len(valid_points)))
             for i in range(len(indices)):
                 point = valid_points[indices[i]]
@@ -678,92 +713,90 @@ class ShipTrajectory:
                     G.add_edge(point_id, "end", weight=dist)
                     print(f"Added edge from end to point at distance {1e-3*dist:.2f} km")
                     end_connections += 1
-                    if end_connections >= 3:  # Get at least 3 connections
+                    if end_connections >= 3:
                         break
 
         # 2. Connect grid points efficiently
-        # First identify points connected to start and end for priority
         connected_to_start = set(G.neighbors("start"))
         connected_to_end   = set(G.neighbors("end"))
 
-        # Connect these high-priority points first (from start to end)
-        edge_count = 0
-
         # Use batch edge addition for priority connections
         priority_edges = []
-
+    
         # Connect from start connections to end connections (high priority)
         for start_node in tqdm(connected_to_start, desc="Finding route start-point to end-point"):
             start_position = G.nodes[start_node]["pos"]
             for end_node in connected_to_end:
                 end_position = G.nodes[end_node]["pos"]
-    
+
                 dist = self._calculate_havresin_distance(start_position, end_position)
                 if dist < self.mesh_connection_radius and not self.intersects_land(start_position, end_position):
                     priority_edges.append((start_node, end_node, {"weight": dist}))
-                    edge_count += 1
 
         # Add all priority edges in batch
         G.add_edges_from(priority_edges)
-        print(f"Added {edge_count} priority connections from start to end regions")
+        print(f"Added {len(priority_edges)} priority connections from start to end regions")
 
         # If path exists after priority connections, we can stop
         if nx.has_path(G, "start", "end"):
             print("Path found using priority connections")
             return
 
-        # 3. Connect normal grid points
+        # 3. Connect normal grid points with CORRECTED batch processing
         print("Adding regular grid connections...")
-        normal_edges = 0
+        radius_in_degrees = self.mesh_connection_radius / 111000
 
-        # Use a KD-Tree for efficient nearest neighbor search
-        radius_in_degrees = self.mesh_connection_radius / 111000  # Approximate conversion km to degrees
+        # STEP 1: COLLECT all point pairs (don't process distances yet)
+        all_pairs = []
 
-        # Use batch edge addition for regular grid
-        grid_edges = []
-
-        # Use a nearby point approach for efficiency / Process each point
-        for i, p1 in enumerate(tqdm(valid_points, desc="Creating edges")): # NOTE: This is very slow
-#            p1_id = f"{p1[0]:.4f}_{p1[1]:.4f}"
-            p1_id = point_ids[p1]
-
-            # Use KD-Tree to find points within connection radius
+        for i, p1 in enumerate(tqdm(valid_points, desc="Finding point pairs")):
+            p1_id          = point_ids[p1]
             nearby_indices = kdtree.query_ball_point([p1[0], p1[1]], radius_in_degrees)
 
             for idx in nearby_indices:
-                p2 = valid_points[idx]
+                p2    = valid_points[idx]
                 p2_id = point_ids[p2]
 
                 # Skip self-connections
                 if p1_id == p2_id:
                     continue
 
-                # Only process each pair once (using node ID comparison to ensure consistency)
+                # Only process each pair once (prevent duplicates)
                 if p1_id > p2_id and not G.has_edge(p1_id, p2_id):
-                    # Calculate actual distance
-                    dist = self._calculate_havresin_distance(p1, p2)
+                    all_pairs.append((i, idx, p1_id, p2_id))  # Store for batch processing
 
-                    # Connect if close enough and no land intersection
-                    if dist < self.mesh_connection_radius and not self.intersects_land(p1, p2):
-                        grid_edges.append((p1_id, p2_id, {"weight": dist}))
-                        normal_edges += 1
+        # STEP 2: PROCESS all collected pairs in batches
+        if all_pairs:
+            print(f"Calculating {len(all_pairs)} distances in batches...")
+            batch_size = 1000
 
-                        # Add edges in batches to reduce memory pressure
-                        if len(grid_edges) >= 10000:
-                            G.add_edges_from(grid_edges)
-                            grid_edges = []
+            for batch_start in tqdm(range(0, len(all_pairs), batch_size), desc="Calculating distances"):
+                batch_end   = min(batch_start + batch_size, len(all_pairs))
+                batch_pairs = all_pairs[batch_start:batch_end]
 
-        # Add any remaining edges
-        if grid_edges:
-            G.add_edges_from(grid_edges)
-    
-        print(f"Added {normal_edges} regular grid connections")
+                # Extract point coordinates for this batch
+                p1_coords = np.array([valid_points[pair[0]] for pair in batch_pairs])
+                p2_coords = np.array([valid_points[pair[1]] for pair in batch_pairs])
+
+                # Calculate all distances at once - VECTORIZED
+                distances = self._calculate_haversine_vectorized(p1_coords, p2_coords)
+
+                # Add edges for valid distances
+                batch_edges = []
+                for (i, idx, p1_id, p2_id), dist in zip(batch_pairs, distances):
+                    if dist < self.mesh_connection_radius and not self.intersects_land(valid_points[i], valid_points[idx]):
+                        batch_edges.append((p1_id, p2_id, {"weight": dist}))
+
+                # Add all edges in this batch at once
+                G.add_edges_from(batch_edges)
+
+        print(f"Added regular grid connections")
+
         # Save the graph
         if save_graph == True:
             print("Saving graph to file")
             if not os.path.exists(Constants.autogen_ship_shapefiles):
                 os.makedirs(Constants.autogen_ship_shapefiles)
-            # Save the graph
             with open(os.path.join(Constants.autogen_ship_shapefiles, f'{self.ship_id}_graph.pickle'), 'wb') as f:
                 pickle.dump(G, f)
 
@@ -825,9 +858,7 @@ class ShipTrajectory:
 
         if len(self.waypoints) > 1:
             # Calculate segment lengths
-            segment_distances = []
-            for i in range(len(self.waypoints) - 1):
-                segment_distances.append(self._calculate_havresin_distance(self.waypoints[i], self.waypoints[i+1]))
+            segment_distances = self._calculate_segment_distances()
 
             total_distance = sum(segment_distances)
 
@@ -912,12 +943,9 @@ class ShipTrajectory:
 
         if len(self.waypoints) > 1:
             # Calculate segment lengths
-            segment_distances = []
-            for i in range(len(self.waypoints) - 1):
-                # Calculate distance between waypoints
-                segment_distances.append(self._calculate_havresin_distance(self.waypoints[i], self.waypoints[i+1]))
-
-            total_distance = sum(segment_distances)
+            # Calculate segment lengths - VECTORIZED VERSION
+            segment_distances = self._calculate_segment_distances()
+            total_distance    = sum(segment_distances)
 
             # Segment start times based on proportional distances
             segment_times = [self.start_time]
@@ -931,11 +959,10 @@ class ShipTrajectory:
             # Generate trajectory for each segment
             for i in range(len(self.waypoints) - 1):
                 # Get start and end positions and times for this segment
-                start_pos = self.waypoints[i]
-                end_pos   = self.waypoints[i+1]
-                start_t   = segment_times[i]
-                end_t     = segment_times[i+1]
-    
+                start_pos    = self.waypoints[i]
+                end_pos      = self.waypoints[i+1]
+                start_t      = segment_times[i]
+                end_t        = segment_times[i+1]
                 current_time = start_t
                 while current_time <= end_t:
                     # Calculate progress within this segment
@@ -1072,12 +1099,12 @@ class ShipTrajectory:
         gdf.to_file(output_path)
         print(f"Created time series shapefile at {output_path}")
         self.shapefile_path['time_series'] = output_path
-        
+
         ##########################################################################
         # Save additional metadata to a separate JSON file
         metadata_file_name   = os.path.splitext(file_name)[0] + "_metadata.json"
         metadata_output_path = os.path.join(Constants.autogen_ship_shapefiles, metadata_file_name)
-        
+
         # Prepare metadata dictionary
         metadata = {
             'ship_id':                self.ship_id,
@@ -1096,14 +1123,13 @@ class ShipTrajectory:
             'delta_m':                self.delta_m,
             'generated_on':           datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         }
-        
+
         # Add waypoints if available
         if self.waypoints:
             metadata['waypoints']      = [(round(wp[0], 6), round(wp[1], 6)) for wp in self.waypoints]
             metadata['waypoint_count'] = len(self.waypoints)
 
         # Save metadata to JSON
-
         with open(metadata_output_path, 'w') as f:
             json.dump(metadata, f, indent=4)
 

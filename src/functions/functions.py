@@ -1,5 +1,6 @@
 import numpy    as np
 import pymap3d
+import datetime as dt
 
 from pyproj                                  import Transformer
 from object_definitions.SatConstellation_def import SatelliteConstellation
@@ -21,6 +22,23 @@ x, y, z = vec[0], vec[1], vec[2]
 lat, lon, alt = ecef_to_lla(x, y, z)
 print(f"Latitude: {lat}, Longitude: {lon}, Altitude: {alt}")
 '''
+
+def ensure_utc_aware(dt_obj):
+    """
+    Convert datetime to UTC-aware if it's naive.
+    
+    INPUT:
+        dt_obj: datetime object (can be timezone-aware or naive)
+    
+    OUTPUT:
+        datetime object that is guaranteed to be UTC-aware
+    """
+    if dt_obj is None:
+        return None
+    if dt_obj.tzinfo is None:
+        return dt_obj.replace(tzinfo=dt.timezone.utc)
+    return dt_obj
+
 def angle_between_vectors(v1, v2):
     '''
     Calculate the angle between two vectors in degrees

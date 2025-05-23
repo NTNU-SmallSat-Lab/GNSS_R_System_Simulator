@@ -81,7 +81,7 @@ class Reflection:
 
         # Precompute line-of-sight (LOS) and valid theta indices for efficiency
         los_mask = np.array([
-            self.__check_los_satellites(Sat_state.positions_eci[:, i], GNSS_state.positions_eci[:, i])
+            self._check_los_satellites(Sat_state.positions_eci[:, i], GNSS_state.positions_eci[:, i])
             for i in range(num_positions)
         ])
         valid_indices = (theta < self.cutoff_angle) & los_mask
@@ -238,25 +238,19 @@ class Reflection:
         return np.degrees(theta_radians)
 
     @staticmethod
-    def __check_los_satellites(r1, r2)                                        -> bool:
+    def _check_los_satellites(r1, r2) -> bool:
         """
         Checks if there is a clear Line Of Sight (LOS) between two points r1 and r2,
         given the Earth's radius in kilometers.
         """
-        # Vector between the two points
         d = r2 - r1
 
-        # Parametric line between points, sampled at 100 points
-        t_values = np.linspace(0, 1, 100)
+        # Vectorized calculation with fewer sample points for speed
+        t_values            = np.linspace(0, 1, 50)  # Reduced from 100 to 50
+        points_along_line   = r1[np.newaxis, :] + t_values[:, np.newaxis] * d[np.newaxis, :]
+        distances_to_center = np.linalg.norm(points_along_line, axis=1)
 
-        # Check if any point along the line passes through Earth
-        for t in t_values:
-            r_t = r1 + t * d  # Parametric equation of the line
-            distance_to_earth_center = np.linalg.norm(r_t)
-
-            if distance_to_earth_center < Constants.RADIUS_EARTH_EQUAT:
-                return False  # No line of sight, obstructed by Earth
-        return True  # LOS is clear
+        return not np.any(distances_to_center < Constants.RADIUS_EARTH_EQUAT)
 
     @staticmethod
     def __is_valid_earth_model(earth_model) -> bool:

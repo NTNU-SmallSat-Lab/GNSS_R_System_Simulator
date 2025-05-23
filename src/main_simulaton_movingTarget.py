@@ -4,7 +4,7 @@ import functions.functions as fn
 
 import matplotlib
 matplotlib.use('TkAgg', force=True)
-from datetime                                     import datetime, timezone
+from datetime                                     import timedelta
 from __init__                                     import initialize
 from object_definitions.Satellite_def             import Satellite
 from object_definitions.SatConstellation_def      import SatelliteConstellation
@@ -89,8 +89,10 @@ def Skagerrak_to_BarentsSea(settings):
     moving_target_detection = MovingTargetDetection(sat_const, gnss_constl_dict, shipTrajectory, footprint_size_m=300_000, deltaT=settings['step_size'])
     moving_target_detection.calculate_moving_target_reflection_intersection(verbose=True)
     moving_target_detection.show_track_and_detection_points()
-    time_midpoint = shipTrajectory.start_time + (shipTrajectory.end_time - shipTrajectory.start_time) / 2
-    moving_target_detection.show_reflections_and_target_position_at_time_i(time_midpoint)
+    time_midpoint = fn.ensure_utc_aware(shipTrajectory.start_time + (shipTrajectory.end_time - shipTrajectory.start_time) / 2)
+    time_1h       = fn.ensure_utc_aware(shipTrajectory.start_time + timedelta(hours=1))
+    moving_target_detection.show_reflections_and_target_position_at_time_i(time_1h, show=True, label_reflections=True)
+    moving_target_detection.create_reflection_animation()
 
 #    ####################################
 #    # 8. Calculate reflection points and coverage

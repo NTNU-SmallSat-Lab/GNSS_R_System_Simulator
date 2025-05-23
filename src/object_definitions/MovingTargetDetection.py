@@ -1,4 +1,4 @@
-import os
+import os, imageio
 import geopandas           as gpd
 import numpy               as np
 import matplotlib.pyplot   as plt
@@ -6,12 +6,11 @@ import cartopy.feature     as cfeature
 import cartopy.crs         as ccrs
 import functions.functions as fn
 import datetime            as dt
-#from typing                                import Annotated
+from datetime                              import timedelta
+from bisect                                import bisect_left
 from tqdm                                  import tqdm
 from shapely.geometry                      import Polygon, Point
-#from typing                                import List
 from dataclasses                           import dataclass, field
-#from matplotlib.patches                    import Patch
 from object_definitions.Constants_def      import Constants
 from object_definitions.Reflection_def     import Reflection
 from object_definitions.ShipTrajectory_def import ShipTrajectory
@@ -247,18 +246,17 @@ class MovingTargetDetection:
                 # Iterate through the satellite-constellation times
                     # Make sure times_reflections is not empty [ROBUSTNESS]
                 if times_reflections:
-                    matching_idx = np.argmin([abs(time_tgt_i - t) for t in times_reflections])
                     # Get the closest time
-                    time_refl_i = times_reflections[matching_idx]
-                    # Check if within tolerance of 1 second
-                    if abs(time_refl_i - time_tgt_i) <= dt.timedelta(seconds=self.deltaT_sec):
+                    matching_idx, min_diff = self._find_closest_time(time_tgt_i, times_reflections)
+                    if min_diff <= self.deltaT_sec:
                         matching_time_found = True
+                        time_refl_i         = times_reflections[matching_idx]
 
                 # Check if the time is in the reflection dictionary (tolerance of 1 second)
                 if matching_time_found:
                     # Get the reflection points for this time for the current GNSS constellations
                     refl_points_i = self.reflection_dict_timeSorted[gnss_name][time_refl_i]
-                    
+
                     ######################################################################################################
                     # Check if a reflection point (time_refl_i) is closer than "footprint_size_m" to the moving target   #
                     ######################################################################################################
@@ -379,7 +377,7 @@ class MovingTargetDetection:
 
         plt.show(block=True)
 
-    def show_reflections_and_target_position_at_time_i(self, time_i, gnss_constellation_name=None, file_name=None):
+    def show_reflections_and_target_position_at_time_i(self, time_i, gnss_constellation_name=None, file_name=None, show=False, label_reflections=True, downscale_factor=1):
         """
         Show the all reflection points and the target position at a given time.
 
@@ -415,24 +413,17 @@ class MovingTargetDetection:
         if time_i not in gdf_time_series_dt:
             time_i_dt  = min(gdf_time_series_dt, key=lambda k: abs(k.timestamp() - time_i.timestamp()))
             time_i_str = time_i_dt.strftime('%Y-%m-%d %H:%M:%S')
-            pos_tgt_i  = self.gdf_time_series.loc[self.gdf_time_series['datetime_s'] == time_i_]
+            pos_tgt_i  = self.gdf_time_series.loc[self.gdf_time_series['datetime_s'] == time_i_str]
         else:
             # Get the target position at time_i
             time_i_str = time_i.strftime('%Y-%m-%d %H:%M:%S')
-            pos_tgt_i = self.gdf_time_series.loc[self.gdf_time_series['datetime_s'] == time_i_str]
+            pos_tgt_i  = self.gdf_time_series.loc[self.gdf_time_series['datetime_s'] == time_i_str]
 
         # Plot the target position and the reflection points with footprints
         fig, ax = plt.subplots(figsize=(10, 6), subplot_kw={'projection': ccrs.PlateCarree()})
         # Set the map extent to your bounding box (order: west, east, south, north)
-        min_lon, max_lon, min_lat, max_lat = self.bounding_box
-        delta_lat = 0.5
-        delta_lon = 0.5
-        min_lon  -= delta_lon
-        max_lon  += delta_lon
-        min_lat  -= delta_lat
-        max_lat  += delta_lat
+        ax.set_global()
 
-        ax.set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
         ax.set_title(f'Reflections and Target Position at {time_i}')
         ax.set_xlabel('Longitude')
         ax.set_ylabel('Latitude')
@@ -441,6 +432,8 @@ class MovingTargetDetection:
         ax.add_feature(cfeature.LAKES,     facecolor='lightblue')
         ax.add_feature(cfeature.BORDERS,   linestyle=':')
         ax.add_feature(cfeature.COASTLINE, linewidth=0.5)
+        ax.add_feature(cfeature.RIVERS, linewidth=0.3, alpha=0.7)
+        ax.stock_img()
         # Add grid
         gl              = ax.gridlines(draw_labels=True, linewidth=0.5, color='gray', alpha=0.5, linestyle='--')
         gl.top_labels   = False
@@ -448,17 +441,18 @@ class MovingTargetDetection:
         # Plot the trajectory points
         trajectory_x = [point[1] for point in self.moving_target_object.trajectory_points]
         trajectory_y = [point[0] for point in self.moving_target_object.trajectory_points] 
-        ax.plot(trajectory_x, trajectory_y, 'b-', linewidth=1.5, alpha=0.7, label='Trajectory')
+        ax.plot(trajectory_x, trajectory_y, '-.', color='orange', linewidth=1.5, alpha=0.7, label='Trajectory')
         # Add a legend (handle duplicates properly)
-        handles, labels = plt.gca().get_legend_handles_labels()
-        by_label        = dict(zip(labels, handles))
-        ax.legend(by_label.values(), by_label.keys(), loc='upper right')
+        if label_reflections:
+            handles, labels = plt.gca().get_legend_handles_labels()
+            by_label        = dict(zip(labels, handles))
+            ax.legend(by_label.values(), by_label.keys(), loc='upper right')
         # Plot the target position
         if not pos_tgt_i.empty:
             pos_tgt_i = pos_tgt_i.iloc[0]
-            ax.plot(pos_tgt_i.geometry.x, pos_tgt_i.geometry.y, 'o', color='blue', markersize=8, label='Target Position')
+            ax.plot(pos_tgt_i.geometry.x, pos_tgt_i.geometry.y, 'x', color='orange', markersize=8, label='Target Position')
             # Add a label for the target position
-            ax.text(pos_tgt_i.geometry.x, pos_tgt_i.geometry.y, f"Target Position", fontsize=8, ha='right', va='bottom', color='blue')
+            ax.text(pos_tgt_i.geometry.x, pos_tgt_i.geometry.y, f"Target Position", fontsize=8, ha='right', va='bottom', color='orange')
         else:
             print(f"WARNING: No target position found for time {time_i} in the trajectory data.")
             return
@@ -485,24 +479,98 @@ class MovingTargetDetection:
                                       label=f"{gnss_const} Reflection" if reflection == reflections[0] else "")
                         # Draw the footprint circle around the point
                         ax.plot(*footprint_reflection.exterior.xy, color=fn.color_gnss_const(gnss_const), linewidth=1, alpha=0.5)
-                        # Add a label for the reflection point
-                        ax.text(lon, lat, f"{gnss_const} sat-ID {refl_obj.tx_satID}, GNSS-R sat. {refl_obj.rx_satID}", fontsize=8, ha='right', va='bottom', color=fn.color_gnss_const(gnss_const))
+                        # Add a label for the reflection point (if enabled)
+                        if label_reflections:
+                            ax.text(lon, lat, f"{gnss_const} sat-ID {refl_obj.tx_satID}, GNSS-R sat. {refl_obj.rx_satID}", fontsize=8, ha='right', va='bottom', color=fn.color_gnss_const(gnss_const))
         # Add a legend (handle duplicates properly)
-        handles, labels = plt.gca().get_legend_handles_labels()
-        by_label        = dict(zip(labels, handles))
-        ax.legend(by_label.values(), by_label.keys(), loc='upper right')
-        plt.show(block=True)
-        # Save the figure
-        plt.show(block=True)
+        if label_reflections:
+            handles, labels = plt.gca().get_legend_handles_labels()
+            by_label        = dict(zip(labels, handles))
+            ax.legend(by_label.values(), by_label.keys(), loc='upper right')
+        if show:
+            plt.show(block=True)
+
         # Save the figure if the file name is provided
         if file_name is not None:
-            file_path = Constants.OUTPUT_PATH + file_name
+            file_path = os.path.join(Constants.output_folder_path, file_name)
             # Check if the file path is valid
             if not os.path.exists(os.path.dirname(file_path)):
                 os.makedirs(os.path.dirname(file_path))
+                # downscale the figure size
+                if downscale_factor > 1:
+                    fig.set_size_inches(fig.get_size_inches() / downscale_factor)
+                # Save the figure
             fig.savefig(file_path, dpi=300, bbox_inches='tight')
         # Close the figure
         plt.close(fig)
+
+    def create_reflection_animation(self, time_step_min=10, output_format='gif', output_filename=None, fps=3):
+        """
+        Create animation showing reflections over time.
+        """
+
+        # Generate time points
+        time_points  = []
+        current_time = self.moving_target_object.start_time
+        end_time     = self.moving_target_object.end_time
+        while current_time <= end_time:
+            time_points.append(current_time)
+            current_time += timedelta(minutes=time_step_min)
+
+        print(f"Creating {len(time_points)} frames...")
+
+        # Create temp directory
+        temp_dir = os.path.join(Constants.output_folder_path, 'temp_frames')
+        os.makedirs(temp_dir, exist_ok=True)
+
+        # Generate frames
+        frame_files = []
+        for i, time_point in enumerate(tqdm(time_points)):
+            frame_path = os.path.join(temp_dir, f"frame_{i:04d}.png")
+
+            try:
+                self.show_reflections_and_target_position_at_time_i(
+                    time_i=time_point,
+                    file_name=frame_path,
+                    show=False,
+                    label_reflections=False
+                )
+                frame_files.append(frame_path)
+            except:
+                continue
+             # Create output filename
+        if output_filename is None:
+            timestamp       = self.moving_target_object.start_time.strftime("%Y%m%d_%H%M")
+            output_filename = f"animation_{timestamp}.{output_format}"
+
+        output_path = os.path.join(Constants.output_folder_path, output_filename)
+
+        # Create animation
+        print(f"Creating {output_format}...") #TODO improve this
+        with imageio.get_writer(output_path, mode='I', fps=fps, loop=0) as writer:
+            for frame_file in frame_files:
+                writer.append_data(imageio.imread(frame_file))
+
+        # Cleanup
+        for frame_file in frame_files:
+            os.remove(frame_file)
+        os.rmdir(temp_dir)
+
+        print(f"Done: {output_path}")
+        return output_path
+
+    def _find_closest_time(self, target_time, times_reflections):
+        """
+        Find the closest time using vectorized operations.
+        """
+        target_time_utc = fn.ensure_utc_aware(target_time)
+        times_utc       = [fn.ensure_utc_aware(t) for t in times_reflections]
+
+        # Vectorized time difference calculation
+        time_diffs   = np.array([abs((target_time_utc - t).total_seconds()) for t in times_utc])
+        matching_idx = np.argmin(time_diffs)
+
+        return matching_idx, time_diffs[matching_idx]
 
     def _get_bounding_box(self, buffer_meters=0.0) -> tuple:
         """
@@ -569,10 +637,6 @@ class MovingTargetDetection:
             center_lon = point_geom.centroid.x
             center_lat = point_geom.centroid.y
 
-#            # Get the geoid height at this location (difference between ellipsoid and geoid)
-#            _, _, geoid_height = transformer.transform(center_lon, center_lat, 0)
-#            print(f"Point at {center_lon}, {center_lat} has geoid height: {geoid_height} meters")
-
             # Create a circle on the ellipsoid by calculating points along azimuths
             circle_points = []
             num_points    = self.footprint_resolution
@@ -584,10 +648,6 @@ class MovingTargetDetection:
                 # Calculate the point at the given distance and azimuth from the center
                 # forward_azimuth, back_azimuth, distance = geod.inv(lon1, lat1, lon2, lat2)
                 lon, lat, _ = geod.fwd(center_lon, center_lat, azimuth, circle_radius_meter)
-
-#                # Get the geoid height at this new location (for high-precision work)
-#                # Comment this out if not needed for efficiency
-#                _, _, point_geoid_height = transformer.transform(lon, lat, 0)
 
                 # Add the point to our circle points
                 circle_points.append((lon, lat))
