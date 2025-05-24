@@ -270,7 +270,7 @@ class MovingTargetDetection:
                         if not np.all(np.isnan(coordinates_reflection)):
                             lon        = refl_obj.refl_LL_vec[reflection_index][1]  # Get longitude (second element)
                             lat        = refl_obj.refl_LL_vec[reflection_index][0]  # Get latitude (first element)
-                            if np.isnan(lon or lat):
+                            if np.isnan(lon) or np.isnan(lat):
                                 if verbose:
                                     tqdm.write(f"INFORMATION: Reflection coordinates are NaN for {gnss_name}, satellites ID-GNSS {refl_obj.tx_satID}, and ID-GNSS-R {refl_obj.rx_satID} at time {time_refl_i}")
                                 continue
@@ -298,7 +298,7 @@ class MovingTargetDetection:
                     time_diff_sec = (time_refl_i - time_tgt_i).total_seconds()
                     tqdm.write(f"WARNING: No matching time found for target time {time_tgt_i.strftime("%Y-%m-%d %H:%M:%S")} for the {gnss_name} constellation\n     Closest time is {time_refl_i.strftime("%Y-%m-%d %H:%M:%S")} [deltaT = {time_diff_sec} seconds]\n     -> Make sure skyfield times and moving target times are overlapping.")
 
-    def show_track_and_detection_points(self, gnss_constellation=None, file_name="Detection_points.png"):
+    def show_track_and_detection_points(self, gnss_constellation=None, file_name=None, show_figure=False):
         """
         Plot the detection points for each GNSS constellation.
         """
@@ -366,6 +366,10 @@ class MovingTargetDetection:
                         
                         # Draw the footprint circle around the point
                         footprint_reflection = self._reflection_point_footprint(Point(pos_ll[1], pos_ll[0]), gnss_name, band=None)
+                        # Check if the footprint intersects with -180 / 180 longitude line
+                        if not self._polygon_intersects_180_lat(footprint_reflection):
+                            # Skiping to plot this reflection
+                            continue
                         ax.plot(*footprint_reflection.exterior.xy, color=fn.color_gnss_const(gnss_name), linewidth=1, alpha=0.5)
                         # Add a label for the detection point (GNSS constellation)
                         ax.text(pos_ll[1], pos_ll[0], f"{gnss_name} sat-ID {detect_struct.tx_satID}, GNSS-R sat. {detect_struct.rx_satID}", fontsize=8, ha='right', va='bottom', color=fn.color_gnss_const(gnss_name))
@@ -374,10 +378,16 @@ class MovingTargetDetection:
         handles, labels = plt.gca().get_legend_handles_labels()
         by_label        = dict(zip(labels, handles))
         ax.legend(by_label.values(), by_label.keys(), loc='upper right')
+        # Save the figure
+        if file_name is not None:
+            file_path = os.path.join(Constants.output_folder_path, file_name)
+            plt.savefig(file_path, dpi=300, bbox_inches='tight')
+            print(f"Figure saved as {file_name}")
 
-        plt.show(block=True)
+        if show_figure:
+            plt.show(block=True)
 
-    def show_reflections_and_target_position_at_time_i(self, time_i, gnss_constellation_name=None, file_name=None, show=False, label_reflections=True, downscale_factor=1):
+    def show_reflections_and_target_position_at_time_i(self, time_i, gnss_constellation_name=None, file_name=None, label_reflections=True, downscale_factor=1, show=False, verbose=False):
         """
         Show the all reflection points and the target position at a given time.
 
@@ -403,7 +413,8 @@ class MovingTargetDetection:
                 time_i_ = time_i
             reflections_time_i[gnss_const] = self.reflection_dict_timeSorted[gnss_const].get(time_i_, None)
             if reflections_time_i[gnss_const] is None:
-                print(f"WARNING: No reflections found for time {time_i} in constellation {gnss_const}")
+                if verbose:
+                    print(f"WARNING: No reflections found for time {time_i} in constellation {gnss_const}")
                 return
 
         # Get the target position at time_i
@@ -454,7 +465,8 @@ class MovingTargetDetection:
             # Add a label for the target position
             ax.text(pos_tgt_i.geometry.x, pos_tgt_i.geometry.y, f"Target Position", fontsize=8, ha='right', va='bottom', color='orange')
         else:
-            print(f"WARNING: No target position found for time {time_i} in the trajectory data.")
+            if verbose:
+                print(f"WARNING: No target position found for time {time_i} in the trajectory data.")
             return
         # Plot the reflection points and their footprints
         for gnss_const, reflections in reflections_time_i.items():
@@ -468,11 +480,19 @@ class MovingTargetDetection:
                     if not np.all(np.isnan(coordinates_reflection)):
                         lon        = refl_obj.refl_LL_vec[reflection_index][1]
                         lat        = refl_obj.refl_LL_vec[reflection_index][0]
-                        if np.isnan(lon or lat):
-                            print(f"WARNING: Reflection coordinates are NaN for {gnss_const}, satellites ID-GNSS {refl_obj.tx_satID}, and ID-GNSS-R {refl_obj.rx_satID} at time {time_i}")
+                        if np.isnan(lon) or np.isnan(lat):
+                            # If the coordinates are NaN, skip this reflection point
+                            if verbose:
+                                print(f"WARNING: Reflection coordinates are NaN for {gnss_const}, satellites ID-GNSS {refl_obj.tx_satID}, and ID-GNSS-R {refl_obj.rx_satID} at time {time_i}")
                             continue
                         # Create a circle around the reflection point
                         footprint_reflection = self._reflection_point_footprint(Point(lon, lat), gnss_const, band=None)
+
+                        # Check if the footprint intersects with -180 / 180 longitude line
+                        if not self._polygon_intersects_180_lat(footprint_reflection):
+                            if verbose:
+                                print(f"Skipping large footprint at ({lon:.2f}, {lat:.2f}) for {gnss_const}")
+                            continue  # Skip this reflection
                         # Plot the reflection point
                         ax.scatter(lon, lat, c=fn.color_gnss_const(gnss_const),
                                       s=30, marker='o', alpha=0.7, 
@@ -508,7 +528,7 @@ class MovingTargetDetection:
         """
         Create animation showing reflections over time.
         """
-
+        print("Creating an animation of the moving target and the reflections")
         # Generate time points
         time_points  = []
         current_time = self.moving_target_object.start_time
@@ -530,9 +550,9 @@ class MovingTargetDetection:
 
             try:
                 self.show_reflections_and_target_position_at_time_i(
-                    time_i=time_point,
-                    file_name=frame_path,
-                    show=False,
+                    time_i    =time_point,
+                    file_name =frame_path,
+                    show      =False,
                     label_reflections=False
                 )
                 frame_files.append(frame_path)
@@ -760,7 +780,32 @@ class MovingTargetDetection:
 
         # Create a shapely polygon from the points
         return circle_poly
-    
+
+    def _polygon_intersects_180_lat(self, polygon, max_lon_span=10, max_lat_span=5):
+        """
+        Check if a polygon has reasonable bounds (not spanning across the map).
+
+        Args:
+            polygon: Shapely polygon to check
+            max_lon_span: Maximum longitude span in degrees (default: 10°)
+            max_lat_span: Maximum latitude span in degrees (default: 5°)
+
+        Returns:
+            bool: True if polygon is reasonable, False if it should be skipped
+        """
+        try:
+            bounds = polygon.bounds  # (min_lon, min_lat, max_lon, max_lat)
+            lon_span = bounds[2] - bounds[0]  # max_lon - min_lon
+            lat_span = bounds[3] - bounds[1]  # max_lat - min_lat
+
+            # Skip polygons that span too much longitude or latitude
+            if lon_span > max_lon_span or lat_span > max_lat_span:
+                return False
+
+            return True
+        except:
+            return False
+
 @dataclass
 class moving_target_detection_struct:
     position_ecef: np.ndarray = field(default_factory=lambda: np.full(3, np.nan, dtype=np.float32))

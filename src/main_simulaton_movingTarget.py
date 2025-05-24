@@ -87,12 +87,11 @@ def Skagerrak_to_BarentsSea(settings):
     # 7. Moving target detection probablility
     ##########################################
     moving_target_detection = MovingTargetDetection(sat_const, gnss_constl_dict, shipTrajectory, footprint_size_m=300_000, deltaT=settings['step_size'])
-    moving_target_detection.calculate_moving_target_reflection_intersection(verbose=True)
-    moving_target_detection.show_track_and_detection_points()
-    time_midpoint = fn.ensure_utc_aware(shipTrajectory.start_time + (shipTrajectory.end_time - shipTrajectory.start_time) / 2)
+    moving_target_detection.calculate_moving_target_reflection_intersection()
+    moving_target_detection.show_track_and_detection_points(file_name="Detection_points.png", show_figure=False)
     time_1h       = fn.ensure_utc_aware(shipTrajectory.start_time + timedelta(hours=1))
-    moving_target_detection.show_reflections_and_target_position_at_time_i(time_1h, show=True, label_reflections=True)
-    moving_target_detection.create_reflection_animation()
+    moving_target_detection.show_reflections_and_target_position_at_time_i(time_1h, file_name="Reflections_1h_into_journey", label_reflections=True)
+    moving_target_detection.create_reflection_animation(time_step_min=5, output_filename="Reflection_animation.gif")
 
 #    ####################################
 #    # 8. Calculate reflection points and coverage
@@ -103,38 +102,21 @@ def Skagerrak_to_BarentsSea(settings):
 #    ####################################
 #    # 9. Plot reflection points
 #    ####################################
-#    coverage.plot_reflection_points()
-#    coverage.plot_coverage_shapefile(gnss_constellation="GPS", file_name="Coverage.png")
-#    coverage.plot_coverage_shapefile(file_name="Coverage_both.png")
-#    coverage.plot_coverage_gridded_shapefile(gnss_constellation="GPS", file_name="Coverage_grid_GPS.png")
-#    coverage.plot_coverage_gridded_shapefile(file_name="Coverage_grid_GPS_GALIEO.png")
+    coverage.plot_reflection_points()
+    coverage.plot_coverage_shapefile(gnss_constellation="GPS", file_name="Coverage.png")
+    coverage.plot_coverage_shapefile(file_name="Coverage_both.png")
+    coverage.plot_coverage_gridded_shapefile(gnss_constellation="GPS", file_name="Coverage_grid_GPS.png")
+    coverage.plot_coverage_gridded_shapefile(file_name="Coverage_grid_GPS_GALIEO.png")
 
 #    ####################################
 #    # 10. Calculate statistics
 #    ####################################
-#    coverage.calculate_statistics()
+    coverage.calculate_statistics()
 
     ####################################
     # 11. Plot orbits
     ####################################
     Plotting.plot_orbits(sat_const)
-
-    # 2: Download right TLE file from CelesTrak
-
-    # 3: Propagate Satellite constellations
-
-    # 4: Calculate the coverage of the satellite constellation over the ship trajectory
-
-    # 5: Calculate the probability of detecting the ship using the satellite constellation
-
-    # 6: Save the results
-
-    # 7: Go to step 2 and repeat until the ship reaches the Barents Sea
-
-    # 8: Plot the ship trajectory and coverage area
-
-    # 9: Save the results to a file
-    pass
 
 if  __name__ == "__main__":
     config, settings = initialize('Configuration_ship.ini')
