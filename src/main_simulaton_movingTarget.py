@@ -93,6 +93,11 @@ def Skagerrak_to_BarentsSea(settings):
     moving_target_detection.show_reflections_and_target_position_at_time_i(time_1h, file_name="Reflections_1h_into_journey", label_reflections=True)
     moving_target_detection.create_reflection_animation(time_step_min=5, output_filename="Reflection_animation.gif")
 
+    ####################################
+    # 11. Plot orbits
+    ####################################
+    Plotting.plot_orbits(sat_const)
+
 #    ####################################
 #    # 8. Calculate reflection points and coverage
 #    ####################################
@@ -113,10 +118,6 @@ def Skagerrak_to_BarentsSea(settings):
 #    ####################################
     coverage.calculate_statistics()
 
-    ####################################
-    # 11. Plot orbits
-    ####################################
-    Plotting.plot_orbits(sat_const)
 
 if  __name__ == "__main__":
     config, settings = initialize('Configuration_ship.ini')
