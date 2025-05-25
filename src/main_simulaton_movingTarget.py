@@ -86,7 +86,7 @@ def Skagerrak_to_BarentsSea(settings):
     ##########################################
     # 7. Moving target detection probablility
     ##########################################
-    moving_target_detection = MovingTargetDetection(sat_const, gnss_constl_dict, shipTrajectory, footprint_size_m=300_000, deltaT=settings['step_size'])
+    moving_target_detection = MovingTargetDetection(sat_const, gnss_constl_dict, shipTrajectory, footprint_size_m=300_000, deltaT=settings['step_size'], create_shapefile_for_visualization=True)
     moving_target_detection.calculate_moving_target_reflection_intersection()
     moving_target_detection.show_track_and_detection_points(file_name="Detection_points.png", show_figure=False)
     time_1h       = fn.ensure_utc_aware(shipTrajectory.start_time + timedelta(hours=1))

@@ -52,7 +52,7 @@ class MovingTargetDetection:
                 self.gdf_time_series    = gpd.read_file(moving_target_object.shapefile_path['time_series'])       # GeoDataFrame for the input shapefile (outline of the area of interest)
 
             self.bounding_box               = self._get_bounding_box(buffer_meters=1000)                       # Bounding box for filtering points (min_lon, max_lon, min_lat, max_lat)
-            self.footprint_size_m           = footprint_size_m                                                 # Size of the grid cells in meters # TODO this should be flexible to allow different constellations / bands to use different sizes
+            self.footprint_size_m           = footprint_size_m                                                            # Size of the grid cells in meters
             self.reflection_dict_timeSorted = {}                                                               # Reflection dictionary for storing reflection vector containing reflection points for each GNSS constellations 
             self.target_detect_dict         = {}                                                               # Coverage vector for storing coverage information over each grid-cell in the gridded shapefile
 
@@ -72,6 +72,8 @@ class MovingTargetDetection:
         ####################################################################################################################
         for gnss_name, _ in self.gnss_constellation.items():
             self.target_detect_dict[gnss_name] = []
+
+            temp_footprint_size = self._get_footprint_size_m(gnss_name)
 
     def calculate_moving_target_reflection_intersection(self, earth_model='spherical', max_refl_angle=45, verbose=False) -> None:
         """
@@ -298,7 +300,7 @@ class MovingTargetDetection:
                     time_diff_sec = (time_refl_i - time_tgt_i).total_seconds()
                     tqdm.write(f"WARNING: No matching time found for target time {time_tgt_i.strftime("%Y-%m-%d %H:%M:%S")} for the {gnss_name} constellation\n     Closest time is {time_refl_i.strftime("%Y-%m-%d %H:%M:%S")} [deltaT = {time_diff_sec} seconds]\n     -> Make sure skyfield times and moving target times are overlapping.")
 
-    def show_track_and_detection_points(self, gnss_constellation=None, file_name=None, show_figure=False):
+    def show_track_and_detection_points(self, gnss_constellation=None, file_name=None, show_figure=False)                -> None:
         """
         Plot the detection points for each GNSS constellation.
         """
@@ -387,7 +389,7 @@ class MovingTargetDetection:
         if show_figure:
             plt.show(block=True)
 
-    def show_reflections_and_target_position_at_time_i(self, time_i, gnss_constellation_name=None, file_name=None, label_reflections=True, downscale_factor=1, show=False, verbose=False):
+    def show_reflections_and_target_position_at_time_i(self, time_i, gnss_constellation_name=None, file_name=None, label_reflections=True, downscale_factor=1, show=False, verbose=False) -> None:
         """
         Show the all reflection points and the target position at a given time.
 
@@ -524,7 +526,7 @@ class MovingTargetDetection:
         # Close the figure
         plt.close(fig)
 
-    def create_reflection_animation(self, time_step_min=10, output_format='gif', output_filename=None, fps=3):
+    def create_reflection_animation(self, time_step_min=10, output_format='gif', output_filename=None, fps=3)            -> None:
         """
         Create animation showing reflections over time.
         """
@@ -576,10 +578,22 @@ class MovingTargetDetection:
             os.remove(frame_file)
         os.rmdir(temp_dir)
 
-        print(f"Done: {output_path}")
-        return output_path
+        print(f"Animation created at: {output_path}")
 
-    def _find_closest_time(self, target_time, times_reflections):
+    def _get_footprint_size_m(self, gnss_name)                                                                 -> float: # TODO: finish this function
+        """
+        Get the footprint size in meters for the given GNSS frequency band, 
+        the GNSS-R antenna gain and the GNSS-R satellite orbit (altitude).
+          - footprint = f(gnss-frequency, antenna-gain, altitude, pointing angle)
+
+        INPUTS:
+            gnss_name: (str) Name of the GNSS constellation (e.g., 'GPS', 'GLONASS', 'Galileo', 'BeiDou')
+        
+            
+        """
+        pass #THIS IS A STUB FOR NOW
+
+    def _find_closest_time(self, target_time, times_reflections)                                                         -> tuple:
         """
         Find the closest time using vectorized operations.
         """
@@ -592,7 +606,7 @@ class MovingTargetDetection:
 
         return matching_idx, time_diffs[matching_idx]
 
-    def _get_bounding_box(self, buffer_meters=0.0) -> tuple:
+    def _get_bounding_box(self, buffer_meters=0.0)                                                                       -> tuple:
         """
         This function calculates a bouding box of the maximal/minimal movement the moving
         target has done.
@@ -701,7 +715,7 @@ class MovingTargetDetection:
 #        plt.savefig("geodesic_circles_from_points.png")
 #        plt.show(block=True)
 
-    def _reflection_point_footprint(self, point_geom, gnss_constellation_name, band) -> Polygon:
+    def _reflection_point_footprint(self, point_geom, gnss_constellation_name, band)                                     -> Polygon:
         """
         Create a circle around a given point with a specified radius in meters.
         """
@@ -781,7 +795,7 @@ class MovingTargetDetection:
         # Create a shapely polygon from the points
         return circle_poly
 
-    def _polygon_intersects_180_lat(self, polygon, max_lon_span=10, max_lat_span=5):
+    def _polygon_intersects_180_lat(self, polygon, max_lon_span=10, max_lat_span=5)                                      -> bool:
         """
         Check if a polygon has reasonable bounds (not spanning across the map).
 
