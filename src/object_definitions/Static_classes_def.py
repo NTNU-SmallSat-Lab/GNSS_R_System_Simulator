@@ -106,24 +106,24 @@ class Plotting:
         Plot the satellite orbits in 3D space with Earth as a sphere.
         Works with any number of satellites in the constellation.
         Includes equator line and polar axis for orientation.
-        
+
         INPUT:
             sat_const: Satellite constellation object
         '''
         # Get number of satellites
         num_satellites = len(sat_const.satellites)
-        
+
         if num_satellites == 0:
             print("No satellites to plot.")
             return
-        
+
         # Create figure
         fig = plt.figure(figsize=(10, 8))
         ax = fig.add_subplot(111, projection='3d')
-    
+
         # Earth radius in km
-        earth_radius = Constants.R_earth * 1e-3
-        
+        earth_radius = Constants.R_EARTH_MEAN * 1e-3
+
         # Plot the Earth as a sphere
         u = np.linspace(0, 2 * np.pi, 100)
         v = np.linspace(0, np.pi, 100)
@@ -133,59 +133,59 @@ class Plotting:
         
         # Render the Earth sphere with a light blue color
         ax.plot_surface(x, y, z, color='lightblue', alpha=0.3, edgecolor='none')
-    
+
         # Add the equator (a circle in the x-y plane)
         theta = np.linspace(0, 2 * np.pi, 100)
         equator_x = earth_radius * np.cos(theta)
         equator_y = earth_radius * np.sin(theta)
         equator_z = np.zeros_like(theta)
         ax.plot(equator_x, equator_y, equator_z, 'k--', linewidth=0.8, label="Equator")
-        
+
         # Add the polar axis (a line through the north and south poles)
         polar_x = np.zeros(2)
         polar_y = np.zeros(2)
         polar_z = np.array([-earth_radius * 1.1, earth_radius * 1.1])  # Extend slightly beyond the Earth
         ax.plot(polar_x, polar_y, polar_z, 'k--', linewidth=0.8, label="Polar Axis")
-        
+
         # Add small markers for North and South poles
         ax.scatter(0, 0, earth_radius, color='red', s=30, label="North Pole")
         ax.scatter(0, 0, -earth_radius, color='blue', s=30, label="South Pole")
-    
+
         # Create a color cycle for multiple satellites
         colors = plt.cm.tab10.colors  # Use tab10 colormap for up to 10 distinct colors
-        
+
         # Store all positions to calculate proper axis limits later
         all_positions = []
-        
+
         # Plot each satellite trajectory
         for i, satellite in enumerate(sat_const.satellites):
             # Get color from the cycle (repeats if more than 10 satellites)
             color = colors[i % len(colors)]
-            
+
             # Get the skyfield object and time vector
             satellite_skf = satellite.skf
-            time_vec = satellite.time_prop_vec
-            
+            time_vec      = satellite.time_prop_vec
+
             # Calculate ECI positions
             positions_ECI = np.array([satellite_skf.at(t).position.m for t in time_vec])
             positions_ECI = np.transpose(positions_ECI/1e3)  # Convert to km
-            
+
             # Store for axis limits calculation
             all_positions.append(positions_ECI)
-            
+
             # Plot the trajectory
             ax.plot(positions_ECI[0], positions_ECI[1], positions_ECI[2], 
                     label=f"Satellite {i+1}", color=color)
-        
+
         # Improve the appearance
         ax.set_xlabel('X (km)')
         ax.set_ylabel('Y (km)')
         ax.set_zlabel('Z (km)')
         ax.set_title(f'Orbits of {num_satellites} Satellites')
-        
+
         # Only show satellite labels in legend if there's a reasonable number
         handles, labels = ax.get_legend_handles_labels()
-        
+
         # Keep non-satellite elements (equator, polar axis, poles) and 
         # add satellites only if there aren't too many
         if num_satellites <= 10:
@@ -197,7 +197,7 @@ class Plotting:
                          if "Satellite" not in label]
             ax.legend([handles[i] for i in key_indices], 
                      [labels[i] for i in key_indices])
-        
+
         # Set equal aspect ratio to make the Earth look spherical
         # Calculate limits based on all satellite positions
         if all_positions:
@@ -205,24 +205,24 @@ class Plotting:
             all_x = np.concatenate([pos[0] for pos in all_positions])
             all_y = np.concatenate([pos[1] for pos in all_positions])
             all_z = np.concatenate([pos[2] for pos in all_positions])
-            
+
             # Calculate the range for each dimension
             max_range = np.max([
                 all_x.max() - all_x.min(),
                 all_y.max() - all_y.min(),
                 all_z.max() - all_z.min()
             ]) / 2.0
-            
+
             # Calculate the midpoints
             mid_x = (all_x.max() + all_x.min()) * 0.5
             mid_y = (all_y.max() + all_y.min()) * 0.5
             mid_z = (all_z.max() + all_z.min()) * 0.5
-            
+
             # Set limits to ensure equal scale on all axes
             ax.set_xlim(mid_x - max_range, mid_x + max_range)
             ax.set_ylim(mid_y - max_range, mid_y + max_range)
             ax.set_zlim(mid_z - max_range, mid_z + max_range)
-        
+
         # Save the plot
         save_path = os.path.join(Constants.output_folder_path, 'Orbits.png')
         plt.savefig(save_path, dpi=600)

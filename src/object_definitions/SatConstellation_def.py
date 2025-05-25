@@ -2,6 +2,8 @@ import os, math
 from object_definitions.Satellite_def    import Satellite
 from object_definitions.Constants_def    import Constants
 from object_definitions.ReadWriteSatData import ReadWriteSatData as rw
+from skyfield.api                        import load
+from datetime                            import datetime
 
 class SatelliteConstellation:
     """
@@ -45,10 +47,42 @@ class SatelliteConstellation:
             raise ValueError("Invalid input")
 
         # check if the constellation name is valid
-        self.satConfigName  = satConfigName
-        self.satellites     = satArray                                           # An array of Satellite objects
-        self.no_satellites  = len(satArray)                                      # Number of satellites in the constellation
-        self.orbits_array   = [sat_i.get_orbit() for sat_i in self.satellites]   # Array of Orbit objects
+        self.satConfigName         = satConfigName
+        self.satellites            = satArray                                           # An array of Satellite objects
+        self.no_satellites         = len(satArray)                                      # Number of satellites in the constellation
+        self.orbits_array          = [sat_i.get_orbit() for sat_i in self.satellites]   # Array of Orbit objects
+        self.times_skyfield        = None                                               # Skyfield timescale object for the simulation duration (set in set_simulation_duration)
+        self.duration_sec          = None                                               # Duration in seconds (set in set_simulation_duration)
+
+    def set_simulation_duration(self, startTime, duration, stepSize) -> None:
+        """
+        Set the simulation duration for the constellation.
+
+        INPUT:
+            startTime: Start time as datetime object
+            duration: Simulation duration in hours
+            stepSize: Step size in seconds
+
+        OUTPUT:
+            True if the simulation duration is set successfully, False otherwise
+        """
+        if isinstance(startTime, (datetime)) and isinstance(duration, (int, float)) and isinstance(stepSize, (int)):
+            self.duration_sec = math.ceil(duration * Constants.SEC_PER_HOUR)         # Duration in seconds
+            num_steps         = math.ceil((self.duration_sec) / stepSize)            # derive no. of steps from duration and step size
+            self.times_skyfield = load.timescale().utc(                              # This  start time is after both GPS and GALILEO TLE Epoch, so I will use this atm
+                startTime.year,
+                startTime.month,
+                startTime.day,
+                startTime.hour,
+                startTime.minute,
+                range(0, num_steps * stepSize, stepSize)
+            )
+
+            # Update the satellites with the new timescale
+            for sat in self.satellites:
+                sat.set_timescale_simulation(self.times_skyfield)
+        else:
+            raise ValueError("Invalid input for simulation duration")
 
     def add_satellite(self, satellite)       -> bool:
         # Add a satellite to the constellation

@@ -1,8 +1,6 @@
 import numpy as np
-#import matplotlib.pyplot as plt
-#from mpl_toolkits.mplot3d import Axes3D
-import random 
-from object_definitions.Constants_def import Constants
+import random
+#from object_definitions.Constants_def import Constants
 
 
 def wrapto360(angle):
@@ -94,11 +92,11 @@ def define_orbit_vector(max_inputs, start_time_dt):
         for row in array:
             # Extracting parameters
             semi_major_axis = row[5]  # Semi-major axis
-            eccentricity = row[1]  # Eccentricity
-            inclination = row[0]  # Inclination
-            RAAN = row[2]
-            ArgPer = row[3]
-            Theta = row[4]
+            eccentricity    = row[1]  # Eccentricity
+            inclination     = row[0]  # Inclination
+            RAAN            = row[2]
+            ArgPer          = row[3]
+            Theta           = row[4]
             # Constructing each orbit configuration (adding start_time_dt to each)
             orbit_list.append([inclination, eccentricity, RAAN, ArgPer,Theta, semi_major_axis, start_time_dt])
             # Adding a second configuration with 90 degree inclination
@@ -107,8 +105,3 @@ def define_orbit_vector(max_inputs, start_time_dt):
 
     # Printing the result
     return orbits_input_list
-
-#from datetime import datetime
-
-#start_time_dt = datetime.now()
-#define_orbit_vector(5, start_time_dt)

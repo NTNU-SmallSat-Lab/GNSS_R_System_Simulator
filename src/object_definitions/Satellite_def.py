@@ -56,12 +56,23 @@ class Satellite:
         self.sensors        = []
         self.battery        = []
         self.solarArray     = []
-        self.tle_str       = None
+        self.tle_str        = None
+        self.times_skyfield = None
+        self.sunlit_count    = None
+        self.sunlit_fraction = None
     """
     =========================================================================================================
     Setter functions
     =========================================================================================================
     """
+    def set_timescale_simulation(self, timeSkyfield) -> None:
+        """
+        Set the timescale for the simulation.
+        """
+        if timeSkyfield is None:
+            raise ValueError("Invalid timescale object provided")
+        self.times_skyfield = timeSkyfield
+
     def set_classification(self, classification) -> None:
         """Set the classification of the satellite."""
         if classification not in ['U', 'C', 'S']:
@@ -92,6 +103,7 @@ class Satellite:
         if not self.tle_exists():
             self.write_tle_file()
             self.skf = load.tle_file(self.tle_file_path)[0]
+
     """
     =========================================================================================================
     Getter functions
@@ -159,17 +171,18 @@ class Satellite:
 
     def propagate_orbit(self, startTime, duration, deltaT) -> np.array:
         """
-        =========================================================================
-        Propagate the satellite orbit for a given duration and a given time step 
-        =    startTime:  Start time of the propagation   [datetime]             =
-        =    duration:   Duration of the propagation     [seconds]              =
-        =    deltaT:     Time step for the propagation   [seconds]              =
-        =    return:     Position and velocity of the satellite at each time    =
-        =    -> This function used "Skyfield" to propagate the satellite orbit  =
-        =                                                                       =
-        =    self.position (propagated position)                                = 
-        =    self.velocity (propagated velocity)                                =
-        =========================================================================
+        ==========================================================================
+        Propagate the satellite orbit for a given duration and a given time step =
+        =    startTime:  Start time of the propagation   [datetime]              =
+        =    duration:   Duration of the propagation     [seconds]               =
+        =    deltaT:     Time step for the propagation   [seconds]               =
+        =                                                                        =
+        =    OUTPUT:     Position and velocity of the satellite at each time     =
+        =      -> This function used "Skyfield" to propagate the satellite orbit =
+        =                                                                        =
+        =      self.position (propagated position)                               = 
+        =      self.velocity (propagated velocity)                               =
+        ==========================================================================
         """
         times_i = []
         ts      = load.timescale()
@@ -183,20 +196,22 @@ class Satellite:
         self.positions_eci   = np.transpose(position)
         self.velocities_eci  = np.transpose(velocity)
 
-    def calculate_sunlight_time(self, times) -> np.ndarray:
+    def calculate_sunlight_time(self)           -> None:
         """
         =========================================================================
         Calculate the time when the satellite is in sunlight.
-        =    times:      Time vector for the calculation of the sunlight time   =
-        =       - Skyfield timescale object (list)                              =
         =                                                                       =
-        =    Return:     numpy array with sunlite True or False                 =
+        = INPUT:                                                                =
+        =   -                                                                   =
+        =                                                                       =
+        = OUTPUT:                                                               =
+        =   - numpy array with sunlite True or False                            =
         =========================================================================
         """
-    
-        # Compute how long the satellite is in sunlight
-        sunlit = self.skf.at(times).is_sunlit(self.planets)
-        return sunlit
+        if self.times_skyfield is None:
+            raise ValueError("Simulation time not set for satellite    \n                => Call set_simulation_duration() in the SatConstellation class before calling this function or set_timescale_simulation() in the Satellite class")
+        self.sunlit_count    = self.skf.at(self.times_skyfield).is_sunlit(self.planets)
+        self.sunlit_fraction = np.sum(self.sunlit_count) / len(self.sunlit_count)
 
     def __initWithTLE(self, tle_file_path, satNo_in_tle, satName=None):
         """
@@ -226,7 +241,7 @@ class Satellite:
         self.satID          = sat_data.satCatalogNumber
         self.satName        = sat_data.satName
         self.classification = sat_data.classification
-        semi_major_axis     = (Constants.GM_earth_tt / (sat_data.meanMotion * 2 * pi / Constants.Sec_per_day) ** 2) ** (1/3)
+        semi_major_axis     = (Constants.GM_EARTH_TT / (sat_data.meanMotion * 2 * pi / Constants.SEC_PER_DAY) ** 2) ** (1/3)
         self.orbit_n        = Orbit_specification(sat_data.inclination, sat_data.eccentricity, sat_data.raan, sat_data.argOfPerigee, sat_data.meanAnomaly, semi_major_axis, sat_data.epoch)
         self.launch_year    = sat_data.launchYear # TODO as datetime object
         self.lauch_Noyear   = sat_data.lauchNoInYear

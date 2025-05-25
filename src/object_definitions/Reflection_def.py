@@ -9,16 +9,20 @@ class Reflection:
         Reflection class:
             - Defines a reflection object: Initialized with the following parameters:
                 INPUTS:
-                - tx_satID: Transmitting satellite ID (GNSS satellite IS)
-                - rx_satID: Receiving satellite ID    (LEO satellite ID)
-                - Earth model                         (spherical or elliptical)
-                - angle                               (Cutoff angle) (default: 45 degrees)
-                - gnss_const: GNSS constellation      (GPS, GLONASS, GALILEO, BEIDOU) (optional)
-                
-                CLASS VARIABLES:
-                - time_vec: Time vector               (vector with UTC datetime objects, when reflection occurs)
-                - refl_ECI_vec: Reflection points    (vector containing ECEF coordinates of point reflections)
-                - refl_LL_vec: Reflection points      (vector containing Lat-Lon coordinates of point reflections)
+                - tx_satID:     Transmitting satellite ID (GNSS satellite IS)
+                - rx_satID:     Receiving satellite ID    (LEO satellite ID)
+                - earth model:                            (spherical or elliptical)
+                - angle:                                  (Cutoff angle) (default: 45 degrees)
+                - gnss_const:   GNSS constellation        (GPS, GLONASS, GALILEO, BEIDOU) (optional)
+
+                ATTRIBUTES:
+                - earth_model:  Earth model               (spherical or elliptical)
+                - time_vec:     Time vector               (vector with UTC datetime objects, when reflection occurs)
+                - refl_ECI_vec: Reflection points         (vector containing ECEF coordinates of point reflections) # TODO ECI or ECEF?
+                - refl_LL_vec:  Reflection points         (vector containing Lat-Lon coordinates of point reflections)
+
+            NOTE: One reflection object contains all the reflections for one given GNSS satellite and one given LEO 
+                  satellite in a certain time period.
         =========================================================================================================
         """
         # ENTRY point to the Object (Initialization)
@@ -77,7 +81,7 @@ class Reflection:
 
         # Precompute line-of-sight (LOS) and valid theta indices for efficiency
         los_mask = np.array([
-            self.__check_los_satellites(Sat_state.positions_eci[:, i], GNSS_state.positions_eci[:, i])
+            self._check_los_satellites(Sat_state.positions_eci[:, i], GNSS_state.positions_eci[:, i])
             for i in range(num_positions)
         ])
         valid_indices = (theta < self.cutoff_angle) & los_mask
@@ -126,6 +130,10 @@ class Reflection:
         self.power         = power                              # Power of the reflection   []
 
     def get_reflection_point_FF(self, satPos, gpsPos):
+        '''
+        This function calculates the reflection point between a satellite and a GNSS satellite position
+        (Same method as in FreeFlyer).
+        '''
         # Convert positions to column vectors
         satCoord = np.array(satPos).reshape(-1, 1)
         GPSCoord = np.array(gpsPos).reshape(-1, 1)
@@ -133,12 +141,12 @@ class Reflection:
         # Check for line of sight (LOS)
         d        = satCoord - GPSCoord
         t_values = np.linspace(0, 1, 200)  # Sample points along the line
-    
+
         # Verify LOS by checking if any point along the line passes through Earth
         for t in t_values:
             r_t                      = GPSCoord + t * d
             distance_to_earth_center = np.linalg.norm(r_t)
-            if distance_to_earth_center < Constants.Radius_earth:
+            if distance_to_earth_center < Constants.RADIUS_EARTH_EQUAT:
                 # No line of sight, obstructed by Earth
                 return np.array([np.nan, np.nan, np.nan]), np.nan, np.nan
     
@@ -194,8 +202,8 @@ class Reflection:
     @staticmethod
     def get_reflection_point2D(satCoord1, GPSCoord1):
         # Calculates the reflection point in 2D
-        A = satCoord1[:2] / Constants.Radius_earth
-        B = GPSCoord1[:2] / Constants.Radius_earth
+        A = satCoord1[:2] / Constants.RADIUS_EARTH_EQUAT
+        B = GPSCoord1[:2] / Constants.RADIUS_EARTH_EQUAT
 
         u = np.dot(A, A)
         v = np.dot(A, B)
@@ -216,7 +224,7 @@ class Reflection:
                 y = (1 + x - 2 * u * x**2) / (1 + 2 * v * x)
                 if y > 0:
                     N = x * A + y * B
-                    return Constants.Radius_earth * N, A, B
+                    return Constants.RADIUS_EARTH_EQUAT * N, A, B
         return None, None, None
 
     @staticmethod
@@ -230,25 +238,19 @@ class Reflection:
         return np.degrees(theta_radians)
 
     @staticmethod
-    def __check_los_satellites(r1, r2)                                        -> bool:
+    def _check_los_satellites(r1, r2) -> bool:
         """
         Checks if there is a clear Line Of Sight (LOS) between two points r1 and r2,
         given the Earth's radius in kilometers.
         """
-        # Vector between the two points
         d = r2 - r1
 
-        # Parametric line between points, sampled at 100 points
-        t_values = np.linspace(0, 1, 100)
+        # Vectorized calculation with fewer sample points for speed
+        t_values            = np.linspace(0, 1, 50)  # Reduced from 100 to 50
+        points_along_line   = r1[np.newaxis, :] + t_values[:, np.newaxis] * d[np.newaxis, :]
+        distances_to_center = np.linalg.norm(points_along_line, axis=1)
 
-        # Check if any point along the line passes through Earth
-        for t in t_values:
-            r_t = r1 + t * d  # Parametric equation of the line
-            distance_to_earth_center = np.linalg.norm(r_t)
-
-            if distance_to_earth_center < Constants.Radius_earth:
-                return False  # No line of sight, obstructed by Earth
-        return True  # LOS is clear
+        return not np.any(distances_to_center < Constants.RADIUS_EARTH_EQUAT)
 
     @staticmethod
     def __is_valid_earth_model(earth_model) -> bool:
