@@ -91,6 +91,14 @@ for matrix in matrix_list:
     inclinations, semi_major_axis, Nsat, plane = extract_matrix_info(matrix)
     #print(inclinations, semi_major_axis, Nsat, plane)
 
+# Font sizes
+title_fontsize = 14
+label_fontsize = 14
+legend_fontsize = 10
+revisit = np.array(param4_list)
+revisit[revisit < 1] = np.nan
+revisit = 48 / revisit
+
 
 
 # Call the function and print results
@@ -142,10 +150,10 @@ ax2 = fig.add_subplot(212, projection='3d')
 
 # First subplot: Nsat vs Inclination vs Zonal Coverage
 scatter1 = ax1.scatter(satellites, inclinations, param2_list, c=planes, cmap='viridis', marker='o')
-ax1.set_title('Nsat vs Inclination vs Zonal Coverage')
-ax1.set_xlabel('Number of Satellites')
-ax1.set_ylabel('Inclination [degrees]')
-ax1.set_zlabel('Zonal Coverage [%]')
+ax1.set_title('Nsat vs Inclination vs Zonal Coverage', fontsize=title_fontsize)
+ax1.set_xlabel('Number of Satellites', fontsize=label_fontsize)
+ax1.set_ylabel('Inclination [degrees]', fontsize=label_fontsize)
+ax1.set_zlabel('Zonal Coverage [%]', fontsize=label_fontsize)
 ax1.view_init(elev=20, azim=-160)  # Adjust these values to change the viewpoint
 ax1.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
 
@@ -158,10 +166,10 @@ ax1.legend(handles, [f'{plane} planes' for plane in unique_planes], title='Numbe
 
 # Second subplot: Nsat vs Inclination vs Average passes (or Parameter 4)
 scatter2 = ax2.scatter(satellites, inclinations, param4_list, c=planes, cmap='viridis', marker='o')
-ax2.set_title('Nsat vs Inclination vs Average passes')
-ax2.set_xlabel('Number of Satellites')
-ax2.set_ylabel('Inclination [degrees]')
-ax2.set_zlabel('Average passes')  # Change to Parameter 3 or Parameter 4 if needed
+ax2.set_title('Nsat vs Inclination vs Average passes', fontsize=title_fontsize)
+ax2.set_xlabel('Number of Satellites', fontsize=label_fontsize)
+ax2.set_ylabel('Inclination [degrees]', fontsize=label_fontsize)
+ax2.set_zlabel('Average passes', fontsize=label_fontsize)  # Change to Parameter 3 or Parameter 4 if needed
 ax2.view_init(elev=20, azim=-160)  # Adjust these values to change the viewpoint
 ax2.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
 
@@ -170,18 +178,87 @@ unique_planes = sorted(set(planes))  # Get unique planes values
 handles = [plt.Line2D([0], [0], marker='o', color='w', markerfacecolor=plt.cm.viridis(i / (len(unique_planes)-1)), markersize=10) 
            for i in range(len(unique_planes))]
 # Add a legend with labels corresponding to the unique number of planes
-ax2.legend(handles, [f'{plane} planes' for plane in unique_planes], title='Number of Planes')
+ax2.legend(handles, [f'{plane} planes' for plane in unique_planes], title='# of Planes')
 
-# Adjust layout to make sure subplots don't overlap
-plt.tight_layout()
-
+fig.subplots_adjust(
+    top=0.97, bottom=0.00, left=0.02, right=0.98,
+    wspace=0, hspace=0.05
+)
 # Show the plot
 plt.savefig("Figure_1_paper.png", dpi = 400)
 
 
+# Plotting the data
+fig = plt.figure(figsize=(10, 7))
+ax = fig.add_subplot(111)
+
+# Create scatter plot
+ax.scatter(semi_major_axes, param1_list, c='r', marker='o')
+
+# Set labels for the axes
+ax.set_xlabel('Semi_major_axis [km]', fontsize=20)
+ax.set_ylabel('Average Relative Signal Power ', fontsize=20)
+ax.grid(True)
+ax.tick_params(axis='both', which='major', labelsize=16)
+# Adjust layout to make sure subplots don't overlap
+
+# Set title
+ax.set_title('Semi_major_axis vs Signal Power', fontsize=20)
+ax.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
+plt.savefig("Figure_2_paper.png", dpi=400)
 
 
 
+fig = plt.figure(figsize=(10, 11))  # Adjust height to reduce space
+
+# Create two subplots (nrows=2, ncols=1 for vertical stacking)
+ax1 = fig.add_subplot(211, projection='3d')
+ax2 = fig.add_subplot(212, projection='3d')
+
+
+# First subplot: Nsat vs Semi-major axis vs Zonal Coverage
+scatter1 = ax1.scatter(satellites, semi_major_axes, param2_list, c=planes, cmap='viridis', marker='o')
+ax1.set_title('Nsat vs Semi-major axis vs Zonal Coverage', fontsize=title_fontsize)
+ax1.set_xlabel('# of Satellites', fontsize=label_fontsize)
+ax1.set_ylabel('Semi-major axis [km]', fontsize=label_fontsize)
+ax1.set_zlabel('Zonal Coverage [%]', fontsize=label_fontsize)
+ax1.view_init(elev=20, azim=-160)
+ax1.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
+
+unique_planes = sorted(set(planes))
+handles = [
+    plt.Line2D([0], [0], marker='o', color='w',
+               markerfacecolor=plt.cm.viridis(i / (len(unique_planes)-1)), markersize=10)
+    for i in range(len(unique_planes))
+]
+ax1.legend(handles, [f'{plane} planes' for plane in unique_planes],
+           title='# of Planes', title_fontsize=legend_fontsize, fontsize=legend_fontsize)
+
+# Second subplot: Nsat vs Semi-major axis vs Average passes
+scatter2 = ax2.scatter(satellites, semi_major_axes, param4_list, c=planes, cmap='viridis', marker='o')
+ax2.set_title('Nsat vs Semi-major axis vs Average passes', fontsize=title_fontsize)
+ax2.set_xlabel('# of Satellites', fontsize=label_fontsize)
+ax2.set_ylabel('Semi-major axis [km]', fontsize=label_fontsize)
+ax2.set_zlabel('Average passes', fontsize=label_fontsize)
+ax2.view_init(elev=20, azim=-160)
+ax2.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
+
+ax2.legend(handles, [f'{plane} planes' for plane in unique_planes],
+           title='# of Planes', title_fontsize=legend_fontsize, fontsize=legend_fontsize)
+
+# Adjust layout to make sure subplots don't overlap
+fig.subplots_adjust(
+    top=0.97, bottom=0.00, left=0.02, right=0.98,
+    wspace=0, hspace=0.05
+)
+
+# Save figure
+plt.savefig("Figure_3_paper.png", dpi=400)
+
+
+
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 # Plotting the data in vertically stacked subplots
 fig = plt.figure(figsize=(10, 11))  # Adjust height to reduce space
@@ -191,11 +268,11 @@ ax1 = fig.add_subplot(211, projection='3d')
 ax2 = fig.add_subplot(212, projection='3d')
 
 # First subplot: Nsat vs Inclination vs Zonal Coverage
-scatter1 = ax1.scatter(satellites, semi_major_axes, param2_list, c=planes, cmap='viridis', marker='o')
-ax1.set_title('Nsat vs Semi-major axis vs Zonal Coverage')
-ax1.set_xlabel('Number of Satellites')
-ax1.set_ylabel('Semi-major axis [km]')
-ax1.set_zlabel('Zonal Coverage [%]')
+scatter1 = ax1.scatter(satellites, inclinations, param2_list, c=planes, cmap='viridis', marker='o')
+ax1.set_title('Nsat vs Inclination vs Zonal Coverage', fontsize=title_fontsize)
+ax1.set_xlabel('# of Satellites', fontsize=label_fontsize)
+ax1.set_ylabel('Inclination [degrees]', fontsize=label_fontsize)
+ax1.set_zlabel('Zonal Coverage [%]', fontsize=label_fontsize)
 ax1.view_init(elev=20, azim=-160)  # Adjust these values to change the viewpoint
 ax1.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
 
@@ -204,29 +281,84 @@ unique_planes = sorted(set(planes))  # Get unique planes values
 handles = [plt.Line2D([0], [0], marker='o', color='w', markerfacecolor=plt.cm.viridis(i / (len(unique_planes)-1)), markersize=10) 
            for i in range(len(unique_planes))]
 # Add a legend with labels corresponding to the unique number of planes
-ax1.legend(handles, [f'{plane} planes' for plane in unique_planes], title='Number of Planes')
+ax1.legend(handles, [f'{plane} planes' for plane in unique_planes], title='# of Planes')
 
-# Second subplot: Nsat vs Inclination vs Average passes (or Parameter 4)
-scatter2 = ax2.scatter(satellites, semi_major_axes, param4_list, c=planes, cmap='viridis', marker='o')
-ax2.set_title('Nsat vs Semi-major axis vs Average passes')
-ax2.set_xlabel('Number of Satellites')
-ax2.set_ylabel('Semi-major axis [km]')
-ax2.set_zlabel('Average passes')  # Change to Parameter 3 or Parameter 4 if needed
-ax2.view_init(elev=20, azim=-160)  # Adjust these values to change the viewpoint
+# Second subplot: Nsat vs Inclination vs Average revisit time
+scatter2 = ax2.scatter(satellites, inclinations, revisit, c=planes, cmap='viridis', marker='o')
+ax2.set_title('Nsat vs Inclination vs Average revisit time', fontsize=title_fontsize)
+ax2.set_xlabel('# of Satellites', fontsize=label_fontsize)
+ax2.set_ylabel('Inclination [degrees]', fontsize=label_fontsize)
+ax2.set_zlabel('Average revisit time [hours]', fontsize=label_fontsize)  # Change to Parameter 3 or Parameter 4 if needed
+ax2.view_init(elev=20, azim=-20)
 ax2.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
+ax2.set_zlim([0, 48])
 
 unique_planes = sorted(set(planes))  # Get unique planes values
 # Create dummy handles for the legend
 handles = [plt.Line2D([0], [0], marker='o', color='w', markerfacecolor=plt.cm.viridis(i / (len(unique_planes)-1)), markersize=10) 
            for i in range(len(unique_planes))]
 # Add a legend with labels corresponding to the unique number of planes
-ax2.legend(handles, [f'{plane} planes' for plane in unique_planes], title='Number of Planes')
+ax2.legend(handles, [f'{plane} planes' for plane in unique_planes], title='# of Planes')
 
 # Adjust layout to make sure subplots don't overlap
-plt.tight_layout()
+fig.subplots_adjust(
+    top=0.97, bottom=0.00, left=0.02, right=0.98,
+    wspace=0, hspace=0.05
+)
 
 # Show the plot
-plt.savefig("Figure_3_paper.png", dpi = 400)
+plt.savefig("Figure_4_paper.png", dpi = 400)
+
+
+
+
+
+fig = plt.figure(figsize=(10, 11))  # Adjust height to reduce space
+
+# Create two subplots (nrows=2, ncols=1 for vertical stacking)
+ax1 = fig.add_subplot(211, projection='3d')
+ax2 = fig.add_subplot(212, projection='3d')
+
+
+# First subplot: Nsat vs Semi-major axis vs Zonal Coverage
+scatter1 = ax1.scatter(satellites, semi_major_axes, param2_list, c=planes, cmap='viridis', marker='o')
+ax1.set_title('Nsat vs Semi-major axis vs Zonal Coverage', fontsize=title_fontsize)
+ax1.set_xlabel('# of Satellites', fontsize=label_fontsize)
+ax1.set_ylabel('Semi-major axis [km]', fontsize=label_fontsize)
+ax1.set_zlabel('Zonal Coverage [%]', fontsize=label_fontsize)
+ax1.view_init(elev=20, azim=-160)
+ax1.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
+
+unique_planes = sorted(set(planes))
+handles = [
+    plt.Line2D([0], [0], marker='o', color='w',
+               markerfacecolor=plt.cm.viridis(i / (len(unique_planes)-1)), markersize=10)
+    for i in range(len(unique_planes))
+]
+ax1.legend(handles, [f'{plane} planes' for plane in unique_planes],
+           title='# of Planes', title_fontsize=legend_fontsize, fontsize=legend_fontsize)
+
+# Second subplot: Nsat vs Semi-major axis vs Average revisit time
+scatter2 = ax2.scatter(satellites, semi_major_axes, revisit, c=planes, cmap='viridis', marker='o')
+ax2.set_title('Nsat vs Semi-major axis vs Average revisit time', fontsize=title_fontsize)
+ax2.set_xlabel('# of Satellites', fontsize=label_fontsize)
+ax2.set_ylabel('Semi-major axis [km]', fontsize=label_fontsize)
+ax2.set_zlabel('Average revisit time [hours]', fontsize=label_fontsize)
+ax2.view_init(elev=20, azim=-20)
+ax2.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
+ax2.set_zlim([0, 48])
+
+ax2.legend(handles, [f'{plane} planes' for plane in unique_planes],
+           title='# of Planes', title_fontsize=legend_fontsize, fontsize=legend_fontsize)
+
+# Adjust layout to make sure subplots don't overlap
+fig.subplots_adjust(
+    top=0.97, bottom=0.00, left=0.02, right=0.98,
+    wspace=0, hspace=0.05
+)
+
+# Save figure
+plt.savefig("Figure_5_paper.png", dpi=400)
 
 
 '''
@@ -301,23 +433,6 @@ ax.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
 
 
 ##################################################
-'''
-# Plotting the data
-fig = plt.figure(figsize=(10, 7))
-ax = fig.add_subplot(111)
-
-# Create scatter plot
-ax.scatter(semi_major_axes, param1_list, c='r', marker='o')
-
-# Set labels for the axes
-ax.set_xlabel('Semi_major_axis [km]')
-ax.set_ylabel('Average Relative Signal Power ')
-
-# Set title
-ax.set_title('Semi_major_axis vs Signal Power')
-ax.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
-plt.savefig("Figure_2_paper.png", dpi = 400)
-
 
 ##################################################
 
@@ -330,12 +445,12 @@ ax = fig.add_subplot(111, projection='3d')
 # Create scatter plot with color based on the planes (unique values in third element of matrix)
 scatter = ax.scatter(satellites, semi_major_axes, param4_list, c=planes, cmap='viridis', marker='o')
 # Set labels for the axes
-ax.set_xlabel('Number of Satellites')
-ax.set_ylabel('Semi_major_axis [km]')
-ax.set_zlabel('Average passes')  # Change to Parameter 3 or Parameter 4 if needed
+ax.set_xlabel('Number of Satellites', fontsize=label_fontsize)
+ax.set_ylabel('Semi_major_axis [km]', fontsize=label_fontsize)
+ax.set_zlabel('Average passes', fontsize=label_fontsize)  # Change to Parameter 3 or Parameter 4 if needed
 
 # Set title
-ax.set_title('Nsat vs Semi_major_axis vs Average passes')
+ax.set_title('Nsat vs Semi_major_axis vs Average passes', fontsize=title_fontsize)
 # Format the X-axis to show only integer ticks
 ax.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
 # Add a custom legend based on planes values (for simplicity, using a set of fixed ranges of planes)
@@ -349,4 +464,5 @@ ax.view_init(elev=20, azim=-150)  # Adjust these values to change the viewpoint
 
 
 # Show the plot
-plt.show()
+#plt.show()
+'''

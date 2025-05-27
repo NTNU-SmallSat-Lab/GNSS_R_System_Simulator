@@ -1,6 +1,5 @@
 import numpy as np
 import pymap3d
-from pyproj import Transformer
 # Define the transformer for ECEF (EPSG:4978) to LLA (EPSG:4326)
 
 '''
@@ -54,11 +53,9 @@ def compute_reflection(finalPositionGPS, finalPositionSat, ellipse, angle, times
     latlon_ref = np.full((finalPositionSat.shape[1], 2), np.nan)
     for i in range(finalPositionSat.shape[1]):
         if not np.isnan(specular_point_vec[i, 0]):
-
             lat, lon, alt = pymap3d.eci2geodetic(specular_point_vec[i, 0], specular_point_vec[i, 1], specular_point_vec[i, 2], times[i])
             #lat, lon, alt =  ecef_to_lla(specular_point_vec[i, 0], specular_point_vec[i, 1], specular_point_vec[i, 2])
             latlon_ref[i, :] = [lat, lon]
-            #latlon_ref[i, :] = ecef_to_lla(specular_point_vec[i, 0], specular_point_vec[i, 1], specular_point_vec[i, 2])  # Ensure `ecef_to_lla` is defined or available
     return specular_point_vec, theta_vec, latlon_ref
 
 def check_los_satellites(r1, r2, R_earth):
