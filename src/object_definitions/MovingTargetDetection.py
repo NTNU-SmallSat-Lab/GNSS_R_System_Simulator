@@ -92,7 +92,7 @@ class MovingTargetDetection:
             """
             ## DEBUG plot circle_poly
             fig, ax = plt.subplots(figsize=(10, 6), subplot_kw={'projection': ccrs.PlateCarree()})
-            
+
             # Make sure bounding box is appropriate for your circle
             # If self.bounding_box is too large compared to your circle, adjust it
             # Format should be [lon_min, lon_max, lat_min, lat_max]
@@ -588,8 +588,9 @@ class MovingTargetDetection:
 
         INPUTS:
             gnss_name: (str) Name of the GNSS constellation (e.g., 'GPS', 'GLONASS', 'Galileo', 'BeiDou')
-        
-            
+
+        OUTPUTS:
+            footprint_size_m: (float) Footprint size in meters
         """
         pass #THIS IS A STUB FOR NOW
 

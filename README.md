@@ -59,10 +59,14 @@ These settings allow to calculate the specular reflections on earth (earth can b
 
 The simulator allows currently two kind of analysis:
 
- 1. Coverage analysis: The analysis how much of a certan area is covered by 
+ 1. Coverage analysis: This allows to analyse how much coverage a certain predefined area is getting.
+ - The area of interest (bounding box) is devided into predefined segments with equal size (area)
+ - Over a certain time (userdefined) the coverage of this segments is determined
+ - A segment is considered "covered" when a reflection is occuring within a segment in the defined timespan
 
-: Coverage analyzis:
- - List item
+ 2. Detection of moving targets:
+ - This analysis allows to determine the possible intersection points of a moving target.
+ - A start and endposition are defined 
 
  ### Example configuration file (configuration.ini)
 [SIMULATION SETTINGS]

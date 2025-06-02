@@ -43,8 +43,7 @@ def main_calculate_coverage_norwegian_coast(sim_settings):
     ####################################
     # 3. Propagate orbits
     ####################################
-    fn.propagate_all_orbits(sat_const, gnss_constl_dict, sim_settings['start_time'], 
-                            sim_settings['sim_duration'], sim_settings['step_size'])
+    fn.propagate_all_orbits(sat_const, gnss_constl_dict)
 
     ####################################
     # 4. Calculate sunlight time
@@ -67,7 +66,7 @@ def main_calculate_coverage_norwegian_coast(sim_settings):
     ####################################
     coverage.plot_reflection_points()
     coverage.plot_coverage_shapefile(gnss_constellation="GPS", file_name="Coverage.png")
-    coverage.plot_coverage_shapefile(file_name="Coverage_both.png")
+    coverage.plot_coverage_shapefile(file_name="Coverage_all_configurations.png")
     coverage.plot_coverage_gridded_shapefile(gnss_constellation="GPS", file_name="Coverage_grid_GPS.png")
     coverage.plot_coverage_gridded_shapefile(file_name="Coverage_grid_GPS_GALIEO.png")
 

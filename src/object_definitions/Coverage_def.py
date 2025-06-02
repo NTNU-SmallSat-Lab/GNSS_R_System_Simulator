@@ -289,6 +289,12 @@ class Coverage:
     def plot_reflection_points(self):
         '''
         Plot reflection points for all GNSS constellations.
+
+        INPUTS:
+            None
+
+        OUTPUTS:
+            None
         '''
         for gnss_costl_name, refl_vec in self.reflection_dict.items():
             plot_name          = f"Reflection_points_{gnss_costl_name}.png"
@@ -355,9 +361,11 @@ class Coverage:
         '''
         def _get_color(count):
             if count == 1:
-                return 'red', 0.3  # Color for 1-time intersection
-            elif count > 1:
-                return 'blue', 0.3  # Color for more than 1-time intersection
+                return 'aqua', 0.3  # Color for 1-time intersection
+            elif count == 2:
+                return 'azure', 0.3  # Color for more than 1-time intersection
+            elif count > 2:
+                return 'orange', 0.3
             else:
                 return 'none', 0  # If the cell isn't intersected at all
     
@@ -377,9 +385,6 @@ class Coverage:
                 for i in range(len(self.grid_gdf)):
                     # Count the number of times each grid cell is intersected
                     intersection_count[i] += len(self.coverage_dict[gnss_name][i].times)
-
-#        for i in range(len(self.grid_gdf)):
-#            intersection_count[i] += len(self.coverage_vector[i].times)
 
         # Define color based on the count
         plt.figure(figsize=(12, 6))
@@ -404,9 +409,6 @@ class Coverage:
             # Get the color for the current grid cell
             color, alpha_val = _get_color(count)
 
-#            self.coverage_vector[idx].shape.plot(
-#                ax=ax, edgecolor='red', facecolor=color, alpha=alpha_val)
-            
             # Access the shape from the grid_gdf directly
             self.grid_gdf.loc[[idx]].boundary.plot(
                 ax=ax, edgecolor='red', facecolor=color, alpha=alpha_val)
@@ -457,8 +459,9 @@ class Coverage:
 
         ## Add legend
         legend_elements = [
-            Patch(facecolor='red',  edgecolor='red', alpha=0.3,  label='1 intersection'),
-            Patch(facecolor='blue', edgecolor='blue', alpha=0.3, label='2+ intersections')
+            Patch(facecolor='aqua',   edgecolor='aqua',   alpha=0.3, label='1  intersection'),
+            Patch(facecolor='azure',  edgecolor='azure',  alpha=0.3, label='2  intersections'),
+            Patch(facecolor='orange', edgecolor='orange', alpha=0.3, label='3+ intersections')
         ]
         ax.legend(handles=legend_elements, loc='upper right')
 

@@ -32,8 +32,8 @@ class Plotting:
 
         for i_sat in range(tx_SatConst.no_satellites):
             for i_gnss in range(rx_SatConst.no_satellites):
-                ax.scatter(reflection_vec[i_sat*rx_SatConst.no_satellites + i_gnss].refl_LL_vec[:, 1], reflection_vec[i_sat*rx_SatConst.no_satellites + i_gnss].refl_LL_vec[:, 0], color='red', s=1, transform=ccrs.PlateCarree())
-        #        ax.scatter(refl_gps.refl_LL_vec[:, 1], refl_gps.refl_LL_vec[:, 0], color='red', s=1, transform=ccrs.PlateCarree())
+                color = fn.color_gnss_const(tx_SatConst.satConfigName)
+                ax.scatter(reflection_vec[i_sat*rx_SatConst.no_satellites + i_gnss].refl_LL_vec[:, 1], reflection_vec[i_sat*rx_SatConst.no_satellites + i_gnss].refl_LL_vec[:, 0], color=color, s=1, transform=ccrs.PlateCarree())
 
         # Plot reflection points
         ax.set_xlabel('Longitude')

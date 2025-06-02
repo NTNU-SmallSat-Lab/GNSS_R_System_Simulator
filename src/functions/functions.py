@@ -1,11 +1,8 @@
 import numpy    as np
-import pymap3d
 import datetime as dt
 
-from pyproj                                  import Transformer
 from object_definitions.SatConstellation_def import SatelliteConstellation
 from object_definitions.Constants_def        import Constants
-
 
 '''
 def ecef_to_lla(x, y, z):
@@ -24,15 +21,17 @@ print(f"Latitude: {lat}, Longitude: {lon}, Altitude: {alt}")
 '''
 
 def ensure_utc_aware(dt_obj):
-    """
+    '''
+    =========================================================================================================
     Convert datetime to UTC-aware if it's naive.
-    
+
     INPUT:
         dt_obj: datetime object (can be timezone-aware or naive)
     
     OUTPUT:
         datetime object that is guaranteed to be UTC-aware
-    """
+    =========================================================================================================
+    '''
     if dt_obj is None:
         return None
     if dt_obj.tzinfo is None:
@@ -41,6 +40,7 @@ def ensure_utc_aware(dt_obj):
 
 def angle_between_vectors(v1, v2):
     '''
+    =========================================================================================================
     Calculate the angle between two vectors in degrees
 
     INPUTS:
@@ -49,6 +49,7 @@ def angle_between_vectors(v1, v2):
 
     OUTPUT:
         angle between vectors: [np.float]    Angle between the vectors in degrees
+    =========================================================================================================
     '''
     dot_product   = np.dot(v1, v2)
     magnitude_a   = np.linalg.norm(v1)
@@ -59,7 +60,15 @@ def angle_between_vectors(v1, v2):
 
 def skew_matrix(v):
     '''
+    =========================================================================================================
     Returns the skew symmetric matrix of the vector v
+
+    INPUTS:
+        v:           [np.array]            Vector for which the skew symmetric matrix is calculated
+
+    OUTPUT:
+        skew_matrix: [np.array]            Skew symmetric matrix of the vector v
+    =========================================================================================================
     '''
     return np.array([[0,    -v[2], v[1]],
                      [v[2],  0,   -v[0]],
@@ -67,35 +76,64 @@ def skew_matrix(v):
 
 def load_gnss_constellation_dict(gnss_costl_configs):
     '''
+    =========================================================================================================
     Load GNSS constellation configurations.
 
     INPUT:
         gnss_costl_configs: Dictionary containing GNSS constellation configurations
                             read from the configuration file.
+
     OUTPUT:
         gnss_constl_dict: Dictionary containing GNSS constellation objects.
+    =========================================================================================================
     '''
     gnss_constl_dict = {}
     for name, tle_file_dict in gnss_costl_configs.items():
         print(f"GNSS constellation: \"{name}\" loaded from: {tle_file_dict['tle_file']}.")
         gnss_constl_dict[name] = SatelliteConstellation(
-            tle_file      = tle_file_dict['tle_file'], 
-            satConfigName = name
+            tle_file           = tle_file_dict['tle_file'], 
+            satConfigName      = name
         )
     return gnss_constl_dict
 
-def propagate_all_orbits(sat_const, gnss_constl_dict, start_time, duration_h, step_size):
+def propagate_all_orbits(sat_const, gnss_constl_dict):
     '''
+    =========================================================================================================
     Propagate orbits for satellite constellation and GNSS constellations.
+
+    INPUTS:
+        sat_const:       [SatelliteConstellation]  Satellite constellation object to propagate
+        gnss_constl_dict: [dict]                    Dictionary of GNSS constellation objects
+        step_size:       [float]                   Step size for propagation in seconds TODO replace with stepsize from sat_const
+
+    OUTPUT:
+        None:                                       Propagation is done in-place, no return value.
+    =========================================================================================================
     '''
-    # TODO extract start time from the satellite constellation
+    #Robustness checks
+    if not isinstance(sat_const, SatelliteConstellation):
+        raise ValueError("sat_const must be an instance of SatelliteConstellation class.")
+    if not isinstance(gnss_constl_dict, dict):
+        raise ValueError("gnss_constl_dict must be a dictionary of GNSS constellations.")
+    if not all(isinstance(gnss_const, SatelliteConstellation) for gnss_const in gnss_constl_dict.values()):
+        raise ValueError("All values in gnss_constl_dict must be instances of SatelliteConstellation class.")
+
+    # Get the start time, duration and step size from the GNSS-R / LEO satellite constellation
     start_time_skf = sat_const.times_skyfield[0] if sat_const.times_skyfield is not None else None
     if start_time_skf is None:
         raise ValueError("Start time for the satellite constellation is not set.")
-    start_time_dt = start_time_skf.utc_datetime()
+    start_time = dt.datetime(
+        int(start_time_skf.utc.year),
+        int(start_time_skf.utc.month),
+        int(start_time_skf.utc.day),
+        int(start_time_skf.utc.hour),
+        int(start_time_skf.utc.minute),
+        int(start_time_skf.utc.second)
+    )
+    start_time = ensure_utc_aware(start_time)  # Ensure the start time is UTC-aware
     duration   = sat_const.duration_sec
+    step_size  = sat_const.propagation_step_size
 
-    #duration = int(duration_h * Constants.SEC_PER_HOUR)
     # Propagate the satellite constellation (GNSS-R / LEO)
     print(f"Propagating satellite constellation: \"{sat_const.satConfigName}\"")
     sat_const.propagate_constellation(start_time, duration, step_size)
@@ -131,7 +169,7 @@ def color_gnss_const(gnss_const):
     return color
 
 def delta_lon_from_distance(lat, x_dist) -> float:
-    """
+    '''
     Calculate the change in longitude corresponding to a distance in meters.
     This function assumes a elliptical Earth model.
 
@@ -141,7 +179,7 @@ def delta_lon_from_distance(lat, x_dist) -> float:
 
     OUTPUT:
       np.float:     [degrees]               delta_lon
-    """
+    '''
     # Convert latitude from degrees to radians
     lat_rad = np.radians(lat)
 
@@ -161,7 +199,7 @@ def delta_lon_from_distance(lat, x_dist) -> float:
     return delta_lon
 
 def delta_lat_from_distance(lat, y_dist) -> float:
-    """
+    '''
     Calculate the change in latitude corresponding to a distance in meters.
     This function assumes a elliptical Earth model.
 
@@ -171,7 +209,7 @@ def delta_lat_from_distance(lat, y_dist) -> float:
 
     OUTPUT:
       np.float:     [degrees]               delta_lat
-    """
+    '''
     # Convert latitude from degrees to radians
     lat_rad = np.radians(lat)
     

@@ -2,6 +2,7 @@ import os, math
 from object_definitions.Satellite_def    import Satellite
 from object_definitions.Constants_def    import Constants
 from object_definitions.ReadWriteSatData import ReadWriteSatData as rw
+from object_definitions.Rx_antenna_def   import RxAntenna
 from skyfield.api                        import load
 from datetime                            import datetime
 
@@ -12,11 +13,25 @@ class SatelliteConstellation:
         - Initialized with an array of Satellite objects
           or 
         - a TLE file containing the satellite configuration
-        ! NOTE: This class should be initialized with either a list of Satellite objects or a TLE file
-                But not both !
+        !!!! --- NOTE: This class should be initialized with either a list of Satellite objects or a TLE file but not both --- !!!!
+
+        INPUTS:
+            satArray:         [list]         List of Satellite objects
+            tle_file:         [str]          Path to the TLE file containing satellite data
+            satConfigName:    [str]          Name of the satellite configuration
+            rx_antenna:       [RxAntenna]    Receiver antenna object (optional)
+            verbose:          [bool]         Verbose output (default: False)
     =========================================================================================================
     """
-    def __init__(self, satArray=None, tle_file=None, satConfigName=None, verbose=False):
+    def __init__(self, satArray=None, tle_file=None, satConfigName=None, rx_antenna=None, verbose=False):
+        # Check if the anenna is provided and is an instance of RxAntenna
+        if isinstance(rx_antenna, RxAntenna):
+            antenna = rx_antenna
+        elif (rx_antenna is not None):
+            raise ValueError("Invalid input for receiver antenna. Must be an instance of RxAntenna class.")
+        else:
+            antenna = None
+
         # Check if the TLE file is provided / Robustness checks
         if tle_file is not None and satArray is not None:
             raise ValueError("Cannot initialize SatelliteConfiguration with both TLE file and Satellite array")
@@ -29,9 +44,9 @@ class SatelliteConstellation:
                     print(f"Initializing Satellite Configuration with TLE file: {tle_file}")
                 satList  = rw.read_tle_data(tle_file)
                 satArray = []
-                satNo   = 0
+                satNo    = 0
                 for sat_data in satList:
-                    sat = Satellite(sat_data.satCatalogNumber, satName=sat_data.satName, tle_file_path=tle_file, satNo_in_tle=satNo, verbose=verbose)
+                    sat = Satellite(sat_data.satCatalogNumber, satName=sat_data.satName, tle_file_path=tle_file, satNo_in_tle=satNo, rx_antenna=antenna, verbose=verbose)
                     satArray.append(sat)
                     satNo += 1
             else:
@@ -53,6 +68,7 @@ class SatelliteConstellation:
         self.orbits_array          = [sat_i.get_orbit() for sat_i in self.satellites]   # Array of Orbit objects
         self.times_skyfield        = None                                               # Skyfield timescale object for the simulation duration (set in set_simulation_duration)
         self.duration_sec          = None                                               # Duration in seconds (set in set_simulation_duration)
+        self.propagation_step_size = None                                               # step size in seconds (set in set_simulation_duration)
 
     def set_simulation_duration(self, startTime, duration, stepSize) -> None:
         """
@@ -66,6 +82,7 @@ class SatelliteConstellation:
         OUTPUT:
             True if the simulation duration is set successfully, False otherwise
         """
+        # Robustness checks for the inputs
         if isinstance(startTime, (datetime)) and isinstance(duration, (int, float)) and isinstance(stepSize, (int)):
             self.duration_sec = math.ceil(duration * Constants.SEC_PER_HOUR)         # Duration in seconds
             num_steps         = math.ceil((self.duration_sec) / stepSize)            # derive no. of steps from duration and step size
@@ -77,11 +94,18 @@ class SatelliteConstellation:
                 startTime.minute,
                 range(0, num_steps * stepSize, stepSize)
             )
+            self.propagation_step_size = stepSize            
 
             # Update the satellites with the new timescale
             for sat in self.satellites:
                 sat.set_timescale_simulation(self.times_skyfield)
         else:
+            if not isinstance(startTime, datetime):
+                raise ValueError("Invalid input for start time. Must be a datetime object.\n  => Set the start time in the configuration file")
+            if not isinstance(duration, (int, float)):
+                raise ValueError("Invalid input for simulation duration. Must be an integer or float representing hours.\n  => Set the simulation duration in the configuration file or generate if from the moving target object (MovingTarget_def.py)")
+            if not isinstance(stepSize, int):
+                raise ValueError("Invalid input for step size. Must be an integer representing seconds.\n  => Set the step size in the configuration file")
             raise ValueError("Invalid input for simulation duration")
 
     def add_satellite(self, satellite)       -> bool:
@@ -125,13 +149,13 @@ class SatelliteConstellation:
         
         
         base_name = 'Constellation'  # Keep the original name
-        filePath = os.path.join(Constants.tle_eph_folder_path, f"{base_name}.tle")
+        filePath            = os.path.join(Constants.tle_eph_folder_path, f"{base_name}.tle")
         incrementing_number = 0
 
         # Check for existing files and generate a unique name
         while os.path.exists(filePath):
             incrementing_number += 1
-            filePath = os.path.join(Constants.tle_eph_folder_path, f"{base_name}_{incrementing_number}.tle")
+            filePath             = os.path.join(Constants.tle_eph_folder_path, f"{base_name}_{incrementing_number}.tle")
             
         '''
         incrementing_number = 0

@@ -26,6 +26,19 @@
                 "DISPLAY": ":1",
                 "MPLBACKEND": "Qt5Agg"
             }
+        },
+        {
+            "name": "Debug: current file",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [],
+            "env": {
+                "DISPLAY": ":1",
+                "MPLBACKEND": "Qt5Agg"
+            }
         }
     ]
 }
