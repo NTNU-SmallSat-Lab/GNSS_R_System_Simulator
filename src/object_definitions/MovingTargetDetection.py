@@ -73,7 +73,6 @@ class MovingTargetDetection:
         for gnss_name, _ in self.gnss_constellation.items():
             self.target_detect_dict[gnss_name] = []
 
-            temp_footprint_size = self._get_footprint_size_m(gnss_name)
 
     def calculate_moving_target_reflection_intersection(self, earth_model='spherical', max_refl_angle=45, verbose=False) -> None:
         """
@@ -277,7 +276,7 @@ class MovingTargetDetection:
                                     tqdm.write(f"INFORMATION: Reflection coordinates are NaN for {gnss_name}, satellites ID-GNSS {refl_obj.tx_satID}, and ID-GNSS-R {refl_obj.rx_satID} at time {time_refl_i}")
                                 continue
                             # Create a circle around the reflection point
-                            footprint_reflection = self._reflection_point_footprint(Point(lon, lat), gnss_name, band=None)
+                            footprint_reflection = self._reflection_point_footprint(refl_obj, reflection_index)
 
                             # DEBUG: Plot the footprint and the moving target position
                             # show_reflection_and_target_position(pos_tgt_i, footprint_reflection, gnss_name)
@@ -580,20 +579,6 @@ class MovingTargetDetection:
 
         print(f"Animation created at: {output_path}")
 
-    def _get_footprint_size_m(self, gnss_name)                                                                 -> float: # TODO: finish this function
-        """
-        Get the footprint size in meters for the given GNSS frequency band, 
-        the GNSS-R antenna gain and the GNSS-R satellite orbit (altitude).
-          - footprint = f(gnss-frequency, antenna-gain, altitude, pointing angle)
-
-        INPUTS:
-            gnss_name: (str) Name of the GNSS constellation (e.g., 'GPS', 'GLONASS', 'Galileo', 'BeiDou')
-
-        OUTPUTS:
-            footprint_size_m: (float) Footprint size in meters
-        """
-        pass #THIS IS A STUB FOR NOW
-
     def _find_closest_time(self, target_time, times_reflections)                                                         -> tuple:
         """
         Find the closest time using vectorized operations.
@@ -716,7 +701,7 @@ class MovingTargetDetection:
 #        plt.savefig("geodesic_circles_from_points.png")
 #        plt.show(block=True)
 
-    def _reflection_point_footprint(self, point_geom, gnss_constellation_name, band)                                     -> Polygon:
+    def _reflection_point_footprint(self, refl_obj, i)                                     -> Polygon:
         """
         Create a circle around a given point with a specified radius in meters.
         """
@@ -763,6 +748,11 @@ class MovingTargetDetection:
             plt.tight_layout()
             plt.show(block=True)
 
+        point_geom         = Point(refl_obj.refl_LL_vec[i][1], refl_obj.refl_LL_vec[i][0])
+        gain=15
+        footprint_diameter = refl_obj._compute_footprint_size(gain, i)
+#        footprint_diameter = self._get_footprint_size_m(refl_obj, i)
+
         # Get the center of the point
         center_lon = point_geom.centroid.x
         center_lat = point_geom.centroid.y
@@ -774,12 +764,16 @@ class MovingTargetDetection:
         # WGS84 ellipsoid for geodesic calculations
         geod = Geod(ellps='WGS84')
 
+#        time_i             = point_geom.time_i
+#        sat_id             = point_geom.satid
         for i in range(num_points):
             # Calculate the azimuth (direction) for this point
             azimuth = i * (360.0 / num_points)
 
             # Calculate the point at the given distance and azimuth from the center
             lon, lat, _ = geod.fwd(center_lon, center_lat, azimuth, self.footprint_size_m / 2)
+
+            lon, lat, _        = geod.fwd(center_lon, center_lat, azimuth, footprint_diameter / 2)
 
             # Add the point to our circle points
             circle_points.append((lon, lat))

@@ -31,7 +31,7 @@ class Reflection:
             print("Earth model not specified - Using default ('spherical')")
             earth_model = 'spherical'
         else:
-            if not Reflection.__is_valid_earth_model(earth_model):
+            if not Reflection._is_valid_earth_model(earth_model):
                 # Raise a warning and return an empty object if a wrong earth model is chosen
                 print("Wrong earth model specified. Use either 'spherical' or 'elliptical'.")
                 return None
@@ -120,19 +120,19 @@ class Reflection:
 
         # Store results in the object
         self.time_vec      = times                              # Time vector numpy array
-        self.refl_ECI_vec  = specular_point_vec                 # Reflection points         ECI coordinates 
-        self.refl_LL_vec   = np.column_stack((lats, lons))      # Reflection points         Lat-Lon coordinates
+        self.refl_ECI_vec  = specular_point_vec                 # Reflection points         ECI coordinates      # TODO: Change from vector n x 3  to 3 x n (same as sat_pos_vec)
+        self.refl_LL_vec   = np.column_stack((lats, lons))      # Reflection points         Lat-Lon coordinates  # TODO: Change from vector n x 2 to 2 x n (same as sat_pos_vec)
         self.gnss_pos_vec  = GNSS_state.positions_eci           # GNSS satellite positions  ECI coordinates
         self.gnss_vel_vec  = GNSS_state.velocities_eci          # GNSS satellite velocities ECI coordinates
         self.sat_pos_vec   = Sat_state.positions_eci            # LEO satellite positions   ECI coordinates
         self.sat_vel_vec   = Sat_state.velocities_eci           # LEO satellite velocities  ECI coordinates
-        self.refl_ang_vec  = theta_vec                          # Reflection angles         ECI coordinates [deg]
+        self.refl_ang_vec  = theta_vec                          # Reflection angles         ECI coordinates [deg] # TODO: Change from vector n x 3 to 3 x n (actually 2 x n) (same as sat_pos_vec)
         self.power         = power                              # Power of the reflection   []
 
     def get_reflection_point_FF(self, satPos, gpsPos):
         '''
         This function calculates the reflection point between a satellite and a GNSS satellite position
-        (Same method as in FreeFlyer).
+        (Same method as in FreeFlyer) for an spherical earth.
         '''
         # Convert positions to column vectors
         satCoord = np.array(satPos).reshape(-1, 1)
@@ -198,7 +198,40 @@ class Reflection:
         Sv  = self.__skew_matrix(vec2)
         Rot = np.eye(3) + s2 * Sv + Sv @ Sv * (1 - c2)
         return Rot
+    
+    def _compute_footprint_size(self, index, gain=0, wavelength=None):
+        """
+        Computes the footprint size of the reflection based on the gain and wavelength.
+        INPUTS:
+        - gain:      Gain of the antenna (in dB)
+        - wavelength: Wavelength of the signal (in meters)
+        OUTPUTS:
+        - footprint_size: Size of the footprint (in meters) on earths surface
+        """
+        # Get the current altitude of the Rx satellite
+        vec_to_earth_cg  = self.sat_pos_vec[:,index]
+        refl_angle       = self.refl_ang_vec[index, :]  # Angle between the satellite and the reflection point # TODO: make refl_angle_vec a 2 x n array (same as sat_pos_vec)
+        angle_to_tangent = np.min(refl_angle)  # Min. Angle to nadir in degrees
 
+        if self.earth_model == 'spherical':
+            earth_surface_radius = Constants.RADIUS_EARTH_EQUAT
+        elif self.earth_model == 'elliptical':
+            # For elliptical model, use the semi-major axis as the radius
+            a           = Constants.RADIUS_EARTH_EQUAT
+            f           = Constants.EARTH_FLATTENING
+            b           = a * (1 - f)
+            lat_rad     = np.deg2rad(self.refl_LL_vec[index,0])
+            earth_surface_radius = np.sqrt(
+                (a**2 * np.cos(lat_rad))**2 + (b**2 * np.sin(lat_rad))**2
+                ) / np.sqrt(
+                (np.cos(lat_rad))**2 + (np.sin(lat_rad))**2
+           )
+        else:
+            # This is purely for robustness - should never be reached
+            raise ValueError("Invalid earth model specified. Use 'spherical' or 'elliptical'.")
+
+        # find where (lat, lon) the satellite vec_to_earth_cg intersects the Earth's surface
+        beam_length = ()
     @staticmethod
     def get_reflection_point2D(satCoord1, GPSCoord1):
         # Calculates the reflection point in 2D
@@ -253,7 +286,7 @@ class Reflection:
         return not np.any(distances_to_center < Constants.RADIUS_EARTH_EQUAT)
 
     @staticmethod
-    def __is_valid_earth_model(earth_model) -> bool:
+    def _is_valid_earth_model(earth_model) -> bool:
         # Check if earth_model is either 'spherical' or 'elliptical'
         valid_models = ['spherical', 'elliptical']
         return earth_model in valid_models

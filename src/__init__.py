@@ -60,7 +60,7 @@ def initialize(config_file_name='Configuration.ini'):
     start_coord_ll     = ast.literal_eval(config['MOVING TARGET']['start_pos'])   if 'MOVING TARGET'      in config                                      else None  # Start coordinates of the moving target in (longitude, latitude) format
     end_coord_ll       = ast.literal_eval(config['MOVING TARGET']['end_pos'])     if 'MOVING TARGET'      in config                                      else None  # End coordinates of the moving target in (longitude, latitude) format
     antenna_gain_dB    = ast.literal_eval(config['ANTENNA']['antenna_gain_dB'])   if 'ANTENNA' in config                                                 else None  # Antenna gain in dB
-    coverage_file_path = config['COVERAGE']['coverage_shapefile']                 if ('COVERAGE' in config and 'shapefile_path' in config['COVERAGE'])   else None  # Path to the coverage shapefile
+    coverage_file_path = config['COVERAGE']['shapefile_path']                     if ('COVERAGE' in config and 'shapefile_path' in config['COVERAGE'])   else None  # Path to the coverage shapefile
 
     # Check how many orbits are specified in the configuration file
     orbits_input = []
