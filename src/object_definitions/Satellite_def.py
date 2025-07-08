@@ -1,15 +1,28 @@
-import re, os
+from datetime import datetime, timedelta
+from math import pi
+import os
+
 import numpy as np
-from datetime                            import datetime, timezone, timedelta
-from math                                import pi
-from object_definitions.Constants_def    import Constants
-from object_definitions.Orbit_def        import Orbit_specification
+from skyfield.api import EarthSatellite, load
+
+from object_definitions.Constants_def import Constants
+from object_definitions.Orbit_def import Orbit_specification
 from object_definitions.ReadWriteSatData import ReadWriteSatData
 
-from skyfield.api      import load, wgs84, EarthSatellite
-#from io                import BytesIO, StringIO
+
 class Satellite:
-    def __init__(self, satID, orbit_n=None, satName=None, tle_file_path=None, satNo_in_tle=0, rx_antenna=None, battery=None, solarArray=None, verbose=False):
+    def __init__(
+        self,
+        satID,
+        orbit_n=None,
+        satName=None,
+        tle_file_path=None,
+        satNo_in_tle=0,
+        rx_antenna=None,
+        battery=None,
+        solarArray=None,
+        verbose=False,
+    ):
         """
         =========================================================================================================
         Satellite class:
@@ -33,7 +46,7 @@ class Satellite:
 
         INPUTS:
             satID:          [int]                 Unique identifier for the satellite
-            orbit_n:        [Orbit_specification] Orbit specification object containing the satellite's orbital data (optional) 
+            orbit_n:        [Orbit_specification] Orbit specification object containing the satellite's orbital data (optional)
               => Can be initialized with a list of orbital parameters (inclination, eccentricity, raan, argOfPerigee, meanAnomaly, semiMajorAxis, epoch) OR a TLE-file
             satName:        [str]                 Name of the satellite (optional)
             tle_file_path:  [str]                 Path to the TLE file (optional)
@@ -57,27 +70,29 @@ class Satellite:
         else:
             # Initialize satellite with Orbit_specification object
             if verbose == True:
-                print(f"Initializing Satellite with Orbit_specification object")
+                print("Initializing Satellite with Orbit_specification object")
             self._initWithOrbit(satID, orbit_n, satName)
 
-        # Load 
-        file_path    = os.path.join(Constants.skyfield_data, 'de421.bsp')
-        self.planets = load(file_path)                                        # TODO move to constants
-        #earth   = planets['earth']
-        #sun     = planets['sun']
+        # Load
+        file_path = os.path.join(Constants.skyfield_data, "de421.bsp")
+        self.planets = load(file_path)  # TODO move to constants
+        # earth   = planets['earth']
+        # sun     = planets['sun']
 
-        self.gnss_r_antenna  = rx_antenna if rx_antenna is not None else None
-        self.battery         = battery    if battery    is not None else None  # TODO: Battery object to be implemented
-        self.solarArray      = solarArray if solarArray is not None else None  # TODO: SolarArray object to be implemented
-        self.tle_str         = None
-        self.times_skyfield  = None
-        self.sunlit_count    = None
+        self.gnss_r_antenna = rx_antenna if rx_antenna is not None else None
+        self.battery = battery if battery is not None else None  # TODO: Battery object to be implemented
+        self.solarArray = solarArray if solarArray is not None else None  # TODO: SolarArray object to be implemented
+        self.tle_str = None
+        self.times_skyfield = None
+        self.sunlit_count = None
         self.sunlit_fraction = None
+
     """
     =========================================================================================================
     Setter functions
     =========================================================================================================
     """
+
     def set_timescale_simulation(self, timeSkyfield) -> None:
         """
         Set the timescale for the simulation.
@@ -88,7 +103,7 @@ class Satellite:
 
     def set_classification(self, classification) -> None:
         """Set the classification of the satellite."""
-        if classification not in ['U', 'C', 'S']:
+        if classification not in ["U", "C", "S"]:
             raise ValueError("Invalid classification")
         self.classification = classification
 
@@ -101,10 +116,16 @@ class Satellite:
                 # Orbit_specification is initialized with new orbital parameters
                 self.orbit_n = Orbit_specification(*orbit_n)
             elif len(orbit_n) < 6:
-                print("Insuffizient data to specify Orbit_specification of satellite: ", self.satName)
+                print(
+                    "Insuffizient data to specify Orbit_specification of satellite: ",
+                    self.satName,
+                )
         else:
-            raise ValueError("Invalid Orbit_specification object provided for satellite: ", self.satName)
-    
+            raise ValueError(
+                "Invalid Orbit_specification object provided for satellite: ",
+                self.satName,
+            )
+
     def set_epoch(self, epoch) -> None:
         """Set the epoch of the satellite."""
         if self.orbit_n is None:
@@ -122,7 +143,8 @@ class Satellite:
     Getter functions
     =========================================================================================================
     """
-    def get_TLE(self)                            -> str:
+
+    def get_TLE(self) -> str:
         """Get the TLE path if it exists."""
         if self.tle_exists():
             return self.tle_file_path
@@ -130,15 +152,15 @@ class Satellite:
             print("Warning: TLE has not yet been generated")
             return None
 
-    def get_orbit(self)                          -> Orbit_specification:
+    def get_orbit(self) -> Orbit_specification:
         # Extract orbit_n from the satellit object
         return self.orbit_n
 
-    def tle_exists(self)                         -> bool:
+    def tle_exists(self) -> bool:
         """Check if the TLE file exists."""
         return self.tle_file_path is not None
 
-    def write_tle_file(self)                     -> str:   
+    def write_tle_file(self) -> str:
         """
         =========================================================================
         Write the TLE object passed in "tle_str" to a file
@@ -156,30 +178,30 @@ class Satellite:
             print(f"Creating directory: {Constants.tle_eph_folder_path}")
             os.makedirs(Constants.tle_eph_folder_path)
 
-        filePath  = os.path.join(Constants.tle_eph_folder_path, self.satName+ ".tle")
+        filePath = os.path.join(Constants.tle_eph_folder_path, self.satName + ".tle")
 
         # Check if the file already exists
         incrementing_no = 0
         while os.path.exists(filePath):
             # HACK if the file exists, increment the filename
-            self.satName    += f"_{incrementing_no}"
-            filePath         = os.path.join(Constants.tle_eph_folder_path, self.satName+ ".tle")
+            self.satName += f"_{incrementing_no}"
+            filePath = os.path.join(Constants.tle_eph_folder_path, self.satName + ".tle")
             incrementing_no += 1
         self.tle_file_path = filePath
 
-#        if os.path.exists(filePath):
-#            print(f"Warning: TLE file already exists for {self.satID} \n-- Overwriting previous TLE file --")
-            # delete the file
-#            os.remove(filePath)
+        #        if os.path.exists(filePath):
+        #            print(f"Warning: TLE file already exists for {self.satID} \n-- Overwriting previous TLE file --")
+        # delete the file
+        #            os.remove(filePath)
 
         # Write the TLE to the file
-#        try:
-#            with open(filePath, 'w') as file:
-#                file.write(tle_str)
-#            self.tle_file_path = filePath
-#            print(f"TLE written to {filePath}")
-#        except IOError:
-#            print(f"Warning: TLE file could not be written for {self.satID}")
+        #        try:
+        #            with open(filePath, 'w') as file:
+        #                file.write(tle_str)
+        #            self.tle_file_path = filePath
+        #            print(f"TLE written to {filePath}")
+        #        except IOError:
+        #            print(f"Warning: TLE file could not be written for {self.satID}")
         return None
 
     def propagate_orbit(self, startTime, duration, deltaT) -> np.array:
@@ -193,23 +215,23 @@ class Satellite:
         =    OUTPUT:     Position and velocity of the satellite at each time     =
         =      -> This function used "Skyfield" to propagate the satellite orbit =
         =                                                                        =
-        =      self.position (propagated position)                               = 
+        =      self.position (propagated position)                               =
         =      self.velocity (propagated velocity)                               =
         ==========================================================================
         """
         times_i = []
-        ts      = load.timescale()
+        ts = load.timescale()
         for t in range(0, duration, deltaT):
             times_i.append(ts.utc(startTime + timedelta(seconds=t)))
 
-        position = np.array([self.skf.at(t).position.m       for t in times_i])
+        position = np.array([self.skf.at(t).position.m for t in times_i])
         velocity = np.array([self.skf.at(t).velocity.m_per_s for t in times_i])
 
-        self.time_prop_vec   = times_i
-        self.positions_eci   = np.transpose(position)
-        self.velocities_eci  = np.transpose(velocity)
+        self.time_prop_vec = times_i
+        self.positions_eci = np.transpose(position)
+        self.velocities_eci = np.transpose(velocity)
 
-    def calculate_sunlight_time(self)           -> None:
+    def calculate_sunlight_time(self) -> None:
         """
         =========================================================================
         Calculate the time when the satellite is in sunlight.
@@ -222,8 +244,10 @@ class Satellite:
         =========================================================================
         """
         if self.times_skyfield is None:
-            raise ValueError("Simulation time not set for satellite    \n                => Call set_simulation_duration() in the SatConstellation class before calling this function or set_timescale_simulation() in the Satellite class")
-        self.sunlit_count    = self.skf.at(self.times_skyfield).is_sunlit(self.planets)
+            raise ValueError(
+                "Simulation time not set for satellite    \n                => Call set_simulation_duration() in the SatConstellation class before calling this function or set_timescale_simulation() in the Satellite class"
+            )
+        self.sunlit_count = self.skf.at(self.times_skyfield).is_sunlit(self.planets)
         self.sunlit_fraction = np.sum(self.sunlit_count) / len(self.sunlit_count)
 
     def _initWithTLE(self, tle_file_path, satNo_in_tle, satName=None):
@@ -236,8 +260,10 @@ class Satellite:
         if sat_data_all is None:
             raise ValueError("Invalid TLE data")
 
-        if (len(sat_data_all) > 1 and satName is None):
-            print("Warning: Multiple satellites found in TLE file. Using the first satellite data only.     \n    => If all satellites should be initialized, use the SatelliteConfiguration class")
+        if len(sat_data_all) > 1 and satName is None:
+            print(
+                "Warning: Multiple satellites found in TLE file. Using the first satellite data only.     \n    => If all satellites should be initialized, use the SatelliteConfiguration class"
+            )
 
         if satName is not None:
             # Initialize one satellite from a TLE file only
@@ -250,34 +276,42 @@ class Satellite:
             sat_data = sat_data_all[0]
 
         # calculate semi major axis
-        self.tle_file_path  = tle_file_path
-        self.satID          = sat_data.satCatalogNumber
-        self.satName        = sat_data.satName
+        self.tle_file_path = tle_file_path
+        self.satID = sat_data.satCatalogNumber
+        self.satName = sat_data.satName
         self.classification = sat_data.classification
-        semi_major_axis     = (Constants.GM_EARTH_TT / (sat_data.meanMotion * 2 * pi / Constants.SEC_PER_DAY) ** 2) ** (1/3)
-        self.orbit_n        = Orbit_specification(sat_data.inclination, sat_data.eccentricity, sat_data.raan, sat_data.argOfPerigee, sat_data.meanAnomaly, semi_major_axis, sat_data.epoch)
-        self.launch_year    = sat_data.launchYear
-        self.lauch_Noyear   = sat_data.lauchNoInYear
-        self.lauch_piece    = sat_data.launchPiece
-        self.meanMotion_1   = sat_data.firstDerMeanMotion
-        self.meanMotion_2   = sat_data.secDerivMeanMotion
-        self.B_star         = sat_data.B_star
+        semi_major_axis = (Constants.GM_EARTH_TT / (sat_data.meanMotion * 2 * pi / Constants.SEC_PER_DAY) ** 2) ** (1 / 3)
+        self.orbit_n = Orbit_specification(
+            sat_data.inclination,
+            sat_data.eccentricity,
+            sat_data.raan,
+            sat_data.argOfPerigee,
+            sat_data.meanAnomaly,
+            semi_major_axis,
+            sat_data.epoch,
+        )
+        self.launch_year = sat_data.launchYear
+        self.lauch_Noyear = sat_data.lauchNoInYear
+        self.lauch_piece = sat_data.launchPiece
+        self.meanMotion_1 = sat_data.firstDerMeanMotion
+        self.meanMotion_2 = sat_data.secDerivMeanMotion
+        self.B_star = sat_data.B_star
         self.element_set_no = sat_data.ElementSetNo
-        self.skf            = load.tle_file(tle_file_path)[satNo_in_tle]
+        self.skf = load.tle_file(tle_file_path)[satNo_in_tle]
 
     def _initWithOrbit(self, satID, orbit_n, satName):
         # Initialize satellite object
-        self.satID          = satID
-        self.satName        = satName if satName is not None else f"Sat_{satID}"
-        self.classification = 'U'
-        self.tle_file_path  = None
-        self.launch_year    = int(datetime.now().year)
-        self.lauch_Noyear   = 1
-        self.lauch_piece    = "A"
-        self.meanMotion_1   = None           # TODO calculate meanMotion1 (balistic coefficient) in a separate function
-        self.meanMotion_2   = None           # TODO calculate meanMotion2 in a separate function
-        self.B_star         = None           # TODO calculate B_star in a separate function
-        self.element_set_no = None           # TODO
+        self.satID = satID
+        self.satName = satName if satName is not None else f"Sat_{satID}"
+        self.classification = "U"
+        self.tle_file_path = None
+        self.launch_year = int(datetime.now().year)
+        self.lauch_Noyear = 1
+        self.lauch_piece = "A"
+        self.meanMotion_1 = None  # TODO calculate meanMotion1 (balistic coefficient) in a separate function
+        self.meanMotion_2 = None  # TODO calculate meanMotion2 in a separate function
+        self.B_star = None  # TODO calculate B_star in a separate function
+        self.element_set_no = None  # TODO
 
         # Initialize Satellite Orbit_specification
         if not isinstance(orbit_n, Orbit_specification) and isinstance(orbit_n, list):
@@ -285,7 +319,10 @@ class Satellite:
                 # Orbit_specification is initialized with new orbital parameters
                 self.orbit_n = Orbit_specification(*orbit_n)
             elif len(orbit_n) < 6:
-                print("Insuffizient data to specify Orbit_specification of satellite: ", self.satName)
+                print(
+                    "Insuffizient data to specify Orbit_specification of satellite: ",
+                    self.satName,
+                )
         elif orbit_n is None:
             print("Orbit_specification of satellite: ", self.satName, " is not specified")
             self.orbit_n = None
@@ -293,23 +330,27 @@ class Satellite:
             # Orbit_specification object is passed
             self.orbit_n = orbit_n
         else:
-            raise ValueError("Invalid Orbit_specification object provided for satellite: ", self.satName)
+            raise ValueError(
+                "Invalid Orbit_specification object provided for satellite: ",
+                self.satName,
+            )
 
         # Calculate TLE file path if there is a valid Orbit and a valid epoch
         if self.orbit_n is not None:
             if self.orbit_n.epoch_str is not None:
                 self.write_tle_file()
-#                self.skf = load.tle_file(self.tle_file_path)[0]
+                #                self.skf = load.tle_file(self.tle_file_path)[0]
                 # Load the satellite object from tle string
-#                self.skf = load.tle_file(StringIO(self.tle_str.encode('utf-8')))[0]
+                #                self.skf = load.tle_file(StringIO(self.tle_str.encode('utf-8')))[0]
                 lines = self.tle_str.splitlines()
                 # Extract the variables
-                satellite_name = lines[0]          # First line is the satellite name
-                line_1         = lines[1]          # Second line is TLE line 1
-                line_2         = lines[2]          # Third line is TLE line 2
+                satellite_name = lines[0]  # First line is the satellite name
+                line_1 = lines[1]  # Second line is TLE line 1
+                line_2 = lines[2]  # Third line is TLE line 2
                 self.skf = EarthSatellite(line_1, line_2, satellite_name)
             else:
-                print("Warning: Orbit_specification epoch is not specified for satellite: ", self.satName, 
-                      " To generate the skyfield satellite object, specify the epoch.")
-                
-
+                print(
+                    "Warning: Orbit_specification epoch is not specified for satellite: ",
+                    self.satName,
+                    " To generate the skyfield satellite object, specify the epoch.",
+                )

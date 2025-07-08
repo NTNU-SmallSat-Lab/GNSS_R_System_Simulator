@@ -1,20 +1,21 @@
-import os
-import numpy               as np
+import matplotlib
+import numpy as np
+
 import functions.functions as fn
 
-import matplotlib
-matplotlib.use('TkAgg', force=True)
-from __init__                                 import initialize
-from object_definitions.Satellite_def         import Satellite
-from object_definitions.SatConstellation_def  import SatelliteConstellation
-from object_definitions.Coverage_def          import Coverage
-from object_definitions.Static_classes_def    import Plotting
+matplotlib.use("TkAgg", force=True)
+from __init__ import initialize
+from object_definitions.Coverage_def import Coverage
+from object_definitions.SatConstellation_def import SatelliteConstellation
+from object_definitions.Satellite_def import Satellite
+from object_definitions.Static_classes_def import Plotting
+
 
 #############################################################################################################################
 ##################################################### - MAIN FUNCTION - #####################################################
 #############################################################################################################################
 def main_calculate_coverage_norwegian_coast(sim_settings):
-    '''
+    """
     Run satellite simulation to calculate the coverage of GNSS-R satellites over the Norwegian coast.
     This function initializes the simulation, propagates orbits, calculates reflection points,
     and generates coverage statistics.
@@ -23,22 +24,26 @@ def main_calculate_coverage_norwegian_coast(sim_settings):
 
     INPUT:
         sim_settings: Dictionary containing simulation parameters
-    '''
-    print("Simulation start Time:", sim_settings['start_time'])
+    """
+    earth = "elliptical"  #'spherical'
+    print("Simulation start Time:", sim_settings["start_time"])
 
     ####################################
     # 1. Initialize GNSS constellations
     ####################################
-    gnss_constl_dict = fn.load_gnss_constellation_dict(sim_settings['GNSS_constellations'])
+    gnss_constl_dict = fn.load_gnss_constellation_dict(sim_settings["GNSS_constellations"])
 
     ####################################
     # 2. Create satellite constellation
     ####################################
-    sat_array = [Satellite(i, orbit_n=sim_settings['orbits'][i]) 
-                for i in range(sim_settings['No_satellites'])]
+    sat_array = [Satellite(i, orbit_n=sim_settings["orbits"][i]) for i in range(sim_settings["No_satellites"])]
     sat_const = SatelliteConstellation(satConfigName="LEO GNSS-R constellation", satArray=sat_array)
-    sat_const.generate_constellation_TLE()
-    sat_const.set_simulation_duration(sim_settings['start_time'], sim_settings['sim_duration'], sim_settings['step_size'])
+    sat_const.generate_constellation_tle()
+    sat_const.set_simulation_duration(
+        sim_settings["start_time"],
+        sim_settings["sim_duration"],
+        sim_settings["step_size"],
+    )
 
     ####################################
     # 3. Propagate orbits
@@ -50,15 +55,31 @@ def main_calculate_coverage_norwegian_coast(sim_settings):
     ####################################
     for sat_idx in range(sat_const.no_satellites):
         sat_const.satellites[sat_idx].calculate_sunlight_time()
-        print(f"Not sunlit count for satellite {sat_idx}: ",     np.sum(sat_const.satellites[sat_idx].sunlit_count == False))
-        print(f"Sunlit count for satellite {sat_idx}: ",         np.sum(sat_const.satellites[sat_idx].sunlit_count == True))
-        print(f"Sunlit percentage for satellite {sat_idx}: ",    sat_const.satellites[sat_idx].sunlit_fraction * 100)
+        print(
+            f"Not sunlit count for satellite {sat_idx}: ",
+            np.sum(~sat_const.satellites[sat_idx].sunlit_count),
+        )
+        print(
+            f"Sunlit count for satellite {sat_idx}: ",
+            np.sum(sat_const.satellites[sat_idx].sunlit_count),
+        )
+        print(
+            f"Sunlit percentage for satellite {sat_idx}: ",
+            sat_const.satellites[sat_idx].sunlit_fraction * 100,
+        )
 
     ####################################
     # 5. Calculate reflection points and coverage
     ####################################
-#    coverage = Coverage(sat_const, gnss_constl_dict, sim_settings['shapefile_path'], sim_settings['bounding_box'], grid_size_deg=1)
-    coverage = Coverage(sat_const, gnss_constl_dict, sim_settings['shapefile_path'], sim_settings['bounding_box'], grid_size_m=30_000)
+    #    coverage = Coverage(sat_const, gnss_constl_dict, sim_settings['shapefile_path'], sim_settings['bounding_box'], grid_size_deg=1)
+    coverage = Coverage(
+        sat_const,
+        gnss_constl_dict,
+        sim_settings["shapefile_path"],
+        sim_settings["bounding_box"],
+        grid_size_m=30_000,
+        earth_model=earth,
+    )
     coverage.calculate_reflection_points_and_coverage(verbose=True)
 
     ####################################
@@ -71,15 +92,16 @@ def main_calculate_coverage_norwegian_coast(sim_settings):
     coverage.plot_coverage_gridded_shapefile(file_name="Coverage_grid_GPS_GALIEO.png")
 
     ####################################
-    # 9. Calculate statistics
-    ####################################
-    coverage.calculate_statistics()
-
-    ####################################
-    # 10. Plot orbits
+    # 9. Plot orbits
     ####################################
     Plotting.plot_orbits(sat_const)
 
-if  __name__ == "__main__":
-    config, settings = initialize('Configuration_area.ini')
+    ####################################
+    # 10. Calculate statistics
+    ####################################
+    coverage.calculate_statistics()
+
+
+if __name__ == "__main__":
+    config, settings = initialize("Configuration_area.ini")
     main_calculate_coverage_norwegian_coast(settings)

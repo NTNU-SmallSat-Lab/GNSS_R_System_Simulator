@@ -1,5 +1,3 @@
-import numpy as np
-
 class RxAntenna:
     def __init__(self, antenna_gain=None):
         """
@@ -14,4 +12,4 @@ class RxAntenna:
         self.antenna_gain_x = antenna_gain[0] if antenna_gain is not None else 0.0  # Antenna gain in dB
         self.antenna_gain_y = antenna_gain[1] if antenna_gain is not None else 0.0  # Antenna gain in dB
         # - Position and orientation on the satellite (relative to the satellite coordinate frame)
-        # - 
+        # -
