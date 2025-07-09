@@ -268,6 +268,7 @@ def geodetic_to_ecef(lat_deg, lon_deg, h=0):
 
     return X, Y, Z
 
+
 def quat_to_rotation_matrix(q):
     """
     =========================================================================================================
@@ -282,10 +283,12 @@ def quat_to_rotation_matrix(q):
     w, x, y, z = q
     # Normalize quaternion
     norm = np.sqrt(w**2 + x**2 + y**2 + z**2)
-    w, x, y, z = w/norm, x/norm, y/norm, z/norm
+    w, x, y, z = w / norm, x / norm, y / norm, z / norm
 
-    return np.array([
-        [1 - 2*(y**2 + z**2), 2*(x*y - w*z), 2*(x*z + w*y)],
-        [2*(x*y + w*z), 1 - 2*(x**2 + z**2), 2*(y*z - w*x)],
-        [2*(x*z - w*y), 2*(y*z + w*x), 1 - 2*(x**2 + y**2)]
-    ])
+    return np.array(
+        [
+            [1 - 2 * (y**2 + z**2), 2 * (x * y - w * z), 2 * (x * z + w * y)],
+            [2 * (x * y + w * z), 1 - 2 * (x**2 + z**2), 2 * (y * z - w * x)],
+            [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x**2 + y**2)],
+        ]
+    )

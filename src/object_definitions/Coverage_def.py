@@ -176,7 +176,7 @@ class Coverage:
                         self.grid_gdf.loc[intersecting_rectangles]
                         valid_position_clean = valid_position[~np.isnan(valid_position).any(axis=1)]
                         valid_positions_flipped = valid_position_clean[:, [1, 0]]
-                        with warnings.catch_warnings():                 # TODO: This could be improved! resp. better documented
+                        with warnings.catch_warnings():  # TODO: This could be improved! resp. better documented
                             warnings.simplefilter("ignore", UserWarning)
                             centroids_array = np.array(
                                 [(centroid.x, centroid.y) for centroid in self.grid_gdf.loc[intersecting_rectangles].centroid]

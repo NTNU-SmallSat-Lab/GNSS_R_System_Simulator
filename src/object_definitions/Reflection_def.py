@@ -1,3 +1,5 @@
+from datetime import datetime, timezone, UTC
+
 import numpy as np
 import pymap3d
 from scipy.optimize import minimize
@@ -29,7 +31,7 @@ class Reflection:
                 ATTRIBUTES:
                 - earth_model:  Earth model               (spherical or elliptical)
                 - time_vec:     Time vector               (vector with UTC datetime objects, when reflection occurs)
-                - refl_ECI_vec: Reflection points         (vector containing ECEF coordinates of point reflections) # TODO ECI or ECEF???
+                - refl_ECI_vec: Reflection points         (vector containing ECI coordinates of point reflections)
                 - refl_LL_vec:  Reflection points         (vector containing Lat-Lon coordinates of point reflections)
 
             NOTE: One reflection object contains all the reflections for one given GNSS satellite and one given LEO
@@ -312,7 +314,7 @@ class Reflection:
         if s == 0:
             vec2 = np.array([1, 0, 0])  # In case of the plane being parallel to z, use a default vector
         else:
-            vec2 = vec / s   # Normalize the vector
+            vec2 = vec / s  # Normalize the vector
 
         theta = np.arccos(np.dot(plane, z))
         c2 = np.cos(theta)
@@ -322,46 +324,67 @@ class Reflection:
         Rot = np.eye(3) + s2 * Sv + Sv @ Sv * (1 - c2)
         return Rot
 
-    def _compute_footprint_ellipse(self, index, no_footprint_points, beamwidth_deg=[10.0, 5.0], q_sat=np.array([1.0, 0.0, 0.0, 0.0]), wavelength=None):
+    def _compute_footprint_ellipse(self, index, no_footprint_points, beamwidth_deg, q_sat=np.array([1.0, 0.0, 0.0, 0.0]), method='spherical', wavelength=None) -> np.ndarray:
         """
-        Computes the elliptical footprint size of the reflection based on the gain and wavelength.
+        Computes the elliptical footprint and returns a Shapely polygon in lat/lon coordinates.
         INPUTS:
-        - gain:           Gain of the antenna (in dB)
-        - wavelength:     Wavelength of the signal (in meters)
+          - index:              Time index for position vectors
+          - no_footprint_points: Number of points to generate for the ellipse
+          - beamwidth_deg:      Antenna beamwidth [flight_dir, swath_dir] in degrees
+          - q_sat:             Satellite attitude quaternion
+          - wavelength:        Wavelength of the signal (in meters) [optional]
+
         OUTPUTS:
-        - footprint_size: Size of the footprint (in meters) on earths surface
+          - footprint_polygon: Shapely polygon representing the elliptical footprint
         """
         # Get Satellite and Reflection positions
         sat_pos = self.sat_pos_vec[:, index]
         refl_pos = self.refl_ECI_vec[index, :]
-        # Calculations related to the vector/beam from satellite to reflection point
-        r_sr_eci = refl_pos - sat_pos # Vector from satellite to reflection point in ECI coordinates
-        n_sr_eci = r_sr_eci / np.linalg.norm(r_sr_eci) # Unit vector in the direction "satellite to reflection point"
-        l_sr = np.linalg.norm(r_sr_eci) # Length of the vector from satellite to reflection point
+        time_i = self.time_vec[index]
 
-        # Attitude and coordinate system of the satellite-orbit
-        v_s_e = self.sat_vel_vec[:, index] # Satellite velocity vector in ECI coordinates
-        x_orbit_in_eci = v_s_e / np.linalg.norm(v_s_e) # X-axis of the "satellite-orbit" coordinate system, decomposed in ECI coordinates
-        z_orbit_in_eci = -sat_pos / np.linalg.norm(sat_pos) # Z-axis of the "satellite-orbit" coordinate system, pointing towards the center of the Earth, decomposed in ECI coordinates
-        y_orbit_in_eci = np.cross(z_orbit_in_eci, x_orbit_in_eci)
-        y_orbit_in_eci = y_orbit_in_eci / np.linalg.norm(y_orbit_in_eci) # Y-axis of the "satellite-orbit" coordinate system, orthogonal to X and Z axes, decomposed in ECI coordinates
-        # Ensure orthogonality (Gram-Schmidt process)
+        # Check if the satellite position is valid
+        if np.any(np.isnan(sat_pos)) or np.any(np.isnan(refl_pos)):
+            print(f"Invalid satellite or reflection position at index {index}. Skipping footprint calculation.")
+            return np.array([])
+
+        n_sr_eci = (refl_pos - sat_pos) / np.linalg.norm(refl_pos - sat_pos)  # Beam direction
+        l_sr = np.linalg.norm(refl_pos - sat_pos)  # Beam length (slant range)
+
+        # ========== ORBITAL COORDINATE SYSTEM ==========
+        # NED coordinate system decomposed in ECI coordinates)
+        v_s_e = self.sat_vel_vec[:, index]  # Satellite velocity vector in ECI coordinates
+        # Check for valid velocity
+        if np.linalg.norm(v_s_e) < 1e-6:
+            print(f"Warning: Invalid satellite velocity at index {index}")
+            return np.array([])
+
+        # Angular momentum vector (orbit normal)
+        h_vec = np.cross(v_s_e, sat_pos)  # h = v × r
+        h_magnitude = np.linalg.norm(h_vec)
+
+        # 1. Along-track (X): Direction of motion
+        x_orbit_in_eci = v_s_e / np.linalg.norm(v_s_e)
+        # 2. Cross-track (Y): Orbit normal direction
+        y_orbit_in_eci = h_vec / h_magnitude  # Perpendicular to orbital plane
+        # 3. Radial (Z): Downward direction (circular orbit = towards center of Earth)
+        z_orbit_in_eci = np.cross(x_orbit_in_eci, y_orbit_in_eci)
+
+        # Ensure orthonormality(Gram-Schmidt)
+        y_orbit_in_eci = y_orbit_in_eci / np.linalg.norm(y_orbit_in_eci)
+        z_orbit_in_eci = z_orbit_in_eci / np.linalg.norm(z_orbit_in_eci)
         x_orbit_in_eci = np.cross(y_orbit_in_eci, z_orbit_in_eci)
         x_orbit_in_eci = x_orbit_in_eci / np.linalg.norm(x_orbit_in_eci)
 
-        R_sat = fn.quat_to_rotation_matrix(q_sat)
+        # ========== SATELLITE ATTITUDE ==========
+        R_body_to_orbit = fn.quat_to_rotation_matrix(q_sat)
         R_orbit_to_eci = np.column_stack([x_orbit_in_eci, y_orbit_in_eci, z_orbit_in_eci])
-#        R_body_to_eci = R_orbit_to_eci @ R_sat
+        R_body_to_eci = R_orbit_to_eci @ R_body_to_orbit # Might be needed on a later stage
 
-#        n_antenna_body = np.array([0, 0, 1])
-#        n_antenna_eci = R_body_to_eci @ n_antenna_body
-
-        # ========== RAY-SPHERE INTERSECTION ==========
-        # Create coordinate system for beam cone
+        # ========== ANTENNA-BEAM COORDINATE SYSTEM ==========
         # Create perpendicular axes for the beam cone (orthogonal to the beam direction)
         sat_vel_projected = v_s_e - np.dot(v_s_e, n_sr_eci) * n_sr_eci
 
-        # Handle edge case where velocity is parallel to the antenna beam (this should never happen)
+        # Handle edge case where velocity (v_s_e) is parallel to the antenna beam (n_sr_eci) (This should never happen)
         if np.linalg.norm(sat_vel_projected) < 1e-6:
             # Create arbitrary perpendicular vector
             if abs(n_sr_eci[2]) < 0.9:
@@ -370,305 +393,184 @@ class Reflection:
                 temp_vec = np.array([1, 0, 0])  # Use x-axis
             sat_vel_projected = temp_vec - np.dot(temp_vec, n_sr_eci) * n_sr_eci
 
-        # Ellipse coordinate axes in the beam-perpendicular plane
-        ellipse_x_axis = sat_vel_projected / np.linalg.norm(sat_vel_projected)  # Perpendicular to beam, (satellite motion component)
-        ellipse_y_axis = np.cross(n_sr_eci, ellipse_x_axis)                     # Perpendicular to beam and ellipse_x_axis (cross-track component)
-        ellipse_y_axis = ellipse_y_axis / np.linalg.norm(ellipse_y_axis)
-        ellipse_z_axis = n_sr_eci                                               # Along the beam direction
+        # "Ellipse coordinate axes" in the beam-perpendicular plane decomposed in ECI coordinates
+        u_axis = sat_vel_projected / np.linalg.norm(sat_vel_projected)  # Perpendicular to beam, (satellite motion component)
+        v_axis = np.cross(n_sr_eci, u_axis)  # Perpendicular to beam and u_axis (cross-track component)
+        v_axis = v_axis / np.linalg.norm(v_axis)
+        w_axis = n_sr_eci  # Along the beam direction
 
-        # ========== CALCULATE ELLIPSE DIMENSIONS ==========
-        # Semi-axes of ellipse in the beam-perpendicular plane
-        semi_axis_x = l_sr * np.tan(np.radians(beamwidth_deg[0]) / 2.0)  # Flight direction
-        semi_axis_y = l_sr * np.tan(np.radians(beamwidth_deg[1]) / 2.0)  # Cross-track
+            # Choose exact method
+        if method == 'spherical':
+            beam_directions = self._generate_beam_directions_spherical(n_sr_eci, u_axis, v_axis, beamwidth_deg, no_footprint_points)
+        elif method == 'rodrigues':
+            beam_directions = self._generate_beam_directions_rodrigues(n_sr_eci, u_axis, v_axis, beamwidth_deg, no_footprint_points)
+        elif method == 'matrix':
+            beam_directions = self._generate_beam_directions_matrix(n_sr_eci, u_axis, v_axis, beamwidth_deg, no_footprint_points)
+        else:
+            raise ValueError("Method must be 'spherical', 'rodrigues', or 'matrix'")
 
-        # ========== GENERATE ELLIPSE POINTS ==========
-        theta = np.linspace(0, 2*np.pi, no_footprint_points)
-        footprint_points = np.zeros((no_footprint_points, 3))
+        # Generate beam directions within the cone
+        ellipse_points = []
 
-        # Generate ellips points in the beam-perpendicular plane
-        for i in range(no_footprint_points):
-            # Parametric ellipse in the beam-perpendicular plane
-            ellipse_point = (semi_axis_x * np.cos(theta[i]) * ellipse_x_axis +
-                            semi_axis_y * np.sin(theta[i]) * ellipse_y_axis)
-
-            # Position in 3D space (centered at reflection point)
-            point_3d = refl_pos + ellipse_point
-
-            # ========== PROJECT TO EARTH'S SURFACE ==========
-
-            # Method 1: Ray-sphere intersection (most accurate)
-            # Ray from satellite through this ellipse point to Earth
-            ray_direction = (point_3d - sat_pos) / np.linalg.norm(point_3d - sat_pos)
-
-            # Solve: |sat_pos + t * ray_direction|² = R_earth²
-            a = 1.0  # |ray_direction|² = 1
-            b = 2.0 * np.dot(sat_pos, ray_direction)
+        for i, beam_dir_i in enumerate(beam_directions):
+        # Find intersection with Earth
+            a = 1.0
+            b = 2.0 * np.dot(sat_pos, beam_dir_i)
             c = np.dot(sat_pos, sat_pos) - Constants.R_EARTH_MEAN**2
 
             discriminant = b**2 - 4*a*c
             if discriminant >= 0:
-                t1 = (-b - np.sqrt(discriminant)) / 2.0
-                t2 = (-b + np.sqrt(discriminant)) / 2.0
+                t1 = (-b - np.sqrt(discriminant)) / 2.0 # First intersection (entry point)
+                t2 = (-b + np.sqrt(discriminant)) / 2.0 # Second intersection (exit point)
 
-                # Choose the intersection closer to reflection point
-                intersection1 = sat_pos + t1 * ray_direction
-                intersection2 = sat_pos + t2 * ray_direction
+                # Chose the first positive intersection point (entry point)
+                valid_t_values = [t for t in [t1, t2] if t > 0.0]
 
-                if np.linalg.norm(intersection1 - refl_pos) < np.linalg.norm(intersection2 - refl_pos):
-                    footprint_points[i, :] = intersection1
+                if valid_t_values:
+                    t_chosen = min(valid_t_values)  # Choose the first intersection
+                    intersection_eci = sat_pos + t_chosen * beam_dir_i
+
+                    # Verify intersection is on Earth's surface (within reasonable tolerance)
+                    distance_from_center = np.linalg.norm(intersection_eci)
+                    if abs(distance_from_center - Constants.R_EARTH_MEAN) < 5000:  # Within 5km tolerance
+                        # Convert to lat/lon
+                        try:
+                            lat, lon, alt = pymap3d.eci2geodetic(
+                                intersection_eci[0], intersection_eci[1], intersection_eci[2], time_i
+                            )
+                            #lat, lon, alt = self.eci_to_geodetic(intersection_eci, time_i)
+                            # Additional check: altitude should be near zero
+                            if abs(alt) < 10000:  # Within 10km of surface
+                                ellipse_points.append((lat, lon))
+                            else:
+                                print(f"Warning: Point {i} has altitude {alt:.1f}m, skipping")
+                        except Exception as e:
+                            print(f"Warning: Failed to convert point {i} to geodetic: {e}")
+                            continue
+                    else:
+                        print(f"Warning: Point {i} not on Earth surface (distance: {distance_from_center/1000:.1f}km)")
                 else:
-                    footprint_points[i, :] = intersection2
+                    print(f"Warning: No valid positive intersection for point {i}")
             else:
-                # Fallback: radial projection (shouldn't happen for reasonable geometry)
-                distance_from_center = np.linalg.norm(point_3d)
-                footprint_points[i, :] = point_3d * (Constants.R_EARTH_MEAN / distance_from_center)
+                print(f"Warning: No intersection with Earth for point {i}")
+            lat_s, lon_s, _ = pymap3d.eci2geodetic(refl_pos[0], refl_pos[1], refl_pos[2], time_i)
+            center_point = (lat_s, lon_s)
+        return ellipse_points, center_point
 
-        # DEBUG: Plot the footprint points
-        import matplotlib.pyplot as plt
-        from mpl_toolkits.mplot3d import Axes3D
+    def _generate_beam_directions_spherical(self, n_sr_eci, u_axis, v_axis, beamwidth_deg, no_points):
+        """
+        Generate exact beam directions using spherical coordinates.
+        [Best accuracy]
+        """
+        beam_directions = []
+        beamwidth_rad = [bw * np.pi / 180 for bw in beamwidth_deg]
 
-        print("=== GNSS-R Footprint Debug Info ===")
-        print(f"Satellite position: {sat_pos}")
-        print(f"Reflection position: {refl_pos}")
-        print(f"Satellite velocity (v_s_e): {v_s_e}")
-        print(f"Beam direction (n_sr_eci): {n_sr_eci}")
-        print(f"Slant range (l_sr): {l_sr:.1f} m")
-        print(f"Satellite velocity projected: {sat_vel_projected}")
-        print(f"Projection magnitude: {np.linalg.norm(sat_vel_projected):.1f} m/s")
-        print(f"Ellipse X-axis: {ellipse_x_axis}")
-        print(f"Ellipse Y-axis: {ellipse_y_axis}")
-        print(f"Semi-axis X: {semi_axis_x:.1f} m")
-        print(f"Semi-axis Y: {semi_axis_y:.1f} m")
+        for i in range(no_points):
+            # Parametric ellipse parameter
+            t = 2 * np.pi * i / no_points
 
-        # Create figure with subplots
-        fig = plt.figure(figsize=(20, 12))
+            # Angular positions on the ellipse (in the beam's local coordinate system)
+            alpha_u = (beamwidth_rad[0]/2) * np.cos(t)  # Angle in u direction  
+            alpha_v = (beamwidth_rad[1]/2) * np.sin(t)  # Angle in v direction
 
-        # Plot 1: Overall 3D geometry
-        ax1 = fig.add_subplot(2, 3, 1, projection='3d')
+            # Convert to spherical coordinates
+            theta_total = np.sqrt(alpha_u**2 + alpha_v**2)  # Total angle from beam center
+            if theta_total > 0:
+                phi = np.arctan2(alpha_v, alpha_u)  # Azimuthal angle around beam center
 
-        # Earth sphere
-        u = np.linspace(0, 2 * np.pi, 50)
-        v = np.linspace(0, np.pi, 50)
-        x_earth = Constants.R_EARTH_MEAN * np.outer(np.cos(u), np.sin(v))
-        y_earth = Constants.R_EARTH_MEAN * np.outer(np.sin(u), np.sin(v))
-        z_earth = Constants.R_EARTH_MEAN * np.outer(np.ones(np.size(u)), np.cos(v))
-        ax1.plot_surface(x_earth, y_earth, z_earth, alpha=0.3, color='lightblue')
+                # Exact spherical coordinate transformation
+                beam_dir_i = (np.cos(theta_total) * n_sr_eci + 
+                             np.sin(theta_total) * (np.cos(phi) * u_axis + np.sin(phi) * v_axis))
+            else:
+                # Center of beam
+                beam_dir_i = n_sr_eci.copy()
 
-        # Key points
-        ax1.scatter(*sat_pos, color='red', s=100, label='Satellite')
-        ax1.scatter(*refl_pos, color='green', s=100, label='Reflection Point')
+            beam_directions.append(beam_dir_i)
 
-        # Vectors from satellite
-        ax1.quiver(*sat_pos, *(n_sr_eci * l_sr * 0.3), 
-                  color='purple', linewidth=3, label='Beam Direction (n_sr_eci)')
-        ax1.quiver(*sat_pos, *(v_s_e * 0.0001), 
-                  color='blue', linewidth=3, label='Satellite Velocity (v_s_e)')
-        ax1.quiver(*sat_pos, *(sat_vel_projected * 0.0001), 
-                  color='cyan', linewidth=3, label='Velocity Projected')
+        return beam_directions
 
-        # Ellipse axes from reflection point
-        ax1.quiver(*refl_pos, *(ellipse_x_axis * semi_axis_x), 
-                  color='orange', linewidth=2, label='Ellipse X-axis')
-        ax1.quiver(*refl_pos, *(ellipse_y_axis * semi_axis_y), 
-                  color='red', linewidth=2, label='Ellipse Y-axis')
+    def _generate_beam_directions_rodrigues(self, n_sr_eci, u_axis, v_axis, beamwidth_deg, no_points):
+        """
+        Generate exact beam directions using Rodrigues' rotation formula.
+        This method allows for precise control over rotations.
+        """
+        def rodrigues_rotation(v, k, theta):
+            """
+            Rotate vector v around axis k by angle theta using Rodrigues' formula.
+            """
+            cos_theta = np.cos(theta)
+            sin_theta = np.sin(theta)
 
-        ax1.set_xlabel('X (m)')
-        ax1.set_ylabel('Y (m)')
-        ax1.set_zlabel('Z (m)')
-        ax1.legend()
-        ax1.set_title('Overall GNSS-R Geometry')
+            return (v * cos_theta + 
+                    np.cross(k, v) * sin_theta + 
+                    k * np.dot(k, v) * (1 - cos_theta))
 
-        # Plot 2: Zoom on reflection area
-        ax2 = fig.add_subplot(2, 3, 2, projection='3d')
+        beam_directions = []
+        beamwidth_rad = [bw * np.pi / 180 for bw in beamwidth_deg]
 
-        # Local Earth surface around reflection
-        refl_area_size = max(semi_axis_x, semi_axis_y) * 3
-        n_points = 20
+        for i in range(no_points):
+            # Parametric ellipse parameter
+            t = 2 * np.pi * i / no_points
 
-        # Create local tangent plane grid
-        local_x = np.linspace(-refl_area_size, refl_area_size, n_points)
-        local_y = np.linspace(-refl_area_size, refl_area_size, n_points)
-        X_local, Y_local = np.meshgrid(local_x, local_y)
+            # Angular offsets
+            theta_u = (beamwidth_rad[0]/2) * np.cos(t)
+            theta_v = (beamwidth_rad[1]/2) * np.sin(t)
 
-        # Surface normal at reflection point
-        surface_normal = refl_pos / np.linalg.norm(refl_pos)
+            # Start with central beam direction
+            beam_dir_i = n_sr_eci.copy()
 
-        # Create approximate local surface
-        surface_points = np.zeros((n_points, n_points, 3))
+            # Apply rotations sequentially
+            if abs(theta_u) > 1e-10:  # Avoid numerical issues for zero rotation
+                beam_dir_i = rodrigues_rotation(beam_dir_i, v_axis, theta_u)
+            if abs(theta_v) > 1e-10:
+                beam_dir_i = rodrigues_rotation(beam_dir_i, u_axis, theta_v)
 
-        for i in range(n_points):
-            for j in range(n_points):
-                local_point = (refl_pos + 
-                              X_local[i,j] * ellipse_x_axis + 
-                              Y_local[i,j] * ellipse_y_axis)
-                # Project to Earth surface
-                dist = np.linalg.norm(local_point)
-                surface_point = local_point * (Constants.R_EARTH_MEAN / dist)
-                surface_points[i,j,:] = surface_point
+            beam_directions.append(beam_dir_i)
 
-        ax2.plot_surface(surface_points[:,:,0], surface_points[:,:,1], surface_points[:,:,2], 
-                        alpha=0.5, color='lightgreen')
+        return beam_directions
 
-        # Reflection point and ellipse
-        ax2.scatter(*refl_pos, color='green', s=150, label='Reflection Point')
+    def _generate_beam_directions_matrix(self, n_sr_eci, u_axis, v_axis, beamwidth_deg, no_points):
+        """
+        Generate exact beam directions using rotation matrices.
+        This is often the most computationally efficient for many points.
+        """
+        def rotation_matrix_axis_angle(axis, angle):
+            """Create rotation matrix for rotation around axis by angle (Rodrigues' formula)"""
+            axis = axis / np.linalg.norm(axis)  # Ensure unit vector
+            cos_a = np.cos(angle)
+            sin_a = np.sin(angle)
 
-        # Plot footprint points
-        ax2.scatter(footprint_points[:,0], footprint_points[:,1], footprint_points[:,2], 
-                   color='red', s=30, label='Footprint Boundary')
+            # Skew-symmetric matrix
+            K = np.array([[0, -axis[2], axis[1]],
+                          [axis[2], 0, -axis[0]], 
+                          [-axis[1], axis[0], 0]])
 
-        # Ellipse axes
-        ax2.quiver(*refl_pos, *(ellipse_x_axis * semi_axis_x), 
-                  color='orange', linewidth=3, label=f'X-axis ({beamwidth_deg[0]}°)')
-        ax2.quiver(*refl_pos, *(ellipse_y_axis * semi_axis_y), 
-                  color='red', linewidth=3, label=f'Y-axis ({beamwidth_deg[1]}°)')
+            # Rodrigues' rotation matrix formula
+            R = np.eye(3) + sin_a * K + (1 - cos_a) * np.dot(K, K)
+            return R
 
-        ax2.set_xlabel('X (m)')
-        ax2.set_ylabel('Y (m)')
-        ax2.set_zlabel('Z (m)')
-        ax2.legend()
-        ax2.set_title('Footprint Detail View')
+        beam_directions = []
+        beamwidth_rad = [bw * np.pi / 180 for bw in beamwidth_deg]
 
-        # Plot 3: Vector decomposition diagram
-        ax3 = fig.add_subplot(2, 3, 3, projection='3d')
+        for i in range(no_points):
+            # Parametric ellipse parameter
+            t = 2 * np.pi * i / no_points
 
-        # Origin at satellite
-        ax3.scatter(*sat_pos, color='black', s=100, label='Satellite')
+            # Angular offsets
+            theta_u = (beamwidth_rad[0]/2) * np.cos(t)
+            theta_v = (beamwidth_rad[1]/2) * np.sin(t)
 
-        # Original velocity
-        vel_scale = 0.0001
-        ax3.quiver(*sat_pos, *(v_s_e * vel_scale), 
-                  color='blue', linewidth=4, label='Original Velocity (v_s_e)')
+            # Create rotation matrices
+            R_u = rotation_matrix_axis_angle(v_axis, theta_u) if abs(theta_u) > 1e-10 else np.eye(3)
+            R_v = rotation_matrix_axis_angle(u_axis, theta_v) if abs(theta_v) > 1e-10 else np.eye(3)
 
-        # Beam direction
-        beam_scale = l_sr * 0.2
-        ax3.quiver(*sat_pos, *(n_sr_eci * beam_scale), 
-                  color='purple', linewidth=3, label='Beam Direction (n_sr_eci)')
+            # Apply combined rotation
+            R_combined = R_v @ R_u  # Note: order matters!
+            beam_dir_i = R_combined @ n_sr_eci
 
-        # Parallel component (to be removed)
-        parallel_component = np.dot(v_s_e, n_sr_eci) * n_sr_eci
-        ax3.quiver(*sat_pos, *(parallel_component * vel_scale), 
-                  color='red', linewidth=3, linestyle='--', label='Parallel Component')
+            beam_directions.append(beam_dir_i)
 
-        # Projected velocity (result)
-        ax3.quiver(*sat_pos, *(sat_vel_projected * vel_scale), 
-                  color='green', linewidth=4, label='Projected Velocity')
-
-        # Show the decomposition
-        end_parallel = sat_pos + parallel_component * vel_scale
-        end_original = sat_pos + v_s_e * vel_scale
-        ax3.plot([end_parallel[0], end_original[0]], 
-                [end_parallel[1], end_original[1]], 
-                [end_parallel[2], end_original[2]], 
-                'gray', linestyle=':', linewidth=2, label='Decomposition')
-
-        ax3.set_xlabel('X (m)')
-        ax3.set_ylabel('Y (m)')
-        ax3.set_zlabel('Z (m)')
-        ax3.legend()
-        ax3.set_title('Vector Decomposition')
-
-        # Plot 4: Coordinate system verification
-        ax4 = fig.add_subplot(2, 3, 4, projection='3d')
-
-        # Show orthogonality of ellipse axes
-        ax4.scatter(*refl_pos, color='green', s=150, label='Reflection Point')
-
-        axis_length = max(semi_axis_x, semi_axis_y)
-        ax4.quiver(*refl_pos, *(ellipse_x_axis * axis_length), 
-                  color='red', linewidth=4, label='Ellipse X-axis')
-        ax4.quiver(*refl_pos, *(ellipse_y_axis * axis_length), 
-                  color='blue', linewidth=4, label='Ellipse Y-axis')
-        ax4.quiver(*refl_pos, *(n_sr_eci * axis_length), 
-                  color='purple', linewidth=4, label='Beam Direction (Z)')
-
-        # Verify orthogonality
-        dot_xy = np.dot(ellipse_x_axis, ellipse_y_axis)
-        dot_xz = np.dot(ellipse_x_axis, n_sr_eci)
-        dot_yz = np.dot(ellipse_y_axis, n_sr_eci)
-
-        ax4.text2D(0.05, 0.95, f'X·Y = {dot_xy:.6f}', transform=ax4.transAxes)
-        ax4.text2D(0.05, 0.90, f'X·Z = {dot_xz:.6f}', transform=ax4.transAxes)
-        ax4.text2D(0.05, 0.85, f'Y·Z = {dot_yz:.6f}', transform=ax4.transAxes)
-
-        ax4.set_xlabel('X (m)')
-        ax4.set_ylabel('Y (m)')
-        ax4.set_zlabel('Z (m)')
-        ax4.legend()
-        ax4.set_title('Coordinate System Verification')
-
-        # Plot 5: Ellipse in beam-perpendicular plane
-        ax5 = fig.add_subplot(2, 3, 5)
-
-        # Project everything onto the ellipse plane for 2D view
-        ellipse_2d_x = []
-        ellipse_2d_y = []
-
-        for i in range(no_footprint_points):
-            # Get ellipse point relative to reflection
-            ellipse_point = (semi_axis_x * np.cos(theta[i]) * ellipse_x_axis + 
-                           semi_axis_y * np.sin(theta[i]) * ellipse_y_axis)
-
-            # Project onto ellipse coordinate system
-            x_coord = np.dot(ellipse_point, ellipse_x_axis)
-            y_coord = np.dot(ellipse_point, ellipse_y_axis)
-
-            ellipse_2d_x.append(x_coord)
-            ellipse_2d_y.append(y_coord)
-
-        ax5.plot(ellipse_2d_x, ellipse_2d_y, 'b-', linewidth=2, label='Ellipse Boundary')
-        ax5.scatter([0], [0], color='green', s=100, label='Reflection Point')
-        ax5.axhline(y=0, color='red', linestyle='--', alpha=0.5)
-        ax5.axvline(x=0, color='orange', linestyle='--', alpha=0.5)
-
-        ax5.set_xlabel(f'X-axis: Flight Direction ({beamwidth_deg[0]}°)')
-        ax5.set_ylabel(f'Y-axis: Cross-track ({beamwidth_deg[1]}°)')
-        ax5.grid(True, alpha=0.3)
-        ax5.axis('equal')
-        ax5.legend()
-        ax5.set_title('Ellipse in Beam-Perpendicular Plane')
-
-        # Plot 6: Ray tracing verification
-        ax6 = fig.add_subplot(2, 3, 6, projection='3d')
-
-        # Show a few ray traces
-        n_rays = 8
-        ray_indices = np.linspace(0, no_footprint_points-1, n_rays, dtype=int)
-
-        for i, idx in enumerate(ray_indices):
-            # Ellipse point in 3D
-            ellipse_point = (semi_axis_x * np.cos(theta[idx]) * ellipse_x_axis + 
-                           semi_axis_y * np.sin(theta[idx]) * ellipse_y_axis)
-            point_3d = refl_pos + ellipse_point
-
-            # Ray from satellite through ellipse point
-            ray_direction = (point_3d - sat_pos) / np.linalg.norm(point_3d - sat_pos)
-
-            # Show ray
-            ray_end = sat_pos + ray_direction * l_sr * 1.2
-            ax6.plot([sat_pos[0], ray_end[0]], 
-                    [sat_pos[1], ray_end[1]], 
-                    [sat_pos[2], ray_end[2]], 
-                    'gray', alpha=0.6, linewidth=1)
-
-            # Show intersection with Earth
-            ax6.scatter(*footprint_points[idx,:], color='red', s=30)
-
-        # Earth surface (simplified)
-        ax6.plot_surface(x_earth, y_earth, z_earth, alpha=0.2, color='lightblue')
-        ax6.scatter(*sat_pos, color='red', s=100, label='Satellite')
-        ax6.scatter(*refl_pos, color='green', s=100, label='Reflection Point')
-
-        ax6.set_xlabel('X (m)')
-        ax6.set_ylabel('Y (m)')
-        ax6.set_zlabel('Z (m)')
-        ax6.legend()
-        ax6.set_title('Ray-Sphere Intersection Verification')
-
-        plt.tight_layout()
-        plt.show(block=True)
-
-
-        return footprint_points
+        return beam_directions
 
     @staticmethod
     def get_reflection_point2d(satCoord1, GPSCoord1):
@@ -749,3 +651,32 @@ class Reflection:
         lons[1:][wraparound] = np.nan
         lats[1:][wraparound] = np.nan
         return lons, lats
+
+    def eci_to_geodetic(self, eci_pos, time_utc):
+        """The ONE function you need"""
+        # Ensure time is UTC
+        if hasattr(time_utc, 'replace') and time_utc.tzinfo is None:
+            time_utc = time_utc.replace(tzinfo=UTC)
+
+        # Calculate Earth rotation
+        j2000 = datetime(2000, 1, 1, 12, 0, 0, tzinfo=UTC)
+        dt_days = (time_utc - j2000).total_seconds() / 86400.0
+        gmst_hours = (18.697374558 + 24.06570982441908 * dt_days) % 24.0
+        gmst_radians = gmst_hours * np.pi / 12.0
+
+        # Rotate from ECI to ECEF
+        cos_gmst = np.cos(gmst_radians)
+        sin_gmst = np.sin(gmst_radians)
+        R = np.array([[ cos_gmst,  sin_gmst, 0],
+                      [-sin_gmst,  cos_gmst, 0],
+                      [        0,         0, 1]])
+        ecef_pos = R @ eci_pos
+
+        # Convert to lat/lon/alt
+        x, y, z = ecef_pos
+        r = np.sqrt(x*x + y*y + z*z)
+        lat = np.degrees(np.arcsin(z / r))
+        lon = np.degrees(np.arctan2(y, x))
+        alt = r - Constants.R_EARTH_MEAN
+
+        return lat, lon, alt

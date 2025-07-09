@@ -884,12 +884,12 @@ class MovingTargetDetection:
                 transform=ccrs.PlateCarree(),
             )
             ax.plot(
-                center_lon,
-                center_lat,
+                center_point[1],
+                center_point[0],
                 "o",
                 color="blue",
                 markersize=8,
-                label="Center Point",
+                label="Specular Point",
                 transform=ccrs.PlateCarree(),
             )
 
@@ -909,46 +909,21 @@ class MovingTargetDetection:
             plt.tight_layout()
             plt.show(block=True)
 
-        point_geom = Point(refl_obj.refl_LL_vec[i][1], refl_obj.refl_LL_vec[i][0])
-        # Calculate the footprint size in meters based on the gain and satellite attitude
-        footprint_x, footprint_y = refl_obj._compute_footprint_ellipse(i, self.footprint_resolution)
+        ellips_points, center_point = refl_obj._compute_footprint_ellipse(i, self.footprint_resolution, [5.0, 10.0])
 
-        # Get the center of the point
-        center_lon = point_geom.centroid.x
-        center_lat = point_geom.centroid.y
-
-        # Create a circle on the ellipsoid by calculating points along azimuths
-        ellipse_points = []
-        num_points = self.footprint_resolution
-
-        # WGS84 ellipsoid for geodesic calculations
-        geod = Geod(ellps="WGS84")
-
-        #        time_i             = point_geom.time_i
-        #        sat_id             = point_geom.satid
-        for i in range(num_points):
-            # Calculate the azimuth (direction) for this point
-            azimuth = i * (360.0 / num_points)
-
-            # Calculate the point at the given distance and azimuth from the center
-            lon, lat, _ = geod.fwd(center_lon, center_lat, azimuth, self.footprint_size_m / 2)
-
-            lon, lat, _ = geod.fwd(center_lon, center_lat, azimuth, footprint_diameter / 2)
-
-            # Add the point to our circle points
-            ellipse_points.append((lon, lat))
-
-        # Close the polygon by adding the first point again
-        ellipse_points.append(ellipse_points[0])
+        footprint_points = []
+        for point in ellips_points:
+            # Convert the point to a shapely Point object (longitude, latitude)
+            footprint_points.append((point[1], point[0]))
 
         # Create a shapely polygon from the points
-        circle_poly = Polygon(ellipse_points)
+        ellips_poly = Polygon(footprint_points)
 
         ## DEBUG plot circle_poly
-        # show_circle(circle_poly)
+        # show_circle(ellips_poly)
 
         # Create a shapely polygon from the points
-        return circle_poly
+        return ellips_poly
 
     def _polygon_intersects_180_lat(self, polygon, max_lon_span=10, max_lat_span=5) -> bool:
         """
