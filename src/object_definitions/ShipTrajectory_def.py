@@ -71,9 +71,7 @@ class ShipTrajectory:
         self.ship_speed = ship_speed_knot * 0.51444  # Ship speed in knots (will be converted to to [m/s])
         self.start_position = start_position  # Ship start positon (latitude, longitude), if the start position is on land, the nearest water point will be used
         self.start_time = fn.ensure_utc_aware(start_time)  # Start time of the ship journey
-        self.end_position = (
-            end_position  # Ship end position  (latitude, longitude), if the end position is on land, the nearest water point will be used
-        )
+        self.end_position = end_position  # Ship end position  (latitude, longitude), if the end position is on land, the nearest water point will be used
         self.interval_minutes = interval_minutes  # Time interval in minutes for trajectory generation
         self.grid_resolution = (
             grid_resolution_km * 1e3
@@ -81,7 +79,9 @@ class ShipTrajectory:
         self.delta_m = (
             delta_boudingBox_km * 1e3
         )  # Additional margin in km for the bounding box (default: 1000 km | kept big to avoid being 'trapped' in a bay / corner / fjord)
-        self.fast_method = fast_path_gen_method  # Flag [boolean] to indicate if simplified path generation is used (faster computation / longer, more simple ship route)
+        self.fast_method = (
+            fast_path_gen_method  # Flag [boolean] to indicate if simplified path generation is used (faster computation / longer, more simple ship route)
+        )
         self.mesh_connection_radius = mesh_connection_radius_km * 1e3  # Connection radius for grid points in km (default: 2'000 km)
         self.water_buffer = water_buffer_km * 1e3  # Safety distance from shore in meters (default: 22.2 km = 12 nm (Territorial Sea))
 
@@ -156,8 +156,7 @@ class ShipTrajectory:
             trajectory_points = shapefile_time_series.geometry.values.tolist()
             self.trajectory_points = [(np.float64(point.y), np.float64(point.x)) for point in trajectory_points]
             self.timestamps = [
-                fn.ensure_utc_aware(datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S"))
-                for dt_str in shapefile_time_series["datetime_s"].values.tolist()
+                fn.ensure_utc_aware(datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")) for dt_str in shapefile_time_series["datetime_s"].values.tolist()
             ]
             geometry = shapefile_time_series["geometry"].values.tolist()
             self.end_position = geometry[-1].coords[0]  # Last point in the trajectory

@@ -93,11 +93,11 @@ def Skagerrak_to_BarentsSea(settings):
         sat_const.satellites[sat_idx].calculate_sunlight_time()
         print(
             f"Not sunlit count for satellite {sat_idx}: ",
-            np.sum(sat_const.satellites[sat_idx].sunlit_count == False),
+            np.sum(~sat_const.satellites[sat_idx].sunlit_count),
         )
         print(
             f"Sunlit count for satellite {sat_idx}: ",
-            np.sum(sat_const.satellites[sat_idx].sunlit_count == True),
+            np.sum(sat_const.satellites[sat_idx].sunlit_count),
         )
         print(
             f"Sunlit percentage for satellite {sat_idx}: ",
@@ -111,17 +111,13 @@ def Skagerrak_to_BarentsSea(settings):
         sat_const,
         gnss_constl_dict,
         shipTrajectory,
-        footprint_size_m=300_000,
         deltaT=settings["step_size"],
         earth_model=earth,
-        create_shapefile_for_visualization=True,
     )
     moving_target_detection.calculate_moving_target_reflection_intersection()
     moving_target_detection.show_track_and_detection_points(file_name="Detection_points.png", show_figure=False)
     time_1h = fn.ensure_utc_aware(shipTrajectory.start_time + timedelta(hours=1))
-    moving_target_detection.show_reflections_and_target_position_at_time_i(
-        time_1h, file_name="Reflections_1h_into_journey", label_reflections=True
-    )
+    moving_target_detection.show_reflections_and_target_position_at_time_i(time_1h, file_name="Reflections_1h_into_journey", label_reflections=True)
     moving_target_detection.create_reflection_animation(time_step_min=5, output_filename="Reflection_animation.gif")
 
     ####################################

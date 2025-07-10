@@ -56,9 +56,7 @@ class Plotting:
         gridlines.right_labels = False  # Disable right-side labels
 
         if title is None:
-            title_string = (
-                f"Specular Reflection Points for {tx_SatConst.satConfigName} constellation and {rx_SatConst.no_satellites} LEO satellites"
-            )
+            title_string = f"Specular Reflection Points for {tx_SatConst.satConfigName} constellation and {rx_SatConst.no_satellites} LEO satellites"
         else:
             title_string = title
         plt.title(title_string)
@@ -113,9 +111,7 @@ class Plotting:
 
         if title is None:
             constellations = ", ".join(tx_SatConstDict.keys())
-            title_string = (
-                f"Specular Reflection Points for the constellations: {constellations} and {rx_SatConst.no_satellites} LEO satellites"
-            )
+            title_string = f"Specular Reflection Points for the constellations: {constellations} and {rx_SatConst.no_satellites} LEO satellites"
         else:
             title_string = title
         plt.title(title_string)

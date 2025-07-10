@@ -40,12 +40,8 @@ class ReadWriteSatData:
         IntD_LNo = f"{int(satellite.lauch_Noyear):03d}"  # International Designator (launch no. of the year)         COSPAR ID
         IntD_POL = satellite.lauch_piece  # International Designator (piece of the launch)            COSPAR ID [hardcoded to 'A']
         epochStr = satellite.orbit_n.epoch_str  # Epoch in TLE format [YYDDD.DDDDDDDD]
-        balisticCoefStr = re.sub(
-            r"-0", "-", f"{balistic_coeff:10.8f}"
-        )  # Balistic coeffizient / First derivative of the mean motion in TLE format
-        balisticCoefStr = (
-            balisticCoefStr.replace("0.", " .") if balistic_coeff < 0 else balisticCoefStr.replace("0.", "-.")
-        )  # Remove the decimal point
+        balisticCoefStr = re.sub(r"-0", "-", f"{balistic_coeff:10.8f}")  # Balistic coeffizient / First derivative of the mean motion in TLE format
+        balisticCoefStr = balisticCoefStr.replace("0.", " .") if balistic_coeff < 0 else balisticCoefStr.replace("0.", "-.")  # Remove the decimal point
         meanMotionStr_2 = ReadWriteSatData.__str2tle_format(
             meanMotionSecDer
         )  # Second derivative of Mean Motion (decimal point assumed) HARDCODED FOR NOW /TODO
@@ -97,9 +93,7 @@ class ReadWriteSatData:
             ]
         )  # Checksum for line 2 (modulo 10)
 
-        line2_str = (
-            f"{line_no_2_str} {satcat_str} {i_str} {raan_str} {eccen_str} {per_str} {mean_anom_str} {mean_Mot_str}{rev_str}{checksum2}"
-        )
+        line2_str = f"{line_no_2_str} {satcat_str} {i_str} {raan_str} {eccen_str} {per_str} {mean_anom_str} {mean_Mot_str}{rev_str}{checksum2}"
 
         # Combine the lines to the full TLE
         tle_str = f"{line0_str}\n{line1_str}\n{line2_str}"
@@ -242,9 +236,7 @@ class ReadWriteSatData:
                 )  # Year of epoch                        [YYYY]
                 epochDay = float(epochDay_str.strip())  # Day of the year                      [DDD.DDDDDDDD]
                 epoch = ReadWriteSatData.__get_datetime(epochYear, epochDay)  # Epoch time                           [datetime]
-                firstDerMeanMotion = ReadWriteSatData.__tle_to_ballistic_coef(
-                    firstDerMean_str
-                )  # Ballistic coefficient                [TODO]
+                firstDerMeanMotion = ReadWriteSatData.__tle_to_ballistic_coef(firstDerMean_str)  # Ballistic coefficient                [TODO]
                 secDerivMeanMotion = ReadWriteSatData.__tle_to_MeanM_Bstar(secondDerMean_str)  # Second derivative of mean motion     [TODO]
                 B_star = ReadWriteSatData.__tle_to_MeanM_Bstar(dragTerm_str)  # B*, the drag term                    [TODO]
                 EphType = int(ephType_str.strip())  # Ephemeris type                       [0: unclassified, 1: classified]

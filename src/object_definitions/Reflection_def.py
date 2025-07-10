@@ -93,9 +93,7 @@ class Reflection:
         theta = np.degrees(np.arccos(cos_theta))
 
         # Precompute line-of-sight (LOS) and valid theta indices for efficiency
-        los_mask = np.array(
-            [self._check_los_satellites(Sat_state.positions_eci[:, i], GNSS_state.positions_eci[:, i]) for i in range(num_positions)]
-        )
+        los_mask = np.array([self._check_los_satellites(Sat_state.positions_eci[:, i], GNSS_state.positions_eci[:, i]) for i in range(num_positions)])
         valid_indices = (theta < self.cutoff_angle) & los_mask
 
         # Loop through satellite positions with valid LOS to compute reflection points
@@ -107,9 +105,7 @@ class Reflection:
                 theta_vec[i, :] = [theta_degrees2, theta_degrees3, theta[i]]
                 specular_point_vec[i, :] = specular_point_ecef
             elif self.earth_model == "spherical":
-                reflection_point, theta_2_circ, theta_3_circ = self.get_reflection_point_ff(
-                    GNSS_state.positions_eci[:, i], Sat_state.positions_eci[:, i]
-                )
+                reflection_point, theta_2_circ, theta_3_circ = self.get_reflection_point_ff(GNSS_state.positions_eci[:, i], Sat_state.positions_eci[:, i])
                 theta_vec[i, :] = [theta_2_circ, theta_3_circ, theta[i]]
                 specular_point_vec[i, :] = reflection_point
 
@@ -124,7 +120,7 @@ class Reflection:
                 times[valid_specular_points],
             )
             latlon_ref[valid_specular_points, :] = np.column_stack((lat, lon))
-            lons, lats = self.__prevent_longitude_wraparound(latlon_ref[:, 1], latlon_ref[:, 0])
+            lons, lats = self._prevent_longitude_wraparound(latlon_ref[:, 1], latlon_ref[:, 0])
         else:
             lons = np.nan
             lats = np.nan
@@ -136,7 +132,9 @@ class Reflection:
 
         # Store results in the object
         self.time_vec = times  # Time vector numpy array
-        self.refl_ECI_vec = specular_point_vec  # Reflection points         ECI coordinates      # TODO: Change from vector n x 3  to 3 x n (same as sat_pos_vec)
+        self.refl_ECI_vec = (
+            specular_point_vec  # Reflection points         ECI coordinates      # TODO: Change from vector n x 3  to 3 x n (same as sat_pos_vec)
+        )
         self.refl_LL_vec = np.column_stack(
             (lats, lons)
         )  # Reflection points         Lat-Lon coordinates  # TODO: Change from vector n x 2 to 2 x n (same as sat_pos_vec)
@@ -144,7 +142,9 @@ class Reflection:
         self.gnss_vel_vec = GNSS_state.velocities_eci  # GNSS satellite velocities ECI coordinates
         self.sat_pos_vec = Sat_state.positions_eci  # LEO satellite positions   ECI coordinates
         self.sat_vel_vec = Sat_state.velocities_eci  # LEO satellite velocities  ECI coordinates
-        self.refl_ang_vec = theta_vec  # Reflection angles         ECI coordinates [deg] # TODO: Change from vector n x 3 to 3 x n (actually 2 x n) (same as sat_pos_vec)
+        self.refl_ang_vec = (
+            theta_vec  # Reflection angles         ECI coordinates [deg] # TODO: Change from vector n x 3 to 3 x n (actually 2 x n) (same as sat_pos_vec)
+        )
         self.power = power  # Power of the reflection   []
 
     def get_reflection_point_ff(self, gnssPos, satPos):
@@ -324,7 +324,9 @@ class Reflection:
         Rot = np.eye(3) + s2 * Sv + Sv @ Sv * (1 - c2)
         return Rot
 
-    def _compute_footprint_ellipse(self, index, no_footprint_points, beamwidth_deg, q_sat=np.array([1.0, 0.0, 0.0, 0.0]), method='spherical', wavelength=None) -> np.ndarray:
+    def _compute_footprint_ellipse(
+        self, index, no_footprint_points, beamwidth_deg, q_sat=np.array([1.0, 0.0, 0.0, 0.0]), earth_model="spherical", wavelength=None
+    ) -> np.ndarray:
         """
         Computes the elliptical footprint and returns a Shapely polygon in lat/lon coordinates.
         INPUTS:
@@ -345,45 +347,44 @@ class Reflection:
         # Check if the satellite position is valid
         if np.any(np.isnan(sat_pos)) or np.any(np.isnan(refl_pos)):
             print(f"Invalid satellite or reflection position at index {index}. Skipping footprint calculation.")
-            return np.array([])
+            return np.array([]), (np.nan, np.nan)
 
-        n_sr_eci = (refl_pos - sat_pos) / np.linalg.norm(refl_pos - sat_pos)  # Beam direction
         l_sr = np.linalg.norm(refl_pos - sat_pos)  # Beam length (slant range)
+        n_sr_eci = (refl_pos - sat_pos) / l_sr  # Beam direction
 
         # ========== ORBITAL COORDINATE SYSTEM ==========
-        # NED coordinate system decomposed in ECI coordinates)
+        # "Orbit-NED"  coordinate system decomposed in ECI coordinates
         v_s_e = self.sat_vel_vec[:, index]  # Satellite velocity vector in ECI coordinates
         # Check for valid velocity
         if np.linalg.norm(v_s_e) < 1e-6:
             print(f"Warning: Invalid satellite velocity at index {index}")
             return np.array([])
 
-        # Angular momentum vector (orbit normal)
-        h_vec = np.cross(v_s_e, sat_pos)  # h = v × r
-        h_magnitude = np.linalg.norm(h_vec)
-
-        # 1. Along-track (X): Direction of motion
-        x_orbit_in_eci = v_s_e / np.linalg.norm(v_s_e)
-        # 2. Cross-track (Y): Orbit normal direction
-        y_orbit_in_eci = h_vec / h_magnitude  # Perpendicular to orbital plane
-        # 3. Radial (Z): Downward direction (circular orbit = towards center of Earth)
-        z_orbit_in_eci = np.cross(x_orbit_in_eci, y_orbit_in_eci)
-
-        # Ensure orthonormality(Gram-Schmidt)
-        y_orbit_in_eci = y_orbit_in_eci / np.linalg.norm(y_orbit_in_eci)
-        z_orbit_in_eci = z_orbit_in_eci / np.linalg.norm(z_orbit_in_eci)
-        x_orbit_in_eci = np.cross(y_orbit_in_eci, z_orbit_in_eci)
-        x_orbit_in_eci = x_orbit_in_eci / np.linalg.norm(x_orbit_in_eci)
-
-        # ========== SATELLITE ATTITUDE ==========
-        R_body_to_orbit = fn.quat_to_rotation_matrix(q_sat)
-        R_orbit_to_eci = np.column_stack([x_orbit_in_eci, y_orbit_in_eci, z_orbit_in_eci])
-        R_body_to_eci = R_orbit_to_eci @ R_body_to_orbit # Might be needed on a later stage
+        #        # Angular momentum vector (orbit normal)
+        #        h_vec = np.cross(v_s_e, sat_pos)  # h = v × r
+        #        h_magnitude = np.linalg.norm(h_vec)
+        #
+        #        # 1. Along-track (X): Direction of motion
+        #        x_orbit_in_eci = v_s_e / np.linalg.norm(v_s_e)
+        #        # 2. Cross-track (Y): Orbit normal direction
+        #        y_orbit_in_eci = h_vec / h_magnitude  # Perpendicular to orbital plane
+        #        # 3. Radial (Z): Downward direction (circular orbit = towards center of Earth)
+        #        z_orbit_in_eci = np.cross(x_orbit_in_eci, y_orbit_in_eci)
+        #
+        #        # Ensure orthonormality(Gram-Schmidt)
+        #        y_orbit_in_eci = y_orbit_in_eci / np.linalg.norm(y_orbit_in_eci)
+        #        z_orbit_in_eci = z_orbit_in_eci / np.linalg.norm(z_orbit_in_eci)
+        #        x_orbit_in_eci = np.cross(y_orbit_in_eci, z_orbit_in_eci)
+        #        x_orbit_in_eci = x_orbit_in_eci / np.linalg.norm(x_orbit_in_eci)
+        #
+        #        # ========== SATELLITE ATTITUDE ==========
+        #        R_body_to_orbit = fn.quat_to_rotation_matrix(q_sat)
+        #        R_orbit_to_eci = np.column_stack([x_orbit_in_eci, y_orbit_in_eci, z_orbit_in_eci])
+        #        R_body_to_eci = R_orbit_to_eci @ R_body_to_orbit # Might be needed on a later stage
 
         # ========== ANTENNA-BEAM COORDINATE SYSTEM ==========
         # Create perpendicular axes for the beam cone (orthogonal to the beam direction)
         sat_vel_projected = v_s_e - np.dot(v_s_e, n_sr_eci) * n_sr_eci
-
         # Handle edge case where velocity (v_s_e) is parallel to the antenna beam (n_sr_eci) (This should never happen)
         if np.linalg.norm(sat_vel_projected) < 1e-6:
             # Create arbitrary perpendicular vector
@@ -399,178 +400,77 @@ class Reflection:
         v_axis = v_axis / np.linalg.norm(v_axis)
         w_axis = n_sr_eci  # Along the beam direction
 
-            # Choose exact method
-        if method == 'spherical':
-            beam_directions = self._generate_beam_directions_spherical(n_sr_eci, u_axis, v_axis, beamwidth_deg, no_footprint_points)
-        elif method == 'rodrigues':
-            beam_directions = self._generate_beam_directions_rodrigues(n_sr_eci, u_axis, v_axis, beamwidth_deg, no_footprint_points)
-        elif method == 'matrix':
-            beam_directions = self._generate_beam_directions_matrix(n_sr_eci, u_axis, v_axis, beamwidth_deg, no_footprint_points)
+        # ========== VECTORIZED BEAM DIRECTIONS ==========
+        t = np.linspace(0, 2 * np.pi, no_footprint_points, endpoint=False)
+        beamwidth_rad = np.array(beamwidth_deg) * np.pi / 180
+
+        # Vectorized angular positions
+        alpha_u = (beamwidth_rad[0] / 2) * np.cos(t)
+        alpha_v = (beamwidth_rad[1] / 2) * np.sin(t)
+        theta_total = np.sqrt(alpha_u**2 + alpha_v**2)
+
+        # Vectorized beam directions
+        cos_theta = np.cos(theta_total)
+        sin_theta = np.sin(theta_total)
+        phi = np.arctan2(alpha_v, alpha_u)
+
+        # All beam directions at once (n_points x 3)
+        beam_dirs = cos_theta[:, np.newaxis] * n_sr_eci[np.newaxis, :] + sin_theta[:, np.newaxis] * (
+            np.cos(phi)[:, np.newaxis] * u_axis[np.newaxis, :] + np.sin(phi)[:, np.newaxis] * v_axis[np.newaxis, :]
+        )
+
+        # ========== VECTORIZED INTERSECTION ==========
+        # Use mean Earth radius for speed (or reflection point radius)
+        if earth_model == "spherical":
+            earth_radius = Constants.R_EARTH_MEAN
         else:
-            raise ValueError("Method must be 'spherical', 'rodrigues', or 'matrix'")
+            # Use radius at reflection point for all (faster than per-point calculation)
+            latitude_rad = np.arcsin(np.clip(refl_pos[2] / np.linalg.norm(refl_pos), -1, 1))
+            a = Constants.RADIUS_EARTH_EQUAT
+            f = Constants.EARTH_FLATTENING
+            b = a * (1 - f)
+            # Calculate geocentric radius using the formula:
+            # R(φ) = √[(a²cos²φ + b²sin²φ)]
+            earth_radius = np.sqrt((a**2 * np.cos(latitude_rad) ** 2) + (b**2 * np.sin(latitude_rad) ** 2))
 
-        # Generate beam directions within the cone
-        ellipse_points = []
+        a = 1.0
+        b = 2.0 * np.dot(sat_pos, beam_dirs.T)
+        c = np.dot(sat_pos, sat_pos) - earth_radius**2
 
-        for i, beam_dir_i in enumerate(beam_directions):
-        # Find intersection with Earth
-            a = 1.0
-            b = 2.0 * np.dot(sat_pos, beam_dir_i)
-            c = np.dot(sat_pos, sat_pos) - Constants.R_EARTH_MEAN**2
+        discriminant = b**2 - 4 * a * c
+        valid_discriminant = discriminant >= 0
 
-            discriminant = b**2 - 4*a*c
-            if discriminant >= 0:
-                t1 = (-b - np.sqrt(discriminant)) / 2.0 # First intersection (entry point)
-                t2 = (-b + np.sqrt(discriminant)) / 2.0 # Second intersection (exit point)
+        # Calculate intersection points
+        t_vals = np.full(no_footprint_points, np.nan)
+        t_vals[valid_discriminant] = (-b[valid_discriminant] - np.sqrt(discriminant[valid_discriminant])) / 2.0
 
-                # Chose the first positive intersection point (entry point)
-                valid_t_values = [t for t in [t1, t2] if t > 0.0]
+        # Filter for positive intersection points
+        positive_t_mask = t_vals > 0
+        valid_mask = valid_discriminant & positive_t_mask
 
-                if valid_t_values:
-                    t_chosen = min(valid_t_values)  # Choose the first intersection
-                    intersection_eci = sat_pos + t_chosen * beam_dir_i
+        # Calculate all intersection points at once
+        intersections_eci = sat_pos[np.newaxis, :] + t_vals[:, np.newaxis] * beam_dirs
 
-                    # Verify intersection is on Earth's surface (within reasonable tolerance)
-                    distance_from_center = np.linalg.norm(intersection_eci)
-                    if abs(distance_from_center - Constants.R_EARTH_MEAN) < 5000:  # Within 5km tolerance
-                        # Convert to lat/lon
-                        try:
-                            lat, lon, alt = pymap3d.eci2geodetic(
-                                intersection_eci[0], intersection_eci[1], intersection_eci[2], time_i
-                            )
-                            #lat, lon, alt = self.eci_to_geodetic(intersection_eci, time_i)
-                            # Additional check: altitude should be near zero
-                            if abs(alt) < 10000:  # Within 10km of surface
-                                ellipse_points.append((lat, lon))
-                            else:
-                                print(f"Warning: Point {i} has altitude {alt:.1f}m, skipping")
-                        except Exception as e:
-                            print(f"Warning: Failed to convert point {i} to geodetic: {e}")
-                            continue
-                    else:
-                        print(f"Warning: Point {i} not on Earth surface (distance: {distance_from_center/1000:.1f}km)")
-                else:
-                    print(f"Warning: No valid positive intersection for point {i}")
-            else:
-                print(f"Warning: No intersection with Earth for point {i}")
-            lat_s, lon_s, _ = pymap3d.eci2geodetic(refl_pos[0], refl_pos[1], refl_pos[2], time_i)
-            center_point = (lat_s, lon_s)
+        # ========== VECTORIZED LAT/LON CONVERSION ==========
+        times = np.array([time_i] * no_footprint_points)  # Use the same time for all points
+        lat_lon_points = np.full((no_footprint_points, 2), np.nan)
+        if valid_mask.size > 0:
+            try:
+                lat, lon, alt = pymap3d.eci2geodetic(
+                    intersections_eci[valid_mask, 0], intersections_eci[valid_mask, 1], intersections_eci[valid_mask, 2], times[valid_mask]
+                )
+                lat_lon_points[valid_mask] = np.column_stack((lat, lon))
+            except Exception as e:
+                print(f"Warning: Failed to convert some points to geodetic coordinates: {e}")
+                lat_lon_points[valid_mask] = np.nan
+
+        # ========== OUTPUTS ==========
+        # Return the footprint polygon in lat/lon coordinates
+        ellipse_points = np.column_stack((lat_lon_points[:, 0], lat_lon_points[:, 1]))
+        # Calculate the center point of the ellipse
+        lat_center, lon_center, _ = pymap3d.eci2geodetic(refl_pos[0], refl_pos[1], refl_pos[2], time_i)
+        center_point = np.array([lat_center, lon_center])
         return ellipse_points, center_point
-
-    def _generate_beam_directions_spherical(self, n_sr_eci, u_axis, v_axis, beamwidth_deg, no_points):
-        """
-        Generate exact beam directions using spherical coordinates.
-        [Best accuracy]
-        """
-        beam_directions = []
-        beamwidth_rad = [bw * np.pi / 180 for bw in beamwidth_deg]
-
-        for i in range(no_points):
-            # Parametric ellipse parameter
-            t = 2 * np.pi * i / no_points
-
-            # Angular positions on the ellipse (in the beam's local coordinate system)
-            alpha_u = (beamwidth_rad[0]/2) * np.cos(t)  # Angle in u direction  
-            alpha_v = (beamwidth_rad[1]/2) * np.sin(t)  # Angle in v direction
-
-            # Convert to spherical coordinates
-            theta_total = np.sqrt(alpha_u**2 + alpha_v**2)  # Total angle from beam center
-            if theta_total > 0:
-                phi = np.arctan2(alpha_v, alpha_u)  # Azimuthal angle around beam center
-
-                # Exact spherical coordinate transformation
-                beam_dir_i = (np.cos(theta_total) * n_sr_eci + 
-                             np.sin(theta_total) * (np.cos(phi) * u_axis + np.sin(phi) * v_axis))
-            else:
-                # Center of beam
-                beam_dir_i = n_sr_eci.copy()
-
-            beam_directions.append(beam_dir_i)
-
-        return beam_directions
-
-    def _generate_beam_directions_rodrigues(self, n_sr_eci, u_axis, v_axis, beamwidth_deg, no_points):
-        """
-        Generate exact beam directions using Rodrigues' rotation formula.
-        This method allows for precise control over rotations.
-        """
-        def rodrigues_rotation(v, k, theta):
-            """
-            Rotate vector v around axis k by angle theta using Rodrigues' formula.
-            """
-            cos_theta = np.cos(theta)
-            sin_theta = np.sin(theta)
-
-            return (v * cos_theta + 
-                    np.cross(k, v) * sin_theta + 
-                    k * np.dot(k, v) * (1 - cos_theta))
-
-        beam_directions = []
-        beamwidth_rad = [bw * np.pi / 180 for bw in beamwidth_deg]
-
-        for i in range(no_points):
-            # Parametric ellipse parameter
-            t = 2 * np.pi * i / no_points
-
-            # Angular offsets
-            theta_u = (beamwidth_rad[0]/2) * np.cos(t)
-            theta_v = (beamwidth_rad[1]/2) * np.sin(t)
-
-            # Start with central beam direction
-            beam_dir_i = n_sr_eci.copy()
-
-            # Apply rotations sequentially
-            if abs(theta_u) > 1e-10:  # Avoid numerical issues for zero rotation
-                beam_dir_i = rodrigues_rotation(beam_dir_i, v_axis, theta_u)
-            if abs(theta_v) > 1e-10:
-                beam_dir_i = rodrigues_rotation(beam_dir_i, u_axis, theta_v)
-
-            beam_directions.append(beam_dir_i)
-
-        return beam_directions
-
-    def _generate_beam_directions_matrix(self, n_sr_eci, u_axis, v_axis, beamwidth_deg, no_points):
-        """
-        Generate exact beam directions using rotation matrices.
-        This is often the most computationally efficient for many points.
-        """
-        def rotation_matrix_axis_angle(axis, angle):
-            """Create rotation matrix for rotation around axis by angle (Rodrigues' formula)"""
-            axis = axis / np.linalg.norm(axis)  # Ensure unit vector
-            cos_a = np.cos(angle)
-            sin_a = np.sin(angle)
-
-            # Skew-symmetric matrix
-            K = np.array([[0, -axis[2], axis[1]],
-                          [axis[2], 0, -axis[0]], 
-                          [-axis[1], axis[0], 0]])
-
-            # Rodrigues' rotation matrix formula
-            R = np.eye(3) + sin_a * K + (1 - cos_a) * np.dot(K, K)
-            return R
-
-        beam_directions = []
-        beamwidth_rad = [bw * np.pi / 180 for bw in beamwidth_deg]
-
-        for i in range(no_points):
-            # Parametric ellipse parameter
-            t = 2 * np.pi * i / no_points
-
-            # Angular offsets
-            theta_u = (beamwidth_rad[0]/2) * np.cos(t)
-            theta_v = (beamwidth_rad[1]/2) * np.sin(t)
-
-            # Create rotation matrices
-            R_u = rotation_matrix_axis_angle(v_axis, theta_u) if abs(theta_u) > 1e-10 else np.eye(3)
-            R_v = rotation_matrix_axis_angle(u_axis, theta_v) if abs(theta_v) > 1e-10 else np.eye(3)
-
-            # Apply combined rotation
-            R_combined = R_v @ R_u  # Note: order matters!
-            beam_dir_i = R_combined @ n_sr_eci
-
-            beam_directions.append(beam_dir_i)
-
-        return beam_directions
 
     @staticmethod
     def get_reflection_point2d(satCoord1, GPSCoord1):
@@ -644,39 +544,10 @@ class Reflection:
         return np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
 
     @staticmethod
-    def __prevent_longitude_wraparound(lons, lats):
+    def _prevent_longitude_wraparound(lons, lats):
         # Find where the difference between consecutive longitudes exceeds 180 degrees -> avoid plotting lines from -179 to 179 deg longitude
         wraparound = np.abs(np.diff(lons)) > 180
         # Replace the longitude and latitude at the wraparound point with NaN
         lons[1:][wraparound] = np.nan
         lats[1:][wraparound] = np.nan
         return lons, lats
-
-    def eci_to_geodetic(self, eci_pos, time_utc):
-        """The ONE function you need"""
-        # Ensure time is UTC
-        if hasattr(time_utc, 'replace') and time_utc.tzinfo is None:
-            time_utc = time_utc.replace(tzinfo=UTC)
-
-        # Calculate Earth rotation
-        j2000 = datetime(2000, 1, 1, 12, 0, 0, tzinfo=UTC)
-        dt_days = (time_utc - j2000).total_seconds() / 86400.0
-        gmst_hours = (18.697374558 + 24.06570982441908 * dt_days) % 24.0
-        gmst_radians = gmst_hours * np.pi / 12.0
-
-        # Rotate from ECI to ECEF
-        cos_gmst = np.cos(gmst_radians)
-        sin_gmst = np.sin(gmst_radians)
-        R = np.array([[ cos_gmst,  sin_gmst, 0],
-                      [-sin_gmst,  cos_gmst, 0],
-                      [        0,         0, 1]])
-        ecef_pos = R @ eci_pos
-
-        # Convert to lat/lon/alt
-        x, y, z = ecef_pos
-        r = np.sqrt(x*x + y*y + z*z)
-        lat = np.degrees(np.arcsin(z / r))
-        lon = np.degrees(np.arctan2(y, x))
-        alt = r - Constants.R_EARTH_MEAN
-
-        return lat, lon, alt

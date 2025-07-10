@@ -119,17 +119,13 @@ class SatelliteConstellation:
                 sat.set_timescale_simulation(self.times_skyfield)
         else:
             if not isinstance(startTime, datetime):
-                raise ValueError(
-                    "Invalid input for start time. Must be a datetime object.\n  => Set the start time in the configuration file"
-                )
+                raise ValueError("Invalid input for start time. Must be a datetime object.\n  => Set the start time in the configuration file")
             if not isinstance(duration, int | float):
                 raise ValueError(
                     "Invalid input for simulation duration. Must be an integer or float representing hours.\n  => Set the simulation duration in the configuration file or generate if from the moving target object (MovingTarget_def.py)"
                 )
             if not isinstance(stepSize, int):
-                raise ValueError(
-                    "Invalid input for step size. Must be an integer representing seconds.\n  => Set the step size in the configuration file"
-                )
+                raise ValueError("Invalid input for step size. Must be an integer representing seconds.\n  => Set the step size in the configuration file")
             raise ValueError("Invalid input for simulation duration")
 
     def add_satellite(self, satellite) -> bool:

@@ -114,32 +114,18 @@ def testObjSatellite() -> bool:
 
     if not (isinstance(sat_noOrbit, Satellite) and sat_noOrbit.orbit_n == None):
         passed = 0
-    if not (
-        isinstance(sat_orbitNoEpoch, Satellite) and sat_orbitNoEpoch.orbit_n == orbit_noEpoch and sat_orbitNoEpoch.tle_exists() == False
-    ):
+    if not (isinstance(sat_orbitNoEpoch, Satellite) and sat_orbitNoEpoch.orbit_n == orbit_noEpoch and sat_orbitNoEpoch.tle_exists() == False):
         passed = 0
-    if not (
-        isinstance(sat_orbitWithEpoch, Satellite)
-        and sat_orbitWithEpoch.orbit_n == orbit_withEpoch
-        and sat_orbitWithEpoch.tle_exists() == True
-    ):
+    if not (isinstance(sat_orbitWithEpoch, Satellite) and sat_orbitWithEpoch.orbit_n == orbit_withEpoch and sat_orbitWithEpoch.tle_exists() == True):
         passed = 0
-    if not (
-        isinstance(satellite_newOrbit, Satellite)
-        and satellite_newOrbit.orbit_n.epoch_str == "24305.21246528"
-        and satellite_newOrbit.tle_exists() == True
-    ):
+    if not (isinstance(satellite_newOrbit, Satellite) and satellite_newOrbit.orbit_n.epoch_str == "24305.21246528" and satellite_newOrbit.tle_exists() == True):
         passed = 0
     # Generate TLE file  for satellite_newOrbit
     #    satellite_newOrbit.write_tle_file()
     if not (satellite_newOrbit.tle_exists() == True):
         passed = 0
 
-    if not (
-        isinstance(satellite_newOrbit2, Satellite)
-        and satellite_newOrbit2.orbit_n.epoch_str == None
-        and satellite_newOrbit2.tle_exists() == False
-    ):
+    if not (isinstance(satellite_newOrbit2, Satellite) and satellite_newOrbit2.orbit_n.epoch_str == None and satellite_newOrbit2.tle_exists() == False):
         passed = 0
 
     # Set the classification of the satellite

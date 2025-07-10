@@ -54,14 +54,10 @@ def initialize(config_file_name="Configuration.ini"):
     config = cp.ConfigParser()
     config.read(config_file_name)
 
-    start_time_dt = datetime.strptime(
-        config["SIMULATION SETTINGS"]["startTime"], "%d.%m.%Y %H:%M:%S"
-    )  # Start time: Year, Month, Day, Hour, Minute, Second
+    start_time_dt = datetime.strptime(config["SIMULATION SETTINGS"]["startTime"], "%d.%m.%Y %H:%M:%S")  # Start time: Year, Month, Day, Hour, Minute, Second
     start_time_dt = start_time_dt.replace(tzinfo=UTC)  # Add timezone information
     step_size = int(config["SIMULATION SETTINGS"]["stepSize"])  # Seconds
-    sim_duration = (
-        int(config["SIMULATION SETTINGS"]["simulationDuration"]) if "simulationDuration" in config["SIMULATION SETTINGS"] else None
-    )  # Hours
+    sim_duration = int(config["SIMULATION SETTINGS"]["simulationDuration"]) if "simulationDuration" in config["SIMULATION SETTINGS"] else None  # Hours
     grid_size_m = (
         int(config["COVERAGE"]["grid_size_meters"]) if ("COVERAGE" in config and "grid_size_meters" in config["COVERAGE"]) else None
     )  # Default grid size in meters

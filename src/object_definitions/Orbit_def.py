@@ -40,9 +40,7 @@ class Orbit_specification:
         # Convert datetime to TLE epoch_str format YYDDD.DDDDDDDD
         tle_year = dt_epoch.year % 100
         start_of_year = datetime(dt_epoch.year, 1, 1, tzinfo=UTC)
-        days_since_start_of_year = (
-            dt_epoch - start_of_year
-        ).total_seconds() / Constants.SEC_PER_DAY + 1  # Add 1 day to accont for the first day of the year
+        days_since_start_of_year = (dt_epoch - start_of_year).total_seconds() / Constants.SEC_PER_DAY + 1  # Add 1 day to accont for the first day of the year
 
         # Format strings to TLE Epoch format
         epoch_year_str = f"{tle_year:02d}"
