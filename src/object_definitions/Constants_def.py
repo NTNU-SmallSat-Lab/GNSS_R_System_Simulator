@@ -1,5 +1,7 @@
 import os
 
+import numpy as np
+
 
 class Constants:
     """
@@ -38,6 +40,15 @@ class Constants:
     earth_coastline_path = os.path.join(
         base_dir, "DATA", "world_costline_data", "10m_physical", "ne_10m_ocean.shp"
     )  # Path to the coastline shapefile, used for land avoidance in the ShipTrajectory class
+
+    ###########################f
+    # Coordinate Conversion constants
+    ###########################f
+    R_body_to_vnc_normal = np.array([
+        [1, 0, 0],
+        [0, -1, 0],
+        [0, 0, -1]
+    ])  # Rotation matrix from VNC to body-fixed coordinate system (normal)
 
     ###########################f
     # 3rd Party Libraries and Tools

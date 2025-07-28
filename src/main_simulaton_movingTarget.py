@@ -19,7 +19,7 @@ from object_definitions.Static_classes_def import Plotting
 #############################################################################################################################
 ##################################################### - MAIN FUNCTION - #####################################################
 #############################################################################################################################
-def Skagerrak_to_BarentsSea(settings):
+def skagerrak_to_barents_sea(settings: dict):
     """
     ==========================================================================================================
     This function calculates the probability of detecting a ship traveling from a point A to a point B (defined in the configuration file)
@@ -38,7 +38,7 @@ def Skagerrak_to_BarentsSea(settings):
         None
     ==========================================================================================================
     """
-    earth = "spherical"
+    earth = "elliptical"  # Earth model to use for the simulation (e.g., "elliptical", "spherical")
 
     ########################################################################
     # 1: Calculate ship trajectory from Skagerrak to Barents Sea
@@ -63,7 +63,7 @@ def Skagerrak_to_BarentsSea(settings):
     ####################################
     # 3: Load simulation settings
     ####################################
-    gnss_r_antenna = GNSS_R_antenna(settings["antenna_gain_dB"])
+    gnss_r_antenna = GNSS_R_antenna(settings)
 
     ####################################
     # 3. Create satellite constellation
@@ -111,6 +111,7 @@ def Skagerrak_to_BarentsSea(settings):
         sat_const,
         gnss_constl_dict,
         shipTrajectory,
+        gnss_r_antenna,
         deltaT=settings["step_size"],
         earth_model=earth,
     )
@@ -125,9 +126,9 @@ def Skagerrak_to_BarentsSea(settings):
     ####################################
     Plotting.plot_orbits(sat_const)
 
-    #    ####################################
-    #    # 8. Calculate reflection points and coverage
-    #    ####################################
+    ####################################
+    # 8. Calculate reflection points and coverage
+    ####################################
     coverage = Coverage(
         sat_const,
         gnss_constl_dict,
@@ -137,21 +138,21 @@ def Skagerrak_to_BarentsSea(settings):
     )
     coverage.calculate_reflection_points_and_coverage(verbose=True)
 
-    #    ####################################
-    #    # 9. Plot reflection points
-    #    ####################################
+    ####################################
+    # 9. Plot reflection points
+    ####################################
     coverage.plot_reflection_points()
     coverage.plot_coverage_shapefile(gnss_constellation="GPS", file_name="Coverage.png")
     coverage.plot_coverage_shapefile(file_name="Coverage_both.png")
     coverage.plot_coverage_gridded_shapefile(gnss_constellation="GPS", file_name="Coverage_grid_GPS.png")
     coverage.plot_coverage_gridded_shapefile(file_name="Coverage_grid_GPS_GALIEO.png")
 
-    #    ####################################
-    #    # 10. Calculate statistics
-    #    ####################################
+    ####################################
+    # 10. Calculate statistics
+    ####################################
     coverage.calculate_statistics()
 
 
 if __name__ == "__main__":
     config, settings = initialize("Configuration_ship.ini")
-    Skagerrak_to_BarentsSea(settings)
+    skagerrak_to_barents_sea(settings)

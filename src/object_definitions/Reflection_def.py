@@ -1,12 +1,12 @@
-from datetime import datetime, timezone, UTC
-
 import numpy as np
 import pymap3d
 from scipy.optimize import minimize
+from shapely.geometry import Polygon
 
 import functions.functions as fn
 from object_definitions.Constants_def import Constants
-
+from object_definitions.Satellite_def import Satellite
+from object_definitions.Rx_antenna_def import RxAntenna
 
 class Reflection:
     def __init__(
@@ -77,9 +77,7 @@ class Reflection:
         self.sat_vel_vec = []
         self.refl_ang_vec = []
 
-    def compute_reflection_coordinates(self, GNSS_state, Sat_state, times):
-        times = np.array(times)
-
+    def compute_reflection_coordinates(self, GNSS_state: Satellite, Sat_state: Satellite, times: np.ndarray):
         # Preallocate outputs for efficiency
         num_positions = Sat_state.positions_eci.shape[1]
         theta_vec = np.full((num_positions, 3), np.nan)
@@ -324,6 +322,163 @@ class Reflection:
         Rot = np.eye(3) + s2 * Sv + Sv @ Sv * (1 - c2)
         return Rot
 
+    def _compute_footprint(self, index: int, antenna: RxAntenna, q_sat=np.array([1.0, 0.0, 0.0, 0.0]), earth_model="spherical") -> tuple:
+        """
+        Computes the footprint of the antenna model and returns a Shapely polygon in lat/lon coordinates.
+        INPUTS:
+          - index:              Time index for position vectors
+          - earth_model:        Earth model (spherical or elliptical)
+
+        OUTPUTS:
+          - footprint_polygon: Shapely polygon representing the elliptical footprint
+        """
+        # Get Satellite and Reflection positions
+        sat_pos = self.sat_pos_vec[:, index]
+        refl_pos = self.refl_ECI_vec[index, :]
+        time_i = self.time_vec[index]
+
+        # Check if the satellite position is valid
+        if np.any(np.isnan(sat_pos)) or np.any(np.isnan(refl_pos)):
+            print(f"Invalid satellite or reflection position at index {index}. Skipping footprint calculation.")
+            return Polygon(), np.array([])
+
+        l_sr = np.linalg.norm(refl_pos - sat_pos)  # Beam length (slant range)
+        n_ar_eci = (refl_pos - sat_pos) / l_sr  # Satellite-to-reflection unit vector in ECI coordinates
+
+        # ========== VNC COORDINATE SYSTEM {vnc} (Velocity Normal Cross-track) ==========
+        # "Orbit-NED"  coordinate system decomposed in ECI coordinates
+        v_s_i = self.sat_vel_vec[:, index]  # Satellite velocity vector in ECI coordinates
+        r_s_i  = sat_pos # Satellite position vector in ECI coordinates
+        # Check for valid velocity
+        if np.linalg.norm(v_s_i) < 1e-6:
+            print(f"Warning: Invalid satellite velocity at index {index}")
+            return Polygon(), np.array([])
+        if np.linalg.norm(r_s_i) < 1e-6:
+            print(f"Warning: Invalid satellite position at index {index}")
+            return Polygon(), np.array([])
+
+        # 1. V-axis (satellite travel direction)
+        v_hat = v_s_i / np.linalg.norm(v_s_i)  # Unit vector in the direction of satellite motion
+
+        # 2. N-axis (Orbit Normal direction, perpendicular to the orbit plane)
+        h_vec = np.cross(r_s_i, v_hat) # Angular momentum vector (cross product of position and velocity)
+        if np.linalg.norm(h_vec) < 1e-12:
+            print(f"Warning: Satellite position and velocity are collinear at index {index}")
+            return np.array([])
+        n_hat = h_vec / np.linalg.norm(h_vec) # Unit vector in the direction of the orbit normal
+
+        # 3. C-axis (Cross-track direction, perpendicular to both V and N)
+        c_hat = np.cross(v_hat, n_hat)
+        c_hat = c_hat / np.linalg.norm(c_hat)  # Normalize the cross-track direction
+
+        R_eci_to_vnc = np.vstack([
+            v_hat,  # V: Velocity
+            n_hat,  # N: Normal
+            c_hat   # C: Cross-track
+        ])
+
+        # ========== BEAM / RAY COORDINATE SYSTEM {r} ==========
+        # Create perpendicular axes for the beam cone (orthogonal to the beam direction)
+        v_s_proj_i = v_s_i - np.dot(v_s_i, n_ar_eci) * n_ar_eci
+        # Handle edge case where velocity (v_s_vnc) is parallel to the antenna beam (n_ar_eci) (This should never happen)
+        if np.linalg.norm(v_s_proj_i) < 1e-6:
+            # Create arbitrary perpendicular vector
+            if abs(n_ar_eci[2]) < 0.9:
+                temp_vec = np.array([0, 0, 1])  # Use z-axis
+            else:
+                temp_vec = np.array([1, 0, 0])  # Use x-axis
+            v_s_proj_i = temp_vec - np.dot(temp_vec, n_ar_eci) * n_ar_eci
+
+        # "Antenna beam coordinate axes" in the beam-perpendicular plane decomposed in ECI coordinates
+        x_r_eci = v_s_proj_i / np.linalg.norm(v_s_proj_i)  # Unit vector in the direction of the beam projection
+        y_r_eci = np.cross(n_ar_eci, x_r_eci)  # Cross-track component (perpendicular to the beam and x_antenna)
+        y_r_eci = y_r_eci / np.linalg.norm(y_r_eci)   # Normalize the cross-track component
+        z_r_eci = n_ar_eci
+        # Rotation matrix from ECI to reflection-beam coordinate system (columns are reflection-beam axes in ECI)
+        R_eci_to_reflection = np.vstack([
+            x_r_eci,
+            y_r_eci,
+            z_r_eci
+        ])
+
+        # ========== CALCULATE BEAM/RAY ELEVATION (in flight direction = theta) AND AZIMUTH (accross flight dir) = phi)==========
+        R_attitude = fn.quat_to_rotation_matrix(q_sat)  # Rotation matrix from body-fixed to orbital coordinate system (using quaternion)
+        R_vnc_to_body = R_attitude @ Constants.R_body_to_vnc_normal.T  # Rotation matrix from VNC to body-fixed coordinate system
+        # Beam direction in the antenna coordinate system
+        n_ar_a = antenna.R_antenna_to_body.T @ R_vnc_to_body @ R_eci_to_vnc @ n_ar_eci  # Satellite-to-reflection unit vector in antenna coordinate system
+        # Sanity check for n_ar_a (should point away from the antenna)
+        if n_ar_a[2] < 0:
+            print(f"Warning: Reflection behind antenna! {index}.")
+            return Polygon(), np.array([])
+#        epsilon = np.arctan2(n_ar_a[0], n_ar_a[2])  # Elevation in flight direction [rad]
+#        psi = np.arctan2(n_ar_a[1], n_ar_a[2])    # Azimuth across flight direction [rad]
+
+        # ========== GET THE ROTATION MATRIX FROM NADIR POINTING TO THE REFLECTION BEAM POINTING ==========
+        beam_dir_a = antenna._get_antenna_footprint(n_ar_a)  # Get the antenna footprint in the antenna coordinate system
+
+        # ========== VECTORIZED BEAM DIRECTIONS ==========
+        beam_dirs_i = (R_eci_to_vnc.T @ R_vnc_to_body.T @ antenna.R_antenna_to_body @ beam_dir_a.T)  # Rotate beam directions to the orbital coordinate system
+        no_footprint_points = beam_dirs_i.shape[1]  # Number of footprint points
+
+        # ========== VECTORIZED INTERSECTION ==========
+        # Use mean Earth radius for speed (or reflection point radius)
+        if earth_model == "spherical":
+            earth_radius = Constants.R_EARTH_MEAN
+        else:
+            # Use radius at reflection point for all (faster than per-point calculation)
+            latitude_rad = np.arcsin(np.clip(refl_pos[2] / np.linalg.norm(refl_pos), -1, 1))
+            a = Constants.RADIUS_EARTH_EQUAT
+            f = Constants.EARTH_FLATTENING
+            b = a * (1 - f)
+            # Calculate geocentric radius using the formula:
+            # R(φ) = √[(a²cos²φ + b²sin²φ)]
+            earth_radius = np.sqrt((a**2 * np.cos(latitude_rad) ** 2) + (b**2 * np.sin(latitude_rad) ** 2))
+
+        a = 1.0
+        b = 2.0 * np.dot(sat_pos, beam_dirs_i)
+        c = np.dot(sat_pos, sat_pos) - earth_radius**2
+
+        discriminant = b**2 - 4 * a * c
+        valid_discriminant = discriminant >= 0
+
+        # Calculate intersection points
+        t_vals = np.full(no_footprint_points, np.nan)
+        t_vals[valid_discriminant] = (-b[valid_discriminant] - np.sqrt(discriminant[valid_discriminant])) / 2.0
+
+        # Filter for positive intersection points
+        positive_t_mask = t_vals > 0
+        valid_mask = valid_discriminant & positive_t_mask
+
+        # Calculate all intersection points at once
+        intersections_eci = sat_pos[np.newaxis, :] + t_vals[:, np.newaxis] * beam_dirs_i.T
+
+        # ========== VECTORIZED LAT/LON CONVERSION ==========
+        times = np.array([time_i] * no_footprint_points)  # Use the same time for all points
+        lat_lon_points = np.full((no_footprint_points, 2), np.nan)
+        if valid_mask.size > 0:
+            try:
+                lat, lon, alt = pymap3d.eci2geodetic(
+                    intersections_eci[valid_mask, 0], intersections_eci[valid_mask, 1], intersections_eci[valid_mask, 2], times[valid_mask]
+                )
+                lat_lon_points[valid_mask] = np.column_stack((lat, lon))
+            except Exception as e:
+                print(f"Warning: Failed to convert some points to geodetic coordinates: {e}")
+                lat_lon_points[valid_mask] = np.nan
+
+        # ========== OUTPUTS ==========
+        # Return the footprint polygon in lat/lon coordinates
+        ellipse_points = np.column_stack((lat_lon_points[:, 0], lat_lon_points[:, 1]))
+        # Calculate the center point of the ellipse
+        lat_center, lon_center, _ = pymap3d.eci2geodetic(refl_pos[0], refl_pos[1], refl_pos[2], time_i)
+        center_point = np.array([lat_center, lon_center])
+
+        footprint_points = ellipse_points[:, [1, 0]]
+        # Create a shapely polygon from the points
+        polygon_footprint = Polygon(footprint_points)
+
+        return polygon_footprint, center_point
+
+    #TO BE REMOVED
     def _compute_footprint_ellipse(
         self, index, no_footprint_points, beamwidth_deg, q_sat=np.array([1.0, 0.0, 0.0, 0.0]), earth_model="spherical", wavelength=None
     ) -> np.ndarray:
@@ -352,50 +507,46 @@ class Reflection:
         l_sr = np.linalg.norm(refl_pos - sat_pos)  # Beam length (slant range)
         n_sr_eci = (refl_pos - sat_pos) / l_sr  # Beam direction
 
-        # ========== ORBITAL COORDINATE SYSTEM ==========
+        # ========== VNC COORDINATE SYSTEM {vnc} (Velocity Normal Cross-track) ==========
         # "Orbit-NED"  coordinate system decomposed in ECI coordinates
-        v_s_e = self.sat_vel_vec[:, index]  # Satellite velocity vector in ECI coordinates
+        v_s_i = self.sat_vel_vec[:, index]  # Satellite velocity vector in ECI coordinates
+        r_s_i  = sat_pos # Satellite position vector in ECI coordinates
         # Check for valid velocity
-        if np.linalg.norm(v_s_e) < 1e-6:
+        if np.linalg.norm(v_s_i) < 1e-6:
             print(f"Warning: Invalid satellite velocity at index {index}")
-            return np.array([])
+            return Polygon(), np.array([])
+        if np.linalg.norm(r_s_i) < 1e-6:
+            print(f"Warning: Invalid satellite position at index {index}")
+            return Polygon(), np.array([])
 
-        #        # Angular momentum vector (orbit normal)
-        #        h_vec = np.cross(v_s_e, sat_pos)  # h = v × r
-        #        h_magnitude = np.linalg.norm(h_vec)
-        #
-        #        # 1. Along-track (X): Direction of motion
-        #        x_orbit_in_eci = v_s_e / np.linalg.norm(v_s_e)
-        #        # 2. Cross-track (Y): Orbit normal direction
-        #        y_orbit_in_eci = h_vec / h_magnitude  # Perpendicular to orbital plane
-        #        # 3. Radial (Z): Downward direction (circular orbit = towards center of Earth)
-        #        z_orbit_in_eci = np.cross(x_orbit_in_eci, y_orbit_in_eci)
-        #
-        #        # Ensure orthonormality(Gram-Schmidt)
-        #        y_orbit_in_eci = y_orbit_in_eci / np.linalg.norm(y_orbit_in_eci)
-        #        z_orbit_in_eci = z_orbit_in_eci / np.linalg.norm(z_orbit_in_eci)
-        #        x_orbit_in_eci = np.cross(y_orbit_in_eci, z_orbit_in_eci)
-        #        x_orbit_in_eci = x_orbit_in_eci / np.linalg.norm(x_orbit_in_eci)
-        #
-        #        # ========== SATELLITE ATTITUDE ==========
-        #        R_body_to_orbit = fn.quat_to_rotation_matrix(q_sat)
-        #        R_orbit_to_eci = np.column_stack([x_orbit_in_eci, y_orbit_in_eci, z_orbit_in_eci])
-        #        R_body_to_eci = R_orbit_to_eci @ R_body_to_orbit # Might be needed on a later stage
+        # 1. V-axis (satellite travel direction)
+        v_hat = v_s_i / np.linalg.norm(v_s_i)  # Unit vector in the direction of satellite motion
+
+        # 2. N-axis (Orbit Normal direction, perpendicular to the orbit plane)
+        h_vec = np.cross(r_s_i, v_hat) # Angular momentum vector (cross product of position and velocity)
+        if np.linalg.norm(h_vec) < 1e-12:
+            print(f"Warning: Satellite position and velocity are collinear at index {index}")
+            return np.array([])
+        n_hat = h_vec / np.linalg.norm(h_vec) # Unit vector in the direction of the orbit normal
+
+        # 3. C-axis (Cross-track direction, perpendicular to both V and N)
+        c_hat = np.cross(v_hat, n_hat)
+        c_hat = c_hat / np.linalg.norm(c_hat)  # Normalize the cross-track direction
 
         # ========== ANTENNA-BEAM COORDINATE SYSTEM ==========
         # Create perpendicular axes for the beam cone (orthogonal to the beam direction)
-        sat_vel_projected = v_s_e - np.dot(v_s_e, n_sr_eci) * n_sr_eci
-        # Handle edge case where velocity (v_s_e) is parallel to the antenna beam (n_sr_eci) (This should never happen)
-        if np.linalg.norm(sat_vel_projected) < 1e-6:
+        v_s_proj_i = v_s_i - np.dot(v_s_i, n_sr_eci) * n_sr_eci
+        # Handle edge case where velocity (v_s_i) is parallel to the antenna beam (n_sr_eci) (This should never happen)
+        if np.linalg.norm(v_s_proj_i) < 1e-6:
             # Create arbitrary perpendicular vector
             if abs(n_sr_eci[2]) < 0.9:
                 temp_vec = np.array([0, 0, 1])  # Use z-axis
             else:
                 temp_vec = np.array([1, 0, 0])  # Use x-axis
-            sat_vel_projected = temp_vec - np.dot(temp_vec, n_sr_eci) * n_sr_eci
+            v_s_proj_i = temp_vec - np.dot(temp_vec, n_sr_eci) * n_sr_eci
 
         # "Ellipse coordinate axes" in the beam-perpendicular plane decomposed in ECI coordinates
-        u_axis = sat_vel_projected / np.linalg.norm(sat_vel_projected)  # Perpendicular to beam, (satellite motion component)
+        u_axis = v_s_proj_i / np.linalg.norm(v_s_proj_i)  # Perpendicular to beam, (satellite motion component)
         v_axis = np.cross(n_sr_eci, u_axis)  # Perpendicular to beam and u_axis (cross-track component)
         v_axis = v_axis / np.linalg.norm(v_axis)
         w_axis = n_sr_eci  # Along the beam direction
@@ -415,7 +566,7 @@ class Reflection:
         phi = np.arctan2(alpha_v, alpha_u)
 
         # All beam directions at once (n_points x 3)
-        beam_dirs = cos_theta[:, np.newaxis] * n_sr_eci[np.newaxis, :] + sin_theta[:, np.newaxis] * (
+        beam_dirs_i = cos_theta[:, np.newaxis] * n_sr_eci[np.newaxis, :] + sin_theta[:, np.newaxis] * (
             np.cos(phi)[:, np.newaxis] * u_axis[np.newaxis, :] + np.sin(phi)[:, np.newaxis] * v_axis[np.newaxis, :]
         )
 
@@ -434,7 +585,7 @@ class Reflection:
             earth_radius = np.sqrt((a**2 * np.cos(latitude_rad) ** 2) + (b**2 * np.sin(latitude_rad) ** 2))
 
         a = 1.0
-        b = 2.0 * np.dot(sat_pos, beam_dirs.T)
+        b = 2.0 * np.dot(sat_pos, beam_dirs_i.T)
         c = np.dot(sat_pos, sat_pos) - earth_radius**2
 
         discriminant = b**2 - 4 * a * c
@@ -449,7 +600,7 @@ class Reflection:
         valid_mask = valid_discriminant & positive_t_mask
 
         # Calculate all intersection points at once
-        intersections_eci = sat_pos[np.newaxis, :] + t_vals[:, np.newaxis] * beam_dirs
+        intersections_eci = sat_pos[np.newaxis, :] + t_vals[:, np.newaxis] * beam_dirs_i
 
         # ========== VECTORIZED LAT/LON CONVERSION ==========
         times = np.array([time_i] * no_footprint_points)  # Use the same time for all points
@@ -470,7 +621,12 @@ class Reflection:
         # Calculate the center point of the ellipse
         lat_center, lon_center, _ = pymap3d.eci2geodetic(refl_pos[0], refl_pos[1], refl_pos[2], time_i)
         center_point = np.array([lat_center, lon_center])
-        return ellipse_points, center_point
+
+        footprint_points = ellipse_points[:, [1, 0]]
+        # Create a shapely polygon from the points
+        ellips_poly = Polygon(footprint_points)
+
+        return ellips_poly, center_point
 
     @staticmethod
     def get_reflection_point2d(satCoord1, GPSCoord1):

@@ -76,7 +76,6 @@ def main_calculate_coverage_norwegian_coast(sim_settings):
         sat_const,
         gnss_constl_dict,
         sim_settings["shapefile_path"],
-        sim_settings["bounding_box"],
         grid_size_m=30_000,
         earth_model=earth,
     )

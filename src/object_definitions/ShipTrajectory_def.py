@@ -13,13 +13,13 @@ import geopandas as gpd
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
-from scipy.spatial import Delaunay, cKDTree
-from shapely.geometry import LineString, Point
-import shapely.ops as ops
-from tqdm import tqdm
+from scipy.spatial import Delaunay, cKDTree  # noqa: E402
+from shapely.geometry import LineString, Point  # noqa: E402
+import shapely.ops as ops  # noqa: E402
+from tqdm import tqdm  # noqa: E402
 
-import functions.functions as fn
-from object_definitions.Constants_def import Constants
+import functions.functions as fn  # noqa: E402
+from object_definitions.Constants_def import Constants  # noqa: E402
 
 
 # from Coverage_def   import Coverage
@@ -53,19 +53,19 @@ class ShipTrajectory:
 
     def __init__(
         self,
-        ship_id,
-        ship_speed_knot,
-        start_position,
-        start_time,
-        end_position,
-        interval_minutes=10,
-        grid_resolution_km=100,
-        delta_boudingBox_km=500,
-        fast_path_gen_method=True,
-        mesh_connection_radius_km=2_000,
-        water_buffer_km=22.2,
-        trajectory_type=[],
-        save_graph=False,
+        ship_id: str,
+        ship_speed_knot: float,
+        start_position: tuple,
+        start_time: datetime,
+        end_position: tuple,
+        interval_minutes: int = 10,
+        grid_resolution_km: float = 100,
+        delta_boudingBox_km: float = 500,
+        fast_path_gen_method: bool = True,
+        mesh_connection_radius_km: float = 2_000,
+        water_buffer_km: float = 22.2,
+        trajectory_type: list = None,
+        save_graph: bool = False,
     ) -> None:
         self.ship_id = ship_id  # Unique identifier for the ship
         self.ship_speed = ship_speed_knot * 0.51444  # Ship speed in knots (will be converted to to [m/s])
@@ -110,7 +110,7 @@ class ShipTrajectory:
 
         self.initialize(trajectory_type, save_graph)
 
-    def initialize(self, trajectory_type, save_graph) -> None:
+    def initialize(self, trajectory_type: list, save_graph: bool) -> None:
         """
         Initialize the trajectory data.
         """
@@ -211,7 +211,7 @@ class ShipTrajectory:
             self.ocean_polygons = None
             return False
 
-    def _calculate_havresin_distance(self, pos1, pos2) -> float:
+    def _calculate_havresin_distance(self, pos1: tuple, pos2: tuple) -> float:
         """
         Calculate the havresin distance between two points in meter.
 
@@ -237,7 +237,7 @@ class ShipTrajectory:
 
         return float(distance)
 
-    def _calculate_haversine_vectorized(self, pos1_array, pos2_array):
+    def _calculate_haversine_vectorized(self, pos1_array: np.ndarray, pos2_array: np.ndarray) -> np.ndarray:
         """
         Vectorized Haversine distance calculation for multiple point pairs.
         """
@@ -270,7 +270,7 @@ class ShipTrajectory:
 
         return self._calculate_haversine_vectorized(pos1_array, pos2_array)
 
-    def calculate_bearing(self, pos1, pos2):
+    def calculate_bearing(self, pos1: tuple, pos2: tuple) -> float:
         """
         Calculate the bearing (heading) from pos1 to pos2.
 
@@ -298,7 +298,7 @@ class ShipTrajectory:
 
         return bearing
 
-    def intersects_land(self, point1, point2) -> bool:
+    def intersects_land(self, point1: tuple, point2: tuple) -> bool:
         """
         Check if the line between two points intersects with land.
 
@@ -331,7 +331,7 @@ class ShipTrajectory:
         # If one or both points are on land, the line intersects land
         return True
 
-    def is_point_in_ocean(self, point) -> bool:
+    def is_point_in_ocean(self, point: tuple) -> bool:
         """
         Check if a point is on land.
 
@@ -351,7 +351,7 @@ class ShipTrajectory:
         # Check if the point is on land
         return self.ocean_polygons.contains(point_geom)
 
-    def get_safe_water_point(self, point) -> tuple:
+    def get_safe_water_point(self, point: tuple) -> tuple:
         """
         If a point is on land (not in the ocean), find the nearest water point.
 
@@ -400,7 +400,7 @@ class ShipTrajectory:
             point[1],
         )  # Fallback to original point (this should not happen)
 
-    def plan_route(self, save_graph=False) -> None:
+    def plan_route(self, save_graph: bool = False) -> None:
         """
         Plan a route that avoids land.
         Uses a simplified path finding approach with a mesh of navigable points.
@@ -516,7 +516,7 @@ class ShipTrajectory:
             self.waypoints = None
             return
 
-    def _create_grid_points(self, min_lat, max_lat, min_lon, max_lon) -> list:
+    def _create_grid_points(self, min_lat: float, max_lat: float, min_lon: float, max_lon: float) -> list:
         """
         Create a grid of points and return those in water.
         """
@@ -544,7 +544,7 @@ class ShipTrajectory:
         print(f"Created navigation mesh with {len(valid_points)} valid water points")
         return valid_points
 
-    def _bridge_components(self, G, valid_points) -> nx.Graph:
+    def _bridge_components(self, G: nx.Graph, valid_points: list) -> nx.Graph:
         """
         Attempt to bridge disconnected components using Delaunay triangulation
         to identify potential passages.
@@ -670,7 +670,7 @@ class ShipTrajectory:
             print(f"Error in component bridging: {e}")
         return G
 
-    def _connect_grid_points(self, G, valid_points, start_pos, end_pos, save_graph) -> None:
+    def _connect_grid_points(self, G: nx.Graph, valid_points: list, start_pos: tuple, end_pos: tuple, save_graph: bool) -> None:
         """
         Connect points in the navigation graph with an improved approach focusing on
         creating a path between start and end positions.
@@ -847,7 +847,7 @@ class ShipTrajectory:
             ) as f:
                 pickle.dump(G, f)
 
-    def simplify_path(self, waypoints) -> list:
+    def simplify_path(self, waypoints: list) -> list:
         """
         Simplify a path by removing unnecessary points.
 
@@ -871,7 +871,7 @@ class ShipTrajectory:
         result.append(waypoints[-1])
         return result
 
-    def generate_trajectory_equal_dist(self, interval_meters=100) -> list:
+    def generate_trajectory_equal_dist(self, interval_meters: float = 100) -> list:
         """
         Generate points along the trajectory at regular distance intervals.
         Uses waypoints for land avoidance if available.
@@ -1034,7 +1034,7 @@ class ShipTrajectory:
                 self.trajectory_points.append(self.waypoints[-1])
                 self.timestamps.append(self.end_time)
 
-    def create_shapefile(self, output_filename=None, trajectory_type="points", crs="EPSG:4326") -> None:
+    def create_shapefile(self, output_filename: str = None, trajectory_type: str = "points", crs: str = "EPSG:4326") -> None:
         """
         Create a shapefile from the trajectory.
 
@@ -1185,7 +1185,7 @@ class ShipTrajectory:
         print(f"Created metadata JSON at {metadata_output_path}")
         self.shapefile_path["time_series_metadata"] = metadata_output_path
 
-    def plot_route(self, show_trajectory=True, show_waypoints=True, title=None, show=False) -> None:
+    def plot_route(self, show_trajectory: bool = True, show_waypoints: bool = True, title: str = None, show: bool = False) -> None:
         """
         Plot the ship's route on a map.
 
@@ -1260,7 +1260,7 @@ class ShipTrajectory:
         if show == True:
             plt.show()
 
-    def get_position_at_time(self, timestamp) -> tuple:
+    def get_position_at_time(self, timestamp: datetime) -> tuple:
         """
         Get the ship's position at a specific timestamp.
 

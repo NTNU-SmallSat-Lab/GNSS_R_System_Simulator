@@ -82,7 +82,7 @@ def skew_matrix(v):
     return np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
 
 
-def load_gnss_constellation_dict(gnss_costl_configs):
+def load_gnss_constellation_dict(gnss_costl_configs: dict) -> dict:
     """
     =========================================================================================================
     Load GNSS constellation configurations.
@@ -102,7 +102,7 @@ def load_gnss_constellation_dict(gnss_costl_configs):
     return gnss_constl_dict
 
 
-def propagate_all_orbits(sat_const, gnss_constl_dict):
+def propagate_all_orbits(sat_const, gnss_constl_dict: dict) -> None:
     """
     =========================================================================================================
     Propagate orbits for satellite constellation and GNSS constellations.
@@ -152,13 +152,15 @@ def propagate_all_orbits(sat_const, gnss_constl_dict):
             print(f'WARNING: GNSS constellation "{name}" has not been propagated.')
 
 
-def color_gnss_const(gnss_const):
+def color_gnss_const(gnss_const: str) -> str:
     """
+    =========================================================================================================
     Assign a color to the GNSS constellation based on its name.
 
     INPUTS:
         gnss_const: Name of the GNSS constellation (e.g., 'GPS', 'GLONASS', etc.).
-    """
+    =========================================================================================================
+"""
     if gnss_const == "GPS":
         color = "red"
     elif gnss_const == "GLONASS":
@@ -176,8 +178,9 @@ def color_gnss_const(gnss_const):
     return color
 
 
-def delta_lon_from_distance(lat, x_dist) -> float:
+def delta_lon_from_distance(lat: float, x_dist: float) -> float:
     """
+    =========================================================================================================
     Calculate the change in longitude corresponding to a distance in meters.
     This function assumes a elliptical Earth model.
 
@@ -187,6 +190,7 @@ def delta_lon_from_distance(lat, x_dist) -> float:
 
     OUTPUT:
       np.float:     [degrees]               delta_lon
+    =========================================================================================================
     """
     # Convert latitude from degrees to radians
     lat_rad = np.radians(lat)
@@ -207,8 +211,9 @@ def delta_lon_from_distance(lat, x_dist) -> float:
     return delta_lon
 
 
-def delta_lat_from_distance(lat, y_dist) -> float:
+def delta_lat_from_distance(lat: float, y_dist: float) -> float:
     """
+    =========================================================================================================
     Calculate the change in latitude corresponding to a distance in meters.
     This function assumes a elliptical Earth model.
 
@@ -218,6 +223,7 @@ def delta_lat_from_distance(lat, y_dist) -> float:
 
     OUTPUT:
       np.float:     [degrees]               delta_lat
+    =========================================================================================================
     """
     # Convert latitude from degrees to radians
     lat_rad = np.radians(lat)
@@ -241,7 +247,7 @@ def delta_lat_from_distance(lat, y_dist) -> float:
     return delta_lat
 
 
-def geodetic_to_ecef(lat_deg, lon_deg, h=0):
+def geodetic_to_ecef(lat_deg: float, lon_deg: float, h: float = 0) -> tuple:
     """
     =========================================================================================================
     Convert geodetic coordinates (latitude, longitude, height) to ECEF (Earth-Centered, Earth-Fixed) coordinates.
@@ -269,7 +275,7 @@ def geodetic_to_ecef(lat_deg, lon_deg, h=0):
     return X, Y, Z
 
 
-def quat_to_rotation_matrix(q):
+def quat_to_rotation_matrix(q: list) -> np.array:
     """
     =========================================================================================================
     Convert quaternion [w, x, y, z] to 3x3 rotation matrix.
@@ -292,3 +298,57 @@ def quat_to_rotation_matrix(q):
             [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x**2 + y**2)],
         ]
     )
+
+def rotation_matrix_from_vectors(v1, v2):
+    """
+    =========================================================================================================
+    Calculate the rotation matrix that rotates vector v1 to vector v2.
+
+    INPUTS:
+        v1: [np.array] First vector
+        v2: [np.array] Second vector
+
+    OUTPUTS:
+        R: [np.array] 3x3 Rotation matrix that rotates v1 to v2
+    =========================================================================================================
+    """
+    def rodrigues_rotation_matrix(axis, angle):
+        """
+        Create rotation matrix using Rodrigues' formula.
+        """
+        K = np.array([[0, -axis[2], axis[1]],
+                      [axis[2], 0, -axis[0]],
+                      [-axis[1], axis[0], 0]])
+        R = np.eye(3) + np.sin(angle) * K + (1 - np.cos(angle)) * K @ K
+        return R
+
+    v1 = v1 / np.linalg.norm(v1)
+    v2 = v2 / np.linalg.norm(v2)
+
+    # Check if vectors are already aligned
+    dot_product = np.dot(v1, v2)
+    if np.allclose(dot_product, 1.0):
+        return np.eye(3)  # No rotation needed
+
+    # If vectors are opposite, we need a 180° rotation
+    if np.allclose(dot_product, -1.0):
+        # Find any perpendicular vector
+        perp = np.array([1, 0, 0])
+        if abs(np.dot(v1, perp)) > 0.9:
+            perp = np.array([0, 1, 0])
+
+        # Create perpendicular vector using cross product
+        axis = np.cross(v1, perp)
+        axis = axis / np.linalg.norm(axis)
+
+        # 180° rotation around this axis
+        return rodrigues_rotation_matrix(axis, np.pi)
+
+    # General case: use cross product for rotation axis
+    axis = np.cross(v1, v2)
+    axis = axis / np.linalg.norm(axis)
+
+    # Rotation angle
+    angle = np.arccos(np.clip(dot_product, -1.0, 1.0))
+
+    return rodrigues_rotation_matrix(axis, angle)

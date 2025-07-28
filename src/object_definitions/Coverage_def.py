@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+import math
 import os
 import warnings
 
@@ -25,7 +26,6 @@ class Coverage:
         sat_const,
         gnss_const,
         shapefile,
-        bounding_box=None,
         grid_size_deg=None,
         grid_size_m=None,
         overwrite_shapefile=False,
@@ -58,7 +58,7 @@ class Coverage:
 
         self.grid_size_deg = grid_size_deg  # Size of the grid cells in degrees latitude / longitude (if grid_size_m is None)
         self.grid_size_m = grid_size_m  # Size of the grid cells in meters
-        self.bounding_box = bounding_box  # Bounding box for filtering points (min_lon, max_lon, min_lat, max_lat)
+        self.bounding_box = None   # Bounding box for filtering points (min_lon, max_lon, min_lat, max_lat) (initialized in )
         self.reflection_dict = {}  # Reflection dictionary for storing reflection vector containing reflection points for each GNSS constellations
         self.coverage_dict = {}  # Coverage vector for storing coverage information over each grid-cell in the gridded shapefile
 
@@ -121,6 +121,22 @@ class Coverage:
                 centroid = self.grid_gdf.loc[idx].geometry.centroid
                 self.coverage_dict[gnss_name][idx].position = (centroid.x, centroid.y)
                 self.coverage_dict[gnss_name][idx].shape = self.grid_gdf.loc[[idx]].boundary
+
+        self.bounding_box = self._get_bounding_box()
+
+    def _get_bounding_box(self) -> tuple:
+        """
+        Get the bounding box of the coverage area.
+        """
+        delta_lat = 5
+        delta_lon = 5
+        if self.grid_size_m is not None:
+            return (math.floor(self.grid_gdf.bounds.minx.min() - delta_lon),
+                    math.ceil(self.grid_gdf.bounds.maxx.max() + delta_lon),
+                    math.floor(self.grid_gdf.bounds.miny.min() - delta_lat),
+                    math.ceil(self.grid_gdf.bounds.maxy.max() + delta_lat))
+        else:
+            return None
 
     def _calculate_coverage(self, times) -> None:
         """
