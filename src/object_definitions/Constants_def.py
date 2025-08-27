@@ -77,5 +77,4 @@ class Constants:
         FreeFlyerInstallationPath += os.sep
     FFmissionPlanTLE_EPH = os.path.join(base_dir, "FF_src", "TLE_to_Emph_Python.MissionPlan")
 
-
 #    FreeFlyerInstallationPath = 'C:\\Program Files\\a.i. solutions, Inc\\FreeFlyer 7.9.0.44769217 (64-Bit)\\'

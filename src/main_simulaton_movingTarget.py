@@ -1,4 +1,4 @@
-import matplotlib
+import matplotlib  # noqa: N999
 import numpy as np
 
 import functions.functions as fn
@@ -119,6 +119,7 @@ def skagerrak_to_barents_sea(settings: dict):
     moving_target_detection.show_track_and_detection_points(file_name="Detection_points.png", show_figure=False)
     time_1h = fn.ensure_utc_aware(shipTrajectory.start_time + timedelta(hours=1))
     moving_target_detection.show_reflections_and_target_position_at_time_i(time_1h, file_name="Reflections_1h_into_journey", label_reflections=True)
+
     moving_target_detection.create_reflection_animation(time_step_min=5, output_filename="Reflection_animation.gif")
 
     ####################################
@@ -133,8 +134,7 @@ def skagerrak_to_barents_sea(settings: dict):
         sat_const,
         gnss_constl_dict,
         settings["shapefile_path"],
-        settings["bounding_box"],
-        grid_size_deg=1,
+        grid_size_m=30_000
     )
     coverage.calculate_reflection_points_and_coverage(verbose=True)
 
@@ -151,7 +151,6 @@ def skagerrak_to_barents_sea(settings: dict):
     # 10. Calculate statistics
     ####################################
     coverage.calculate_statistics()
-
 
 if __name__ == "__main__":
     config, settings = initialize("Configuration_ship.ini")

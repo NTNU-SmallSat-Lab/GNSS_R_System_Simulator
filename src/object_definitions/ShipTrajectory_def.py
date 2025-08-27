@@ -43,7 +43,7 @@ class ShipTrajectory:
         mesh_connection_radius (float):    Connection radius for grid points.
         interval_minutes       (int):      Time interval in minutes for trajectory generation.
         grid_resolution        (float):    Grid resolution in degrees for navigation mesh.
-        delta_deg              (float):    Additional margin in degrees for the bounding box (added to max / min longitude and latitude).
+        delta_m                (float):    Additional margin in degrees for the bounding box (added to max / min longitude and latitude).
         trajectory_points      (list):     List of trajectory points.
         timestamps             (list):     List of timestamps for trajectory points.
         waypoints              (list):     List of waypoints for the ship's route.

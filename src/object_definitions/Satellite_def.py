@@ -64,12 +64,12 @@ class Satellite:
                 raise FileNotFoundError(f"TLE file not found: {tle_file_path}")
             if orbit_n is not None:
                 raise ValueError("Cannot initialize Satellite with both TLE file and Orbit_specification object")
-            if verbose == True:
+            if verbose:
                 print(f"Initializing Satellite with TLE file: {tle_file_path}")
-            self._initWithTLE(tle_file_path, satNo_in_tle, satName)
+            self._init_with_TLE(tle_file_path, satNo_in_tle, satName)
         else:
             # Initialize satellite with Orbit_specification object
-            if verbose == True:
+            if verbose:
                 print("Initializing Satellite with Orbit_specification object")
             self._initWithOrbit(satID, orbit_n, satName)
 
@@ -188,20 +188,6 @@ class Satellite:
             filePath = os.path.join(Constants.tle_eph_folder_path, self.satName + ".tle")
             incrementing_no += 1
         self.tle_file_path = filePath
-
-        #        if os.path.exists(filePath):
-        #            print(f"Warning: TLE file already exists for {self.satID} \n-- Overwriting previous TLE file --")
-        # delete the file
-        #            os.remove(filePath)
-
-        # Write the TLE to the file
-        #        try:
-        #            with open(filePath, 'w') as file:
-        #                file.write(tle_str)
-        #            self.tle_file_path = filePath
-        #            print(f"TLE written to {filePath}")
-        #        except IOError:
-        #            print(f"Warning: TLE file could not be written for {self.satID}")
         return None
 
     def propagate_orbit(self, startTime, duration, deltaT) -> np.array:
@@ -250,7 +236,7 @@ class Satellite:
         self.sunlit_count = self.skf.at(self.times_skyfield).is_sunlit(self.planets)
         self.sunlit_fraction = np.sum(self.sunlit_count) / len(self.sunlit_count)
 
-    def _initWithTLE(self, tle_file_path, satNo_in_tle, satName=None):
+    def _init_with_TLE(self, tle_file_path, satNo_in_tle, satName=None):  # noqa: N802
         """
         =========================================================================
         Initialize the satellite object with the TLE data from the file
@@ -293,13 +279,13 @@ class Satellite:
         self.launch_year = sat_data.launchYear
         self.lauch_Noyear = sat_data.lauchNoInYear
         self.lauch_piece = sat_data.launchPiece
-        self.meanMotion_1 = sat_data.firstDerMeanMotion
-        self.meanMotion_2 = sat_data.secDerivMeanMotion
+        self.meanMotion_1 = sat_data.firstDerMeanMotion # balistic coefficient
+        self.meanMotion_2 = sat_data.secDerivMeanMotion # mean motion second derivative
         self.B_star = sat_data.B_star
         self.element_set_no = sat_data.ElementSetNo
         self.skf = load.tle_file(tle_file_path)[satNo_in_tle]
 
-    def _initWithOrbit(self, satID, orbit_n, satName):
+    def _initWithOrbit(self, satID, orbit_n, satName):  # noqa: N802
         # Initialize satellite object
         self.satID = satID
         self.satName = satName if satName is not None else f"Sat_{satID}"
@@ -308,14 +294,14 @@ class Satellite:
         self.launch_year = int(datetime.now().year)
         self.lauch_Noyear = 1
         self.lauch_piece = "A"
-        self.meanMotion_1 = None  # TODO calculate meanMotion1 (balistic coefficient) in a separate function
-        self.meanMotion_2 = None  # TODO calculate meanMotion2 in a separate function
-        self.B_star = None  # TODO calculate B_star in a separate function
+        self.meanMotion_1 = None    # TODO calculate meanMotion1 (balistic coefficient) in a separate function
+        self.meanMotion_2 = None    # TODO calculate meanMotion2 in a separate function
+        self.B_star = None          # TODO calculate B_star in a separate function
         self.element_set_no = None  # TODO
 
         # Initialize Satellite Orbit_specification
         if not isinstance(orbit_n, Orbit_specification) and isinstance(orbit_n, list):
-            if len(orbit_n) >= 6 and len(orbit_n) <= 7 and all(isinstance(x, (int, float, datetime)) for x in orbit_n):
+            if len(orbit_n) >= 6 and len(orbit_n) <= 7 and all(isinstance(x, int | float | datetime) for x in orbit_n):
                 # Orbit_specification is initialized with new orbital parameters
                 self.orbit_n = Orbit_specification(*orbit_n)
             elif len(orbit_n) < 6:
@@ -339,9 +325,6 @@ class Satellite:
         if self.orbit_n is not None:
             if self.orbit_n.epoch_str is not None:
                 self.write_tle_file()
-                #                self.skf = load.tle_file(self.tle_file_path)[0]
-                # Load the satellite object from tle string
-                #                self.skf = load.tle_file(StringIO(self.tle_str.encode('utf-8')))[0]
                 lines = self.tle_str.splitlines()
                 # Extract the variables
                 satellite_name = lines[0]  # First line is the satellite name

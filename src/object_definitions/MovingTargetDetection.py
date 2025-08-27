@@ -14,6 +14,7 @@ import pandas as pd
 from pyproj import Geod
 from shapely.errors import GEOSException
 from shapely.geometry import MultiPolygon, Polygon, box
+from shapely.ops import unary_union
 from shapely.validation import explain_validity
 from tqdm import tqdm
 
@@ -126,14 +127,30 @@ class MovingTargetDetection: # TODO: change should inherit from antenna? or not?
             ax.add_feature(cfeature.OCEAN, facecolor="lightblue")
             ax.add_feature(cfeature.LAKES, facecolor="lightblue")
 
-            # Try making the circle more visible
-            ax.plot(
-                *footprint_reflection.exterior.xy,
-                color="red",
-                linewidth=2,
-                label="Footprint -3dB",
-                transform=ccrs.PlateCarree(),
-            )
+            # Replace the problematic plotting section with this:
+            if isinstance(footprint_reflection, Polygon):
+                # Handle single Polygon
+                ax.plot(
+                    *footprint_reflection.exterior.xy,
+                    color="red",
+                    linewidth=2,
+                    label="Footprint -3dB",
+                    transform=ccrs.PlateCarree(),
+                )
+            elif isinstance(footprint_reflection, MultiPolygon):
+                # Handle MultiPolygon - plot each constituent polygon
+                for i, poly in enumerate(footprint_reflection.geoms):
+                    label = "Footprint -3dB" if i == 0 else ""  # Only label the first polygon
+                    ax.plot(
+                        *poly.exterior.xy,
+                        color="red",
+                        linewidth=2,
+                        label=label,
+                        transform=ccrs.PlateCarree(),
+                    )
+            else:
+                print(f"Warning: Unexpected geometry type for footprint: {type(footprint_reflection)}")
+
             ax.plot(
                 pos_tgt_i.geometry.x,
                 pos_tgt_i.geometry.y,
@@ -154,10 +171,23 @@ class MovingTargetDetection: # TODO: change should inherit from antenna? or not?
             )
 
             # Print the coordinates to check if they're inside the bounding box
-            print(
-                f"Circle coords range: Lon [{min(footprint_reflection.exterior.xy[0])}-{max(footprint_reflection.exterior.xy[0])}], "
-                f"Lat [{min(footprint_reflection.exterior.xy[1])}-{max(footprint_reflection.exterior.xy[1])}]"
-            )
+            # Print the coordinates to check if they're inside the bounding box
+            if isinstance(footprint_reflection, Polygon):
+                lon_coords = footprint_reflection.exterior.xy[0]
+                lat_coords = footprint_reflection.exterior.xy[1]
+                print(
+                    f"Circle coords range: Lon [{min(lon_coords)}-{max(lon_coords)}], "
+                    f"Lat [{min(lat_coords)}-{max(lat_coords)}]"
+                )
+            elif isinstance(footprint_reflection, MultiPolygon):
+                # For MultiPolygon, get bounds of the entire geometry
+                bounds = footprint_reflection.bounds  # (min_lon, min_lat, max_lon, max_lat)
+                print(
+                    f"MultiPolygon coords range: Lon [{bounds[0]}-{bounds[2]}], "
+                    f"Lat [{bounds[1]}-{bounds[3]}]"
+                )
+            else:
+                print(f"Geometry bounds: {footprint_reflection.bounds}")
             print(f"Bounding box: {self.bounding_box}")
             print(f"Reflection point: Lon {spec_refl_point[0]:.6f}, Lat {spec_refl_point[1]:.6f}")
 
@@ -523,12 +553,38 @@ class MovingTargetDetection: # TODO: change should inherit from antenna? or not?
                                 )
                             continue
                         # Create the footprint (ellipse) around the reflection point
-                        footprint_reflection = self._reflection_point_footprint(refl_obj, reflection_index, beamwidth_deg=self.sat_antenna.beamwidth_deg, band=None)  # time_i ??
+                        footprint_reflection, _ = self._reflection_point_footprint(refl_obj, reflection_index, verbose)
                         # Check if the footprint intersects with -180 / 180 longitude line
-                        if not self._polygon_intersects_180_lat(footprint_reflection):
-                            if verbose:
-                                print(f"Skipping large footprint at ({lon:.2f}, {lat:.2f}) for {gnss_const}")
-                            continue  # Skip this reflection
+#                        if not self._polygon_intersects_180_lat(footprint_reflection):
+#                            if verbose:
+#                                print(f"Skipping large footprint at ({lon:.2f}, {lat:.2f}) for {gnss_const}")
+#                            continue  # Skip this reflection
+#                        # Draw the footprint ellipse around the point
+#                        if isinstance(footprint_reflection, Polygon):
+#                            ax.plot(
+#                                *footprint_reflection.exterior.xy,
+#                                color=fn.color_gnss_const(gnss_const),
+#                                linewidth=1,
+#                                alpha=0.5,
+#                            )
+#                        elif isinstance(footprint_reflection, MultiPolygon):
+#                            for poly in footprint_reflection.geoms:
+#                                ax.plot(
+#                                    *poly.exterior.xy,
+#                                    color=fn.color_gnss_const(gnss_const),
+#                                    linewidth=1,
+#                                    alpha=0.5,
+#                                )
+                        # Safe footprint plotting
+                        success = self._plot_footprint_safe(
+                            ax, footprint_reflection,
+                            color=fn.color_gnss_const(gnss_const),
+                            linewidth=1, alpha=0.5,
+                            transform=ccrs.PlateCarree()
+                        )
+                        if not success and verbose:
+                            print(f"Skipped invalid footprint for {gnss_const} at ({lon:.2f}, {lat:.2f})")
+
                         # Plot the reflection point
                         ax.scatter(
                             lon,
@@ -538,13 +594,6 @@ class MovingTargetDetection: # TODO: change should inherit from antenna? or not?
                             marker="o",
                             alpha=0.7,
                             label=(f"{gnss_const} Reflection" if reflection == reflections[0] else ""),
-                        )
-                        # Draw the footprint ellips around the point
-                        ax.plot(
-                            *footprint_reflection.exterior.xy,
-                            color=fn.color_gnss_const(gnss_const),
-                            linewidth=1,
-                            alpha=0.5,
                         )
                         # Add a label for the reflection point (if enabled)
                         if label_reflections:
@@ -711,12 +760,12 @@ class MovingTargetDetection: # TODO: change should inherit from antenna? or not?
             )
             center_point = footprint_poly.centroid
             ax.plot(
-                center_point[1],
-                center_point[0],
+                center_point.x,
+                center_point.y,
                 "o",
                 color="blue",
                 markersize=8,
-                label="Specular Point",
+                label="Polygon Center",
                 transform=ccrs.PlateCarree(),
             )
 
@@ -736,16 +785,43 @@ class MovingTargetDetection: # TODO: change should inherit from antenna? or not?
             plt.tight_layout()
             plt.show(block=True)
 
-        def check_nan_coords(polygon: Polygon) -> bool:
+        def check_nan_coords(polygon) -> bool:
             # Get exterior coordinates
-            exterior_coords = np.array(polygon.exterior.coords)
-            return np.isnan(exterior_coords).any()
+            if isinstance(polygon, Polygon):
+                exterior_coords = np.array(polygon.exterior.coords)
+                return np.isnan(exterior_coords).any()
+            elif isinstance(polygon, MultiPolygon):
+                # Check each polygon in the MultiPolygon
+                for poly in polygon.geoms:
+                    exterior_coords = np.array(poly.exterior.coords)
+                    if np.isnan(exterior_coords).any():
+                        return True
+                return False
+            else:
+                # Handling of other types if necessary
+                if verbose:
+                    print(f"WARNING: Unsupported geometry type {type(polygon)} for NaN check.")
+                return True # Assume NaN if unsupported type
+
         #ellips_points, center_point = refl_obj._compute_footprint_ellipse(i, 64, beamwidth_deg=[40,10], earth_model="elliptical")
         footprint_points, spec_refl_point = refl_obj._compute_footprint(i, self.sat_antenna ,earth_model=self.earth_model)
         if not footprint_points.is_valid:
             if verbose:
                 print(f"Invalid footprint for reflection index {i}. {explain_validity(footprint_points)}")
             footprint_points = footprint_points.buffer(0)  # Fix invalid geometry if necessary
+        if isinstance(footprint_points, MultiPolygon):
+            # Try to merge the polygons into one (MultiPolygon -> Polygon)
+            merged = unary_union(footprint_points)
+            if isinstance(merged, MultiPolygon):
+                # If merging didnt work take the convex hull of the MultiPolygon (hull around all polygons)
+                merged = merged.convex_hull
+            if isinstance(merged, Polygon):
+                footprint_points = merged
+            else:
+                if verbose:
+                    print(f"WARNING: Merging multipoligons for reflection index {i} not successful. Using largest of the MultiPolygon!")
+                # If both method above didnt work take the largest polygon
+                footprint_points = max(footprint_points.geoms, key=lambda p: p.area)
 
         # Robustness: check if the points are nan
         if check_nan_coords(footprint_points):
@@ -754,7 +830,7 @@ class MovingTargetDetection: # TODO: change should inherit from antenna? or not?
             return Polygon()
 
         ## DEBUG plot footprint_poly
-        # show_footprint(ellips_poly)
+        # show_footprint(footprint_points)
 
         # Create a shapely polygon from the points
         return footprint_points, spec_refl_point
@@ -793,6 +869,98 @@ class MovingTargetDetection: # TODO: change should inherit from antenna? or not?
         # Create a shapely polygon from the points
         return circle_poly
 
+    def _fix_longitude_wrapping(self, polygon):
+        """
+        Fix polygon longitude wrapping and validate size based on latitude.
+
+        Returns:
+            list: Valid polygon(s) ready for plotting, or empty list if invalid
+        """
+        if polygon is None or polygon.is_empty:
+            return []
+
+        try:
+            # Handle MultiPolygon recursively
+            if isinstance(polygon, MultiPolygon):
+                fixed_parts = []
+                for geom in polygon.geoms:
+                    fixed_parts.extend(self._fix_longitude_wrapping(geom))
+                return fixed_parts
+
+            bounds = polygon.bounds  # (min_lon, min_lat, max_lon, max_lat)
+            min_lon, min_lat, max_lon, max_lat = bounds
+
+            # Check for invalid coordinates
+            if min_lon < -180 or max_lon > 180 or min_lat < -90 or max_lat > 90:
+                return []
+
+            # Get latitude-dependent thresholds
+            center_lat = abs((min_lat + max_lat) / 2)
+            if center_lat > 60:
+                max_lon_span, max_lat_span = 40, 20
+            elif center_lat > 30:
+                max_lon_span, max_lat_span = 25, 15
+            else:
+                max_lon_span, max_lat_span = 15, 10
+
+            exterior_coords = np.array(polygon.exterior.coords)
+            lons, lats = exterior_coords[:, 0], exterior_coords[:, 1]
+
+            # Check for longitude wrapping (large jumps between consecutive points)
+            lon_diffs = np.abs(np.diff(lons))
+            has_wrapping = np.any(lon_diffs > 180)
+
+            if has_wrapping:
+                # Fix wrapped coordinates by unwrapping
+                fixed_lons = lons.copy()
+                for i in range(1, len(lons)):
+                    diff = lons[i] - lons[i-1]
+                    if diff > 180:
+                        fixed_lons[i:] -= 360
+                    elif diff < -180:
+                        fixed_lons[i:] += 360
+
+                # Check if unwrapped polygon is reasonable
+                if np.max(fixed_lons) - np.min(fixed_lons) < max_lon_span:
+                    try:
+                        fixed_polygon = Polygon(zip(fixed_lons, lats))
+                        if fixed_polygon.is_valid:
+                            return [fixed_polygon]
+                    except:
+                        pass
+                return []  # Couldn't fix wrapping
+
+            # Check size without wrapping
+            lon_span = max_lon - min_lon
+            lat_span = max_lat - min_lat
+
+            if lon_span > max_lon_span or lat_span > max_lat_span:
+                return []  # Too large, likely invalid
+
+            return [polygon]  # Valid polygon
+
+        except Exception as e:
+            if hasattr(self, 'verbose') and self.verbose:
+                print(f"Error fixing polygon: {e}")
+            return []
+
+    def _plot_footprint_safe(self, ax, polygon, color, linewidth=1, alpha=0.5, transform=None):
+        """
+        Safely plot footprint polygon(s) with longitude wrapping protection.
+        """
+        fixed_polygons = self._fix_longitude_wrapping(polygon)
+
+        plotted_count = 0
+        for poly in fixed_polygons:
+            try:
+                ax.plot(*poly.exterior.xy, color=color, linewidth=linewidth, 
+                       alpha=alpha, transform=transform)
+                plotted_count += 1
+            except Exception:
+                continue
+
+        return plotted_count > 0
+
     def _polygon_intersects_180_lat(self, polygon, max_lon_span=10, max_lat_span=5) -> bool:
         """
         Check if a polygon has reasonable bounds (not spanning across the map).
@@ -809,6 +977,17 @@ class MovingTargetDetection: # TODO: change should inherit from antenna? or not?
             bounds = polygon.bounds  # (min_lon, min_lat, max_lon, max_lat)
             lon_span = bounds[2] - bounds[0]  # max_lon - min_lon
             lat_span = bounds[3] - bounds[1]  # max_lat - min_lat
+
+            # Get the center latitude to adjust thresholds
+            center_lat = abs((bounds[1] + bounds[3]) / 2)
+
+            # Increase allowable spans at high latitudes
+            if center_lat > 60:  # Above 60° latitude
+                max_lat_span = 15
+                max_lon_span = 30
+            elif center_lat > 30:  # Above 30° latitude
+                max_lat_span = 10
+                max_lon_span = 20
 
             # Skip polygons that span too much longitude or latitude
             if lon_span > max_lon_span or lat_span > max_lat_span:
@@ -955,7 +1134,7 @@ class MovingTargetDetection: # TODO: change should inherit from antenna? or not?
             return Polygon()
 
     def show_track_and_detection_points(self, gnss_constellation=None, file_name=None, show_figure=False, 
-                                       delta_lon=0.5, delta_lat=0.5):
+                                       delta_lon=0.5, delta_lat=0.5, verbose=False) -> None:
         """
         Plot the detection points for each GNSS constellation.
         Filters out problematic polygons that cause horizontal lines.
@@ -1034,31 +1213,43 @@ class MovingTargetDetection: # TODO: change should inherit from antenna? or not?
                         )
 
                         # Plot the footprint (only for good polygons)
-                        try:
-                            footprint_reflection = self._polygon_within_map(
-                                detect_struct.footprint_shape, min_lon, max_lon, min_lat, max_lat
-                            )
+#                        try:
+#                            footprint_reflection = self._polygon_within_map(
+#                                detect_struct.footprint_shape, min_lon, max_lon, min_lat, max_lat
+#                            )
+#
+#                            if (footprint_reflection is not None and
+#                                not footprint_reflection.is_empty and
+#                                footprint_reflection.is_valid):
+#
+#                                if hasattr(footprint_reflection, 'geoms'):  # MultiPolygon
+#                                    for poly in footprint_reflection.geoms:
+#                                        if poly.is_valid and not poly.is_empty:
+#                                            ax.plot(
+#                                                *poly.exterior.xy,
+#                                                color=fn.color_gnss_const(gnss_name),
+#                                                linewidth=1, alpha=0.5,
+#                                                transform=ccrs.PlateCarree()
+#                                            )
+#                                else:  # Single Polygon
+#                                    ax.plot(
+#                                        *footprint_reflection.exterior.xy,
+#                                        color=fn.color_gnss_const(gnss_name),
+#                                        linewidth=1, alpha=0.5,
+#                                        transform=ccrs.PlateCarree()
+#                                    )
+#                        except Exception as e:
+#                            print(f"Error plotting footprint for {gnss_name}[{idx}]: {e}")
+#                            skipped_count += 1
 
-                            if (footprint_reflection is not None and
-                                not footprint_reflection.is_empty and
-                                footprint_reflection.is_valid):
-
-                                if hasattr(footprint_reflection, 'geoms'):  # MultiPolygon
-                                    for poly in footprint_reflection.geoms:
-                                        if poly.is_valid and not poly.is_empty:
-                                            ax.plot(
-                                                *poly.exterior.xy,
-                                                color=fn.color_gnss_const(gnss_name),
-                                                linewidth=1, alpha=0.5,
-                                                transform=ccrs.PlateCarree()
-                                            )
-                                else:  # Single Polygon
-                                    ax.plot(
-                                        *footprint_reflection.exterior.xy,
-                                        color=fn.color_gnss_const(gnss_name),
-                                        linewidth=1, alpha=0.5,
-                                        transform=ccrs.PlateCarree()
-                                    )
+                        success = self._plot_footprint_safe(
+                            ax, detect_struct.footprint_shape,
+                            color=fn.color_gnss_const(gnss_name),
+                            linewidth=1, alpha=0.5,
+                            transform=ccrs.PlateCarree()
+                        )
+                        if not success and verbose:
+                            print(f"Skipped invalid footprint for {gnss_name}[{idx}]")
 
                             plotted_count += 1
 
@@ -1073,10 +1264,6 @@ class MovingTargetDetection: # TODO: change should inherit from antenna? or not?
                                 color=fn.color_gnss_const(gnss_name),
                                 transform=ccrs.PlateCarree()
                             )
-
-                        except Exception as e:
-                            print(f"Error plotting footprint for {gnss_name}[{idx}]: {e}")
-                            skipped_count += 1
 
         # Add legend
         handles, labels = plt.gca().get_legend_handles_labels()

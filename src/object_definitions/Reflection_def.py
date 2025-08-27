@@ -78,6 +78,8 @@ class Reflection:
         self.refl_ang_vec = []
 
     def compute_reflection_coordinates(self, GNSS_state: Satellite, Sat_state: Satellite, times: np.ndarray):
+        if type(times) is not np.ndarray:
+            times = np.array(times, dtype="datetime64[s]")  # Ensure times is a numpy array of datetime64 objects
         # Preallocate outputs for efficiency
         num_positions = Sat_state.positions_eci.shape[1]
         theta_vec = np.full((num_positions, 3), np.nan)

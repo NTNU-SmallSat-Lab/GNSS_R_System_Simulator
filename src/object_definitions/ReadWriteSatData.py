@@ -42,15 +42,15 @@ class ReadWriteSatData:
         epochStr = satellite.orbit_n.epoch_str  # Epoch in TLE format [YYDDD.DDDDDDDD]
         balisticCoefStr = re.sub(r"-0", "-", f"{balistic_coeff:10.8f}")  # Balistic coeffizient / First derivative of the mean motion in TLE format
         balisticCoefStr = balisticCoefStr.replace("0.", " .") if balistic_coeff < 0 else balisticCoefStr.replace("0.", "-.")  # Remove the decimal point
-        meanMotionStr_2 = ReadWriteSatData.__str2tle_format(
+        meanMotionStr_2 = ReadWriteSatData._str2tle_format(
             meanMotionSecDer
         )  # Second derivative of Mean Motion (decimal point assumed) HARDCODED FOR NOW /TODO
-        b_star_str = ReadWriteSatData.__str2tle_format(
+        b_star_str = ReadWriteSatData._str2tle_format(
             B_star
         )  # B* the drag term, or radiation pressure coefficient (decimal point assumed) e.g. 1.234e-8 => 12345-8 [https://en.wikipedia.org/wiki/BSTAR] TODO
         ephemeris_str = "0"  # TODO                                                                                         # Ephemeris type (always zero; only used in undistributed TLE data) (0: unclassified, 1: classified) [hardcoded to '0']
         elem_st_no_str = f"{element_set_no:03d}"  # Element set number. Incremented when a new TLE is generated for this object TODO
-        checksum1 = ReadWriteSatData.__calc_checksum(
+        checksum1 = ReadWriteSatData._calc_checksum(
             [
                 line_no_1_str,
                 satIDStr,
@@ -79,7 +79,7 @@ class ReadWriteSatData:
         # rev_per_day     = (satellite.orbit_n.n / (2 * math.pi)) * Constants.Sec_per_day
         mean_Mot_str = f"{satellite.orbit_n.n:11.8f}"  # Revolutions per day
         rev_str = f"{0:05d}"  # Revolution number at epoch [hardcoded to '00000']
-        checksum2 = ReadWriteSatData.__calc_checksum(
+        checksum2 = ReadWriteSatData._calc_checksum(
             [
                 line_no_2_str,
                 satcat_str,
@@ -164,7 +164,7 @@ class ReadWriteSatData:
                         elSetNo_str = line_1[64:68]
                         if len(line_1) > 69:
                             checksum_str1 = line_1[68:69]
-                            calc_checksum1 = ReadWriteSatData.__calc_checksum([line_1[:68]])
+                            calc_checksum1 = ReadWriteSatData._calc_checksum([line_1[:68]])
                             if not (calc_checksum1 == int(checksum_str1)):
                                 Warning("Checksum error in TLE data line 1")
                     else:
@@ -184,7 +184,7 @@ class ReadWriteSatData:
                         revNoatEpoch_str = line_2[63:68]
                         checksum_str2 = line_2[68:69]
 
-                        calc_checksum2 = ReadWriteSatData.__calc_checksum([line_2[:68]])
+                        calc_checksum2 = ReadWriteSatData._calc_checksum([line_2[:68]])
 
                         if not (calc_checksum2 == int(checksum_str2)):
                             Warning("Checksum error in TLE data line 2")
@@ -346,7 +346,7 @@ class ReadWriteSatData:
         return result_datetime
 
     @staticmethod
-    def __calc_checksum(stringArray) -> int:
+    def _calc_checksum(stringArray) -> int:
         """
         =========================================================================
         Calculate TLE checksum.
@@ -362,7 +362,7 @@ class ReadWriteSatData:
         return total % 10
 
     @staticmethod
-    def __str2tle_format(value) -> str:
+    def _str2tle_format(value) -> str:
         """
         =========================================================================
         str2tle_format:
