@@ -3,6 +3,7 @@ import configparser as cp
 from datetime import UTC, datetime, timezone
 import json as json
 import os
+import re
 
 # import numpy              as np
 # import xmltodict          as xd
@@ -11,6 +12,20 @@ from object_definitions.Constants_def import Constants
 ## UPDATE THE SIMULATIOR VERSION HERE ##
 __version__ = "0.1.0"
 
+def parse_antenna_angles(filename):
+    # Extract azimuth and elevation using regex
+    az_match = re.search(r'(\d+\.?\d*)az', filename)
+    el_match = re.search(r'(\d+\.?\d*)el', filename)
+    freq_match = re.search(r'(\d+\.?\d*)MHz', filename)
+
+    if az_match and el_match and freq_match:
+        azimuth = float(az_match.group(1))
+        elevation = float(el_match.group(1))
+        freq = float(freq_match.group(1))
+
+        return azimuth, elevation, freq
+    else:
+        raise ValueError(f"Could not parse azimuth/elevation from filename: {filename}")
 
 def initialize(config_file_name="Configuration.ini"):
     """
@@ -96,13 +111,39 @@ def initialize(config_file_name="Configuration.ini"):
 
     #[ANTENNA]
     try:
-        antenna_beamwidth = ast.literal_eval(config["ANTENNA"]["antenna_beamwidth_3dB"]) if "ANTENNA" in config else None  # Antenna beamwidth -3dB in degrees
-        antenna_steering_angle = ast.literal_eval(config["ANTENNA"]["max_steering_angle_deg"]) if "ANTENNA" in config else None  # Steering angle in degrees
+        antenna_patterns = {}  # Initialize the dictionary here
+        antenna_pattern_folder = config["ANTENNA"]["antenna_filepaths"] if ("ANTENNA" in config and "antenna_filepaths" in config["ANTENNA"]) else None  # Antenna beamwidth -3dB in degrees
+
+        # Make sure the folder has a slash on the end
+        if not antenna_pattern_folder.endswith("/"):
+            antenna_pattern_folder += "/"
+        if antenna_pattern_folder is not None and not os.path.isdir(antenna_pattern_folder):
+            raise NotADirectoryError(f"The specified antenna pattern folder '{antenna_pattern_folder}' does not exist or is not a directory. Please check the folder path in the configuration file.")
+        filepaths_antenna_pattern = []
+        for file in os.listdir(antenna_pattern_folder):
+            # Write all files ending with *.json in that folder into a list
+            if file.endswith(".json"):
+                filepaths_antenna_pattern.append(os.path.join(antenna_pattern_folder, file))
+
+        if filepaths_antenna_pattern not in [None, ""]:
+            for file in filepaths_antenna_pattern:
+                if not os.path.isfile(file):
+                    # Additional robustness checks
+                    raise FileNotFoundError(f"The specified antenna pattern file '{file}' does not exist. Please check the file path in the configuration file.")
+                else:
+                    # Get the azimuth and elevation of that file (through the filename)
+                    filename = os.path.basename(file)
+                    azimuth, elevation, freq = parse_antenna_angles(filename)
+
+                    # Create a dictionary, linking azimuth and elevation angle to the file
+                    antenna_patterns[(azimuth, elevation, freq)] = file
+            # Sort the antenna_patterns files
+            antenna_patterns = dict(sorted(antenna_patterns.items()))
+        else:
+            pass
         antenna_polarizations = ast.literal_eval(config["ANTENNA"]["polarizations"]) if "ANTENNA" in config else None  # Antenna polarizations (e.g., ["LHCP", "RHCP"])
-        antenna_bands = ast.literal_eval(config["ANTENNA"]["bands"]) if "ANTENNA" in config else None  # Antenna bands (e.g., ["L1", "L2", "L5"])
-        antenna_gain = ast.literal_eval(config["ANTENNA"]["antenna_gain"]) if "ANTENNA" in config else None  # Antenna gain in dB
     except KeyError:
-        raise KeyError("The 'antenna_beamwidth_3dB', 'max_steering_angle_deg', 'polarizations', 'bands' or 'antenna_gain' key is missing in the 'ANTENNA' section of the configuration file.") # noqa: B904
+        raise KeyError("The 'antenna_filepath_0deg', 'max_steering_angle_deg', 'polarizations', 'bands' or 'antenna_gain' key is missing in the 'ANTENNA' section of the configuration file.") # noqa: B904
 
     #[ORBITS]
     # Check how many orbits are specified in the configuration file
@@ -137,23 +178,26 @@ def initialize(config_file_name="Configuration.ini"):
         const_string = const_string.split(",")
         const_string = [s.strip() for s in const_string]  # Remove leading/trailing whitespace
         const_string_updated = []
+        gnss_names = []
         for const_str in const_string:
-            # Add TLE folder path
-            const_str = os.path.join(Constants.tle_folderpath, const_str)
-            const_string_updated.append(const_str)
-    except KeyError:
-        raise KeyError("The 'gnss_tle_files' key is missing in the 'GNSS CONSTELLATIONS' section of the configuration file.") # noqa: B904
+            # Extract GNSS constellation name ["GPS", "GLONASS", "GALILEO", "BEIDOU"]
+            # Find if the name contains one of the following GPS GLONASS GALILEO BEIDOU using regular expression
+            match = re.search(r"(GPS|GLONASS|GALILEO|BEIDOU)", const_str, re.IGNORECASE)
+            if match:
+                const_name = match.group(0)
+                gnss_names.append(const_name)
 
-    try:
-        gnss_name_str = config["GNSS CONSTELLATIONS"]["gnss_const_names"]
-        gnss_names = gnss_name_str.replace("[", "").replace("]", "").split(",")
-        gnss_names = [s.strip() for s in gnss_names]  # Remove leading/trailing whitespace
+                # Add TLE folder path
+                const_str = os.path.join(Constants.tle_folderpath, const_str)
+                const_string_updated.append(const_str)
+            else:
+                print(f"Warning: Skipping unknown constellation file: {const_str}")
 
         gnss_constellation = {}
         for idx, (const_tle, const_name) in enumerate(zip(const_string_updated, gnss_names, strict=False)):
             gnss_constellation[const_name] = {"tle_file": const_tle, "index": idx}
     except KeyError:
-        raise KeyError("The 'gnss_const_names' key is missing in the 'GNSS CONSTELLATIONS' section of the configuration file.") # noqa: B904
+        raise KeyError("The 'gnss_tle_files' key is missing in the 'GNSS CONSTELLATIONS' section of the configuration file.") # noqa: B904
 
     simulation_settings = {
         #[SIMULATION SETTINGS]
@@ -173,13 +217,9 @@ def initialize(config_file_name="Configuration.ini"):
         "start_coord_ll": start_coord_ll,
         "end_coord_ll": end_coord_ll,
         #[ANTENNA]
-        "antenna_beamwidth": antenna_beamwidth,
-        "steering_angle_deg": antenna_steering_angle,
+        "antenna_pattern_files": antenna_patterns,
         "polarizations": antenna_polarizations,
-        "bands": antenna_bands,
-        "antenna_gain": antenna_gain,
     }
-
     return config, simulation_settings
 
 # Export the initialize function

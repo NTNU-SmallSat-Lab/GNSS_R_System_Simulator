@@ -416,7 +416,7 @@ class Reflection:
 #        psi = np.arctan2(n_ar_a[1], n_ar_a[2])    # Azimuth across flight direction [rad]
 
         # ========== GET THE ROTATION MATRIX FROM NADIR POINTING TO THE REFLECTION BEAM POINTING ==========
-        beam_dir_a = antenna._get_antenna_footprint(n_ar_a)  # Get the antenna footprint in the antenna coordinate system
+        beam_dir_a = antenna._get_antenna_footprint(n_ar_a, 1176.45)  # Get the antenna footprint in the antenna coordinate system
 
         # ========== VECTORIZED BEAM DIRECTIONS ==========
         beam_dirs_i = (R_eci_to_vnc.T @ R_vnc_to_body.T @ antenna.R_antenna_to_body @ beam_dir_a.T)  # Rotate beam directions to the orbital coordinate system
