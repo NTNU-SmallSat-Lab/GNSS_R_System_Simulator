@@ -24,7 +24,7 @@ from object_definitions.Reflection_def import Reflection
 from object_definitions.ShipTrajectory_def import ShipTrajectory
 
 
-class MovingTargetDetection: # TODO: change should inherit from antenna? or not?
+class MovingTargetDetection:
     def __init__(
         self,
         sat_const,
@@ -337,7 +337,7 @@ class MovingTargetDetection: # TODO: change should inherit from antenna? or not?
 
         #########################################################
         # 3: Calculate if the moving target can be detected     #
-        ######################################################### # TODO vectorization? (this part is fast already)
+        #########################################################
         # Iterate through each satellite constellation
         for gnss_name, _ in self.gnss_constellation.items():
             # Iterate through each position in the moving target trajectory
@@ -387,27 +387,25 @@ class MovingTargetDetection: # TODO: change should inherit from antenna? or not?
                                     )
                                 continue
                             # Create an ellipse around the reflection point
-                            footprint_reflection, spec_refl_point = self._reflection_point_footprint(refl_obj, reflection_index, verbose)
+                            for freq in self.sat_antenna.frequencies:
+                                footprint_reflection, spec_refl_point = self._reflection_point_footprint(refl_obj, reflection_index, freq, verbose)
 
-                            ## DEBUG: Plot the footprint and the moving target position
-                            # show_reflection_and_target_position(pos_tgt_i, footprint_reflection, spec_refl_point, gnss_name)
-                            if footprint_reflection.intersects(pos_tgt_i.geometry):
-                                # Moving Target could be detected! Initialize the moving target detection structure
-                                possible_target_detection = MovingTargetDetectionStruct()
+                                ## DEBUG: Plot the footprint and the moving target position
+                                # show_reflection_and_target_position(pos_tgt_i, footprint_reflection, spec_refl_point, gnss_name)
+                                if footprint_reflection.intersects(pos_tgt_i.geometry):
+                                    # Moving Target could be detected! Initialize the moving target detection structure
+                                    possible_target_detection = MovingTargetDetectionStruct()
 
-                                possible_target_detection.position_ecef = refl_obj.refl_ECI_vec[reflection_index]
-                                possible_target_detection.position_ll = refl_obj.refl_LL_vec[reflection_index]
-                                possible_target_detection.tx_satID = refl_obj.tx_satID
-                                possible_target_detection.rx_satID = refl_obj.rx_satID
-                                possible_target_detection.time = time_tgt_i
-                                possible_target_detection.angle = refl_obj.cutoff_angle
-                                possible_target_detection.footprint_shape = footprint_reflection
-                                possible_target_detection.power = refl_obj.power
-                                possible_target_detection.spec_refl_point = spec_refl_point  # Specular reflection point
-                                possible_target_detection.refl_obj = refl_obj
+                                    possible_target_detection.position_ecef = refl_obj.refl_ECI_vec[reflection_index]
+                                    possible_target_detection.position_ll = refl_obj.refl_LL_vec[reflection_index]
+                                    possible_target_detection.time = time_tgt_i
+                                    possible_target_detection.footprint_shape = footprint_reflection
+                                    possible_target_detection.spec_refl_point = spec_refl_point  # Specular reflection point
+                                    possible_target_detection.refl_obj = refl_obj
+                                    possible_target_detection.frequency = freq
 
-                                # Append the possible target detection to the target detection list
-                                self.target_detect_dict[gnss_name].append(possible_target_detection)
+                                    # Append the possible target detection to the target detection list
+                                    self.target_detect_dict[gnss_name].append(possible_target_detection)
                 else:
                     time_diff_sec = (time_refl_i - time_tgt_i).total_seconds()
                     tqdm.write(
@@ -554,27 +552,7 @@ class MovingTargetDetection: # TODO: change should inherit from antenna? or not?
                             continue
                         # Create the footprint (ellipse) around the reflection point
                         footprint_reflection, _ = self._reflection_point_footprint(refl_obj, reflection_index, verbose)
-                        # Check if the footprint intersects with -180 / 180 longitude line
-#                        if not self._polygon_intersects_180_lat(footprint_reflection):
-#                            if verbose:
-#                                print(f"Skipping large footprint at ({lon:.2f}, {lat:.2f}) for {gnss_const}")
-#                            continue  # Skip this reflection
-#                        # Draw the footprint ellipse around the point
-#                        if isinstance(footprint_reflection, Polygon):
-#                            ax.plot(
-#                                *footprint_reflection.exterior.xy,
-#                                color=fn.color_gnss_const(gnss_const),
-#                                linewidth=1,
-#                                alpha=0.5,
-#                            )
-#                        elif isinstance(footprint_reflection, MultiPolygon):
-#                            for poly in footprint_reflection.geoms:
-#                                ax.plot(
-#                                    *poly.exterior.xy,
-#                                    color=fn.color_gnss_const(gnss_const),
-#                                    linewidth=1,
-#                                    alpha=0.5,
-#                                )
+
                         # Safe footprint plotting
                         success = self._plot_footprint_safe(
                             ax, footprint_reflection,
@@ -720,7 +698,7 @@ class MovingTargetDetection: # TODO: change should inherit from antenna? or not?
         # Create a bounding box tuple (min_lon, max_lon, min_lat, max_lat)
         return (min_lon, max_lon, min_lat, max_lat)
 
-    def _reflection_point_footprint(self, refl_obj: Reflection, i: int, verbose: bool = False) -> Polygon:
+    def _reflection_point_footprint(self, refl_obj: Reflection, i: int, frequency: float, verbose: bool = False) -> Polygon:
         """
         Create a circle around a given point with a specified radius in meters.
         """
@@ -803,8 +781,7 @@ class MovingTargetDetection: # TODO: change should inherit from antenna? or not?
                     print(f"WARNING: Unsupported geometry type {type(polygon)} for NaN check.")
                 return True # Assume NaN if unsupported type
 
-        #ellips_points, center_point = refl_obj._compute_footprint_ellipse(i, 64, beamwidth_deg=[40,10], earth_model="elliptical")
-        footprint_points, spec_refl_point = refl_obj._compute_footprint(i, self.sat_antenna ,earth_model=self.earth_model)
+        footprint_points, spec_refl_point = refl_obj._compute_footprint(i, self.sat_antenna, frequency, earth_model=self.earth_model)
         if not footprint_points.is_valid:
             if verbose:
                 print(f"Invalid footprint for reflection index {i}. {explain_validity(footprint_points)}")
@@ -829,8 +806,8 @@ class MovingTargetDetection: # TODO: change should inherit from antenna? or not?
                 print(f"WARNING: Ellipse points contain NaN values for reflection index {i} in {refl_obj.gnss_const}. Skipping footprint creation. \n    The satellite might be too far away or the footprint size is too large.")
             return Polygon()
 
-        ## DEBUG plot footprint_poly
-        # show_footprint(footprint_points)
+            ## DEBUG plot footprint_poly
+            # show_footprint(footprint_points)
 
         # Create a shapely polygon from the points
         return footprint_points, spec_refl_point
@@ -1282,10 +1259,7 @@ class MovingTargetDetection: # TODO: change should inherit from antenna? or not?
 class MovingTargetDetectionStruct:
     position_ecef: np.ndarray = field(default_factory=lambda: np.full(3, np.nan, dtype=np.float32))
     position_ll: np.ndarray = field(default_factory=lambda: np.full(2, np.nan, dtype=np.float32))
-    tx_satID: int = field(default=None)  # noqa: N815
-    rx_satID: int = field(default=None)  # noqa: N815
     time: dt = None
-    angle: float = np.nan
     footprint_shape: float = np.nan
-    power: float = np.nan
     refl: Reflection = None  # Reference to the reflection object that caused the detection
+    frequency: float = np.nan

@@ -113,6 +113,12 @@ def initialize(config_file_name="Configuration.ini"):
     try:
         antenna_patterns = {}  # Initialize the dictionary here
         antenna_pattern_folder = config["ANTENNA"]["antenna_filepaths"] if ("ANTENNA" in config and "antenna_filepaths" in config["ANTENNA"]) else None  # Antenna beamwidth -3dB in degrees
+        bands = config["ANTENNA"]["bands"] if ("ANTENNA" in config and "bands" in config["ANTENNA"]) else None  # Antenna bands
+        if bands is None:
+            raise KeyError("The 'bands' key is missing in the 'ANTENNA' section of the configuration file.")
+        else:
+            # Remove square brackets, quotes and split
+            antenna_bands = [band.strip().strip('"') for band in bands[1:-1].split(",")]
 
         # Make sure the folder has a slash on the end
         if not antenna_pattern_folder.endswith("/"):
@@ -142,6 +148,12 @@ def initialize(config_file_name="Configuration.ini"):
         else:
             pass
         antenna_polarizations = ast.literal_eval(config["ANTENNA"]["polarizations"]) if "ANTENNA" in config else None  # Antenna polarizations (e.g., ["LHCP", "RHCP"])
+
+        footprint_dB = config["ANTENNA"]["footprint_dB"] if ("ANTENNA" in config and "footprint_dB" in config["ANTENNA"]) else None
+        try:
+            footprint_dB = float(footprint_dB) if footprint_dB is not None else None
+        except ValueError:
+            raise ValueError(f"Invalid value for 'footprint_dB': {footprint_dB}. It must be a float.") from None
     except KeyError:
         raise KeyError("The 'antenna_filepath_0deg', 'max_steering_angle_deg', 'polarizations', 'bands' or 'antenna_gain' key is missing in the 'ANTENNA' section of the configuration file.") # noqa: B904
 
@@ -219,6 +231,8 @@ def initialize(config_file_name="Configuration.ini"):
         #[ANTENNA]
         "antenna_pattern_files": antenna_patterns,
         "polarizations": antenna_polarizations,
+        "bands": antenna_bands,
+        "footprint_dB": float(footprint_dB) if footprint_dB is not None else None,
     }
     return config, simulation_settings
 

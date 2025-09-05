@@ -5,6 +5,8 @@ from matplotlib import pyplot as plt
 import numpy as np
 from scipy.interpolate import splev, splprep
 
+from object_definitions.Constants_def import Constants
+
 
 class RxAntenna:
     def __init__(self, settings: dict = None):
@@ -24,7 +26,9 @@ class RxAntenna:
         self.antenna_lookuptable = {}
         self.steering_azimuth = []
         self.steering_elevation = []
-        self.frequencies = []
+        self.frequencies_radi_pattern = []
+        self.bands = []
+        self.footprint_dB_contour = settings.get("footprint_dB")
 
         antenna_patterns_temp = {}
         for antenna_az_el_fr in settings.get("antenna_pattern_files"):
@@ -69,13 +73,14 @@ class RxAntenna:
                 "radiation_pattern_dB": mesh
             }
             # Add the new frequency, elevation or azimuth
-            if frequency not in self.frequencies:
-                self.frequencies.append(frequency)
+            if frequency not in self.frequencies_radi_pattern:
+                self.frequencies_radi_pattern.append(frequency)
             if elevation not in self.steering_elevation:
                 self.steering_elevation.append(elevation)
             if azimuth not in self.steering_azimuth:
                 self.steering_azimuth.append(azimuth)
         self.polarizations = settings.get("polarizations") # Antenna polarizations (e.g., ["LHCP", "RHCP"])
+        self.bands = settings.get("bands") # Antenna bands
         self.footprint_resolution = 64  # Number of points to create a circle (higher resolution for smoother circles) | hardcoded to 64
         self.R_antenna_to_body = np.array([ # Rotation matrix from antenna frame to body-fixed frame
             [0, 1, 0],
@@ -104,6 +109,24 @@ class RxAntenna:
                 'radiation_pattern_dB': antenna_pattern["radiation_pattern_dB"]
             }
 
+        # Initialize antenna frequecies
+        self.frequencies = self._get_frequency_from_band()
+
+    def _get_frequency_from_band(self):
+        "Get the antenna frequencies from the bands"
+        frequencies = []
+
+        for band in self.bands:
+            if band in Constants.BANDS_CENTER_FREQUENCIES_Hz:
+                freq_Mz = Constants.BANDS_CENTER_FREQUENCIES_Hz[band] / 1e6  # Convert Hz to MHz
+                # Check if a radiation pattern for this frequency is available:
+                if any(key[2] == freq_Mz for key in self.antenna_lookuptable.keys()):
+                    frequencies.append(freq_Mz)
+                else:
+                    raise ValueError(f"No radiation pattern available for frequency {freq_Mz} MHz (band {band}).")
+
+        return frequencies
+
     def _calc_antenna_footprint(self, antenna_pattern):
         """
         Calculate the antenna footprint with vectors radiating from the antenna position outwards in the antenna frame
@@ -119,10 +142,8 @@ class RxAntenna:
 
         directivity, directivity_dB = self._calculate_directivity(rad_pattern_spherical_lin, theta_rad, phi_rad, theta_mesh)
 
-        # Find angle with -3dB
-        contur_vectors = self._find_contour_vectors(rad_pattern_spherical_dB, theta_rad, phi_rad, theta_mesh, phi_mesh, target_dB=-0.5)
-
-        # TODO do resampling using spline interpolation
+        # Find angle with self.footprint_dB_contour
+        contur_vectors = self._find_contour_vectors(rad_pattern_spherical_dB, theta_rad, phi_rad, theta_mesh, phi_mesh)
 
         # DEBUG, PLOT ANTENNA RADIATION PATTERN
         debug = False
@@ -131,6 +152,7 @@ class RxAntenna:
             plotting_object.add_vector_bundle_to_plot(contur_vectors)
             plotting_object.show()
 
+        # Do resampling of the footprint to a lower resolution (self.footprint_resolution)
         contur_vectors = self._smooth_antenna_footprint(contur_vectors)
 
         ##DEBUG Visualize the antenna footprint in 3D
@@ -178,7 +200,7 @@ class RxAntenna:
 
         # Convert back to 3D vectors
         resampled_vectors = []
-        for i, (azimuth, rho) in enumerate(zip(target_azimuths, resampled_rhos)):
+        for _, (azimuth, rho) in enumerate(zip(target_azimuths, resampled_rhos, strict=True)):
             # Cartesian coordinates on the plane
             x = rho * np.cos(azimuth)
             y = rho * np.sin(azimuth)
@@ -219,7 +241,7 @@ class RxAntenna:
         #plt.tight_layout()
         #plt.show(block=True)
 
-    def _get_antenna_footprint(self, refl_dir_antenna_frame, frequency, azimuth=90, elevation=0):
+    def _get_antenna_footprint(self, refl_dir_antenna_frame, frequency, azimuth, elevation):
         """
         Get the antenna footprint in the antenna coordinate system.
         """
@@ -253,9 +275,12 @@ class RxAntenna:
         R = np.eye(3) + np.sin(angle) * K + (1 - np.cos(angle)) * np.dot(K, K)
 
         # Find the closest lookup key
-        lookup_key = min(self.antenna_lookuptable.keys(), key=lambda k: (abs(k[0]-azimuth) + abs(k[1]-elevation) + abs(k[2]-frequency)))
+        azim_deg = np.rad2deg(azimuth)
+        elev_deg = np.rad2deg(elevation)
+        lookup_key = min(self.antenna_lookuptable.keys(), key=lambda k: (abs(k[0]-azim_deg) + abs(k[1]-elev_deg) + abs(k[2]-frequency)))
 
-        lookup_key_requested = (azimuth, elevation, frequency) 
+        delta_azim = azim_deg - lookup_key[0]
+        delta_elev = elev_deg - lookup_key[1]
         rotated_footprint_vectors = self.antenna_lookuptable[lookup_key]["vector_bundle"] @ R.T #Rotate the footprint vectors to the reflection beam coordinate system
         return rotated_footprint_vectors
 
@@ -280,8 +305,7 @@ class RxAntenna:
 
         return directivity, directivity_dB
 
-    @staticmethod
-    def _find_contour_vectors(rad_pattern_spherical_dB, theta_rad, phi_rad, theta_mesh, phi_mesh, target_dB=-3.0):
+    def _find_contour_vectors(self, rad_pattern_spherical_dB, theta_rad, phi_rad, theta_mesh, phi_mesh):
         """
         Find unit vectors pointing from antenna center toward target dB contour with interpolation.
 
@@ -293,7 +317,7 @@ class RxAntenna:
             pattern_slice = rad_pattern_spherical_dB[:, phi_i]
             peak_idx = np.argmax(pattern_slice)  # Finds 0dB point
 
-            # Search outward from peak (0dB) toward target_dB 
+            # Search outward from peak (0dB) toward self.footprint_dB_contour
             theta = theta_rad[peak_idx]  # Default to peak
 
             for direction in [1, -1]:  # Forward, then backward
@@ -301,11 +325,11 @@ class RxAntenna:
                 end_idx = len(pattern_slice) if direction == 1 else -1
 
                 for i in range(start_idx, end_idx, direction):
-                    if pattern_slice[i] <= target_dB:
+                    if pattern_slice[i] <= self.footprint_dB_contour:
                         # Interpolate for sub-sample accuracy
                         prev_i = i - direction
                         if pattern_slice[prev_i] != pattern_slice[i]:
-                            t = (target_dB - pattern_slice[prev_i]) / (pattern_slice[i] - pattern_slice[prev_i])
+                            t = (self.footprint_dB_contour - pattern_slice[prev_i]) / (pattern_slice[i] - pattern_slice[prev_i])
                             theta = theta_rad[prev_i] + t * (theta_rad[i] - theta_rad[prev_i])
                         else:
                             theta = theta_rad[i]
@@ -317,7 +341,7 @@ class RxAntenna:
             # Convert to unit vector
             contour_vectors.append([
                 np.sin(theta) * np.cos(phi_val),
-                np.sin(theta) * np.sin(phi_val), 
+                np.sin(theta) * np.sin(phi_val),
                 np.cos(theta)
             ])
 

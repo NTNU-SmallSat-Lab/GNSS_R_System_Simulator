@@ -11,9 +11,9 @@ class Constants:
     =========================================================================================================
     """
 
-    ###########################f
+    ###########################
     # Physical constants
-    ###########################f
+    ###########################
     SPEED_OF_LIGHT = 299792458  # Speed of light in                          [m/s]
     G_CONST = 6.6743015e-11  # Gravitational constant in                  [N m^2 / kg^2}
     GM_EARTH_TT = 3.986004415e14  # Earth's gravitational parameter in         [m^3/s^2]
@@ -25,9 +25,9 @@ class Constants:
     EPSG_LAT_LON = 4326  # EPSG code for WGS84                        [-]
     EPSG_GEOCENTRIC = 4978  # EPSG code for Geocentric coordinate system [-]
 
-    ###########################f
+    ###########################
     # Folder Paths
-    ###########################f
+    ###########################
     # Determine the base directory of this file
     base_dir = os.getcwd()  # Gets the directory where the code is run
 
@@ -41,18 +41,74 @@ class Constants:
         base_dir, "DATA", "world_costline_data", "10m_physical", "ne_10m_ocean.shp"
     )  # Path to the coastline shapefile, used for land avoidance in the ShipTrajectory class
 
-    ###########################f
+    ###########################
     # Coordinate Conversion constants
-    ###########################f
+    ###########################
     R_body_to_vnc_normal = np.array([
         [1, 0, 0],
         [0, -1, 0],
         [0, 0, -1]
     ])  # Rotation matrix from VNC to body-fixed coordinate system (normal)
 
-    ###########################f
+    ###########################
+    # GNSS-constants
+    ###########################
+    BANDS_CENTER_FREQUENCIES_Hz = {
+        # ===================
+        # GPS
+        # ===================
+        "L1": 1.57542e9,
+        "L2": 1.2276e9,
+        "L5": 1.17645e9,
+
+        # ===================
+        # Galileo
+        # ===================
+        "E1": 1.57542e9,
+        "E5a": 1.17645e9,
+        "E5b": 1.20714e9,
+        "E6": 1.27875e9,
+
+        # ===================
+        # GLONASS
+        # ===================
+        "G1": 1.602e9,
+        "G2": 1.246e9,
+        "G3": 1.202025e9,
+
+        # ===================
+        # BeiDou
+        # ===================
+        "B1I": 1.561098e9,
+        "B1C": 1.57542e9,
+        "B2a": 1.17645e9,
+        "B2b": 1.20714e9,
+        "B2I": 1.20714e9,
+        "B3I": 1.268520e9,
+
+        # ===================
+        # QZSS
+        # ===================
+        "QZSS_L1": 1.57542e9,
+        "QZSS_L1C": 1.57542e9,
+        "QZSS_L2C": 1.2276e9,
+        "QZSS_L5": 1.17645e9,
+        "QZSS_L6": 1.27875e9,
+
+        # ===================
+        # IRNSS/NavIC
+        # ===================
+        "NavIC_L5": 1.17645e9,
+        "NavIC_S1": 2.492028e9,
+        "NavIC_L1": 1.57542e9,
+    }
+
+    BANDS_BANDWIDTH_Hz = {
+
+    }
+    ###########################
     # 3rd Party Libraries and Tools
-    ###########################f
+    ###########################
     # FreeFlyer installation path
     if os.name == "nt":
         # Windows

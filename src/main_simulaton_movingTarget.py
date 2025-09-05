@@ -88,7 +88,7 @@ def skagerrak_to_barents_sea(settings: dict):
 
     ####################################
     # 6. Calculate sunlight time
-    #################################### # TODO improve this also
+    ####################################
     for sat_idx in range(sat_const.no_satellites):
         sat_const.satellites[sat_idx].calculate_sunlight_time()
         print(
