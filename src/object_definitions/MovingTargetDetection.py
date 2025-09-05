@@ -550,18 +550,6 @@ class MovingTargetDetection:
                                     f"WARNING: Reflection coordinates are NaN for {gnss_const}, satellites ID-GNSS {refl_obj.tx_satID}, and ID-GNSS-R {refl_obj.rx_satID} at time {time_i}"
                                 )
                             continue
-                        # Create the footprint (ellipse) around the reflection point
-                        footprint_reflection, _ = self._reflection_point_footprint(refl_obj, reflection_index, verbose)
-
-                        # Safe footprint plotting
-                        success = self._plot_footprint_safe(
-                            ax, footprint_reflection,
-                            color=fn.color_gnss_const(gnss_const),
-                            linewidth=1, alpha=0.5,
-                            transform=ccrs.PlateCarree()
-                        )
-                        if not success and verbose:
-                            print(f"Skipped invalid footprint for {gnss_const} at ({lon:.2f}, {lat:.2f})")
 
                         # Plot the reflection point
                         ax.scatter(
@@ -584,6 +572,20 @@ class MovingTargetDetection:
                                 va="bottom",
                                 color=fn.color_gnss_const(gnss_const),
                             )
+                        for frequency in self.sat_antenna.frequencies:
+                            # Create the footprint (ellipse) around the reflection point
+                            footprint_reflection, _ = self._reflection_point_footprint(refl_obj, reflection_index, frequency, verbose)
+
+                            # Safe footprint plotting
+                            success = self._plot_footprint(
+                                ax, footprint_reflection,
+                                color=fn.color_gnss_const(gnss_const),
+                                linewidth=1, alpha=0.5,
+                                transform=ccrs.PlateCarree()
+                            )
+                            if not success and verbose:
+                                print(f"Skipped invalid footprint for {gnss_const} at ({lon:.2f}, {lat:.2f})")
+
         # Add a legend (handle duplicates properly)
         if label_reflections:
             handles, labels = plt.gca().get_legend_handles_labels()
@@ -921,7 +923,7 @@ class MovingTargetDetection:
                 print(f"Error fixing polygon: {e}")
             return []
 
-    def _plot_footprint_safe(self, ax, polygon, color, linewidth=1, alpha=0.5, transform=None):
+    def _plot_footprint(self, ax, polygon, color, linewidth=1, alpha=0.5, transform=None):
         """
         Safely plot footprint polygon(s) with longitude wrapping protection.
         """
@@ -1219,7 +1221,7 @@ class MovingTargetDetection:
 #                            print(f"Error plotting footprint for {gnss_name}[{idx}]: {e}")
 #                            skipped_count += 1
 
-                        success = self._plot_footprint_safe(
+                        success = self._plot_footprint(
                             ax, detect_struct.footprint_shape,
                             color=fn.color_gnss_const(gnss_name),
                             linewidth=1, alpha=0.5,

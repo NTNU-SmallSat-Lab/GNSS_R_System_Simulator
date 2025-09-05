@@ -275,12 +275,15 @@ class RxAntenna:
         R = np.eye(3) + np.sin(angle) * K + (1 - np.cos(angle)) * np.dot(K, K)
 
         # Find the closest lookup key
-        azim_deg = np.rad2deg(azimuth)
-        elev_deg = np.rad2deg(elevation)
-        lookup_key = min(self.antenna_lookuptable.keys(), key=lambda k: (abs(k[0]-azim_deg) + abs(k[1]-elev_deg) + abs(k[2]-frequency)))
+#        azim_deg = np.rad2deg(azimuth)
+#        elev_deg = np.rad2deg(elevation)
+#        lookup_key = min(self.antenna_lookuptable.keys(), key=lambda k: (abs(k[0]-azim_deg) + abs(k[1]-elev_deg) + abs(k[2]-frequency)))
+        # Hardcode key to use (90, 0, frequency)
+        lookup_key = (90, 0, frequency)
 
-        delta_azim = azim_deg - lookup_key[0]
-        delta_elev = elev_deg - lookup_key[1]
+        ## DEBUG
+        # delta_azim = azim_deg - lookup_key[0]
+        # delta_elev = elev_deg - lookup_key[1]
         rotated_footprint_vectors = self.antenna_lookuptable[lookup_key]["vector_bundle"] @ R.T #Rotate the footprint vectors to the reflection beam coordinate system
         return rotated_footprint_vectors
 
