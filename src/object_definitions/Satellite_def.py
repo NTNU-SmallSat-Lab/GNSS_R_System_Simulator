@@ -3,7 +3,7 @@ from math import pi
 import os
 
 import numpy as np
-from skyfield.api import EarthSatellite, load
+from skyfield.api import EarthSatellite, load, Loader
 
 from object_definitions.Constants_def import Constants
 from object_definitions.Orbit_def import Orbit_specification
@@ -74,8 +74,9 @@ class Satellite:
             self._initWithOrbit(satID, orbit_n, satName)
 
         # Load
-        file_path = os.path.join(Constants.skyfield_data, "de421.bsp")
-        self.planets = load(file_path)  # TODO move to constants
+        my_loader = Loader(Constants.skyfield_data)
+        # file_path = os.path.join(Constants.skyfield_data, "de421.bsp")
+        self.planets = my_loader('de421.bsp')  # TODO move to constants
         # earth   = planets['earth']
         # sun     = planets['sun']
 
