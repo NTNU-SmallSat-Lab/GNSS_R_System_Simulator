@@ -42,9 +42,10 @@ class Coverage_rfi:
         """
         
         # Path to the input geopackage (outline of the area of interest)
-        self.geopackage_input_file_path = os.path.join(Constants.base_dir, shapefile)
+        #self.geopackage_input_file_path = os.path.join(Constants.base_dir, shapefile)
+        self.shp_input_file_path = os.path.join(Constants.base_dir,'DATA/north-west_russia/North-West_Russia.shp')
         #Exstract the shapefile from the geopackage
-        self.shp_input_file_path = gpd.read_file(self.geopackage_input_file_path, layer = 'North-West Russia')
+        #self.shp_input_file_path = gpd.read_file(self.geopackage_input_file_path, layer = 'northwest_russia')
         # GeoDataFrame for the input shapefile (outline of the area of interest)
         self.gdf = gpd.read_file(self.shp_input_file_path)
         if grid_size_m is None:
