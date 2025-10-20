@@ -41,7 +41,7 @@ class ReadWriteSatData:
         IntD_POL = satellite.lauch_piece  # International Designator (piece of the launch)            COSPAR ID [hardcoded to 'A']
         epochStr = satellite.orbit_n.epoch_str  # Epoch in TLE format [YYDDD.DDDDDDDD]
         balisticCoefStr = re.sub(r"-0", "-", f"{balistic_coeff:10.8f}")  # Balistic coeffizient / First derivative of the mean motion in TLE format
-        balisticCoefStr = balisticCoefStr.replace("0.", " .") if balistic_coeff < 0 else balisticCoefStr.replace("0.", "-.")  # Remove the decimal point
+        balisticCoefStr = balisticCoefStr.replace("0.", " .") if balistic_coeff > 0 else balisticCoefStr.replace("0.", "-.")  # Remove the decimal point
         meanMotionStr_2 = ReadWriteSatData._str2tle_format(
             meanMotionSecDer
         )  # Second derivative of Mean Motion (decimal point assumed) HARDCODED FOR NOW /TODO
@@ -242,11 +242,11 @@ class ReadWriteSatData:
                 EphType = int(ephType_str.strip())  # Ephemeris type                       [0: unclassified, 1: classified]
                 ElementSetNo = int(elSetNo_str.strip())  # Element set number                   [-]
 
-                incl = float(incl_str.strip())  # Inclination                          [deg]
-                raan = float(raan_str.strip())  # Right Ascension of Ascending Node    [deg]
-                ecc = float(f"0.{ecc_str.strip()}")  # Eccentricity                         [-]
-                argPeri = float(argPeri_str.strip())  # Argument of perigee                  [deg]
-                meanAno = float(meanAno_str.strip())  # Mean anomaly                         [deg]
+                incl = float(incl_str.strip())  # Inclination                          [deg]                       # i
+                raan = float(raan_str.strip())  # Right Ascension of Ascending Node    [deg]                       # Omega
+                ecc = float(f"0.{ecc_str.strip()}")  # Eccentricity                         [-]                    # e
+                argPeri = float(argPeri_str.strip())  # Argument of perigee                  [deg]                 # omega
+                meanAno = float(meanAno_str.strip())  # Mean anomaly                         [deg]                 # M
                 meanMotion = float(meanMotion_str.strip())  # Mean motion                          [rev/day]
                 revNoatEpoch = int(revNoatEpoch_str.strip())  # Revolution number at epoch           [-]
 

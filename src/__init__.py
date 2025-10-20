@@ -115,39 +115,44 @@ def initialize(config_file_name="Configuration.ini"):
         antenna_pattern_folder = config["ANTENNA"]["antenna_filepaths"] if ("ANTENNA" in config and "antenna_filepaths" in config["ANTENNA"]) else None  # Antenna beamwidth -3dB in degrees
         bands = config["ANTENNA"]["bands"] if ("ANTENNA" in config and "bands" in config["ANTENNA"]) else None  # Antenna bands
         if bands is None:
-            raise KeyError("The 'bands' key is missing in the 'ANTENNA' section of the configuration file.")
+            bands = []
         else:
             # Remove square brackets, quotes and split
             antenna_bands = [band.strip().strip('"') for band in bands[1:-1].split(",")]
 
-        # Make sure the folder has a slash on the end
-        if not antenna_pattern_folder.endswith("/"):
-            antenna_pattern_folder += "/"
-        if antenna_pattern_folder is not None and not os.path.isdir(antenna_pattern_folder):
-            raise NotADirectoryError(f"The specified antenna pattern folder '{antenna_pattern_folder}' does not exist or is not a directory. Please check the folder path in the configuration file.")
-        filepaths_antenna_pattern = []
-        for file in os.listdir(antenna_pattern_folder):
-            # Write all files ending with *.json in that folder into a list
-            if file.endswith(".json"):
-                filepaths_antenna_pattern.append(os.path.join(antenna_pattern_folder, file))
+        # If antenna is initialzied in the ini-file:
+        if "ANTENNA" in config:
+            # Make sure the folder has a slash on the end
+            if not antenna_pattern_folder.endswith("/"):
+                antenna_pattern_folder += "/"
+            if antenna_pattern_folder is not None and not os.path.isdir(antenna_pattern_folder):
+                raise NotADirectoryError(f"The specified antenna pattern folder '{antenna_pattern_folder}' does not exist or is not a directory. Please check the folder path in the configuration file.")
+            filepaths_antenna_pattern = []
+            for file in os.listdir(antenna_pattern_folder):
+                # Write all files ending with *.json in that folder into a list
+                if file.endswith(".json"):
+                    filepaths_antenna_pattern.append(os.path.join(antenna_pattern_folder, file))
 
-        if filepaths_antenna_pattern not in [None, ""]:
-            for file in filepaths_antenna_pattern:
-                if not os.path.isfile(file):
-                    # Additional robustness checks
-                    raise FileNotFoundError(f"The specified antenna pattern file '{file}' does not exist. Please check the file path in the configuration file.")
-                else:
-                    # Get the azimuth and elevation of that file (through the filename)
-                    filename = os.path.basename(file)
-                    azimuth, elevation, freq = parse_antenna_angles(filename)
+            if filepaths_antenna_pattern not in [None, ""]:
+                for file in filepaths_antenna_pattern:
+                    if not os.path.isfile(file):
+                        # Additional robustness checks
+                        raise FileNotFoundError(f"The specified antenna pattern file '{file}' does not exist. Please check the file path in the configuration file.")
+                    else:
+                        # Get the azimuth and elevation of that file (through the filename)
+                        filename = os.path.basename(file)
+                        azimuth, elevation, freq = parse_antenna_angles(filename)
 
-                    # Create a dictionary, linking azimuth and elevation angle to the file
-                    antenna_patterns[(azimuth, elevation, freq)] = file
-            # Sort the antenna_patterns files
-            antenna_patterns = dict(sorted(antenna_patterns.items()))
+                        # Create a dictionary, linking azimuth and elevation angle to the file
+                        antenna_patterns[(azimuth, elevation, freq)] = file
+                # Sort the antenna_patterns files
+                antenna_patterns = dict(sorted(antenna_patterns.items()))
+            else:
+                pass
+            antenna_polarizations = ast.literal_eval(config["ANTENNA"]["polarizations"]) if "ANTENNA" in config else None  # Antenna polarizations (e.g., ["LHCP", "RHCP"])
         else:
-            pass
-        antenna_polarizations = ast.literal_eval(config["ANTENNA"]["polarizations"]) if "ANTENNA" in config else None  # Antenna polarizations (e.g., ["LHCP", "RHCP"])
+            antenna_polarizations = None
+            antenna_bands = None
 
         footprint_dB = config["ANTENNA"]["footprint_dB"] if ("ANTENNA" in config and "footprint_dB" in config["ANTENNA"]) else None
         try:

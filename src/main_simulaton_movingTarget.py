@@ -78,7 +78,7 @@ def skagerrak_to_barents_sea(settings: dict):
     travel_duration_h = shipTrajectory.get_travel_duration_hours()  # Add 1 hour for the simulation duration
     for name, gnss_const in gnss_constl_dict.items():
         gnss_const.set_simulation_duration(settings["start_time"], travel_duration_h, settings["step_size"])
-        print(f'Simulation duration for GNSS constellation: "{name}" set to {gnss_const.duration_sec} seconds.')
+        print(f'Simulation duration for GNSS constellation: "{name}" set to {gnss_const.duration_sec / 3600} hours.')
     sat_const.set_simulation_duration(settings["start_time"], travel_duration_h, settings["step_size"])
 
     ####################################

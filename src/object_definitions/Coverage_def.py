@@ -219,7 +219,7 @@ class Coverage:
         # Calculate the total number of calculations to be performed
         times = [time.utc_datetime() for time in self.sat_constellation.times_skyfield]
         total_computations = 0
-        for _gnss_name, gnss_const in self.gnss_constellation.items():
+        for _, gnss_const in self.gnss_constellation.items():
             total_computations += len(self.sat_constellation.satellites) * len(gnss_const.satellites)
 
         with tqdm(total=total_computations, desc="Reflection calculations", unit="reflection") as pbar:

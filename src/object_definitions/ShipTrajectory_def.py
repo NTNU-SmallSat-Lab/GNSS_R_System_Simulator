@@ -59,11 +59,10 @@ class ShipTrajectory:
         start_time: datetime,
         end_position: tuple,
         interval_minutes: int = 10,
-        grid_resolution_km: float = 100,
+        grid_resolution_km: float = 50,
         delta_boudingBox_km: float = 500,
         fast_path_gen_method: bool = True,
-        mesh_connection_radius_km: float = 2_000,
-        water_buffer_km: float = 22.2,
+        water_buffer_km: float = 25.0,
         trajectory_type: list = None,
         save_graph: bool = False,
     ) -> None:
@@ -82,7 +81,7 @@ class ShipTrajectory:
         self.fast_method = (
             fast_path_gen_method  # Flag [boolean] to indicate if simplified path generation is used (faster computation / longer, more simple ship route)
         )
-        self.mesh_connection_radius = mesh_connection_radius_km * 1e3  # Connection radius for grid points in km (default: 2'000 km)
+        self.mesh_connection_radius = self.grid_resolution * 2 * 1e3  # Connection radius for grid points in km (default: 2'000 km)
         self.water_buffer = water_buffer_km * 1e3  # Safety distance from shore in meters (default: 22.2 km = 12 nm (Territorial Sea))
 
         self.ocean_polygons = None  # Loaded coastline data (geopandas object), will be loaded from shapefile
@@ -94,8 +93,8 @@ class ShipTrajectory:
         else:
             warnings.warn("No valid coastline data provided. Update path in Constants_def.py [earth_coastline_path]")
 
-        if self.ocean_polygons is not None:
-            pass
+        if self.ocean_polygons is None:
+            raise ValueError("No valid coastline data loaded. Cannot proceed with land avoidance.")
 
         # Initialize trajectory data
         self.trajectory_points = (
