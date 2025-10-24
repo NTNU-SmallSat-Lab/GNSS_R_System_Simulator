@@ -3,7 +3,7 @@ import numpy as np
 
 import functions.functions as fn
 
-matplotlib.use("TkAgg", force=True)
+matplotlib.use("Agg", force=True)
 from datetime import timedelta
 
 from __init__ import initialize
@@ -120,8 +120,9 @@ def skagerrak_to_barents_sea(settings: dict):
     time_1h = fn.ensure_utc_aware(shipTrajectory.start_time + timedelta(hours=1))
     moving_target_detection.show_reflections_and_target_position_at_time_i(time_1h, file_name="Reflections_1h_into_journey", label_reflections=True)
 
-    moving_target_detection.create_reflection_animation(time_step_min=5, output_filename="Reflection_animation.gif")
-
+    moving_target_detection.create_reflection_animation(time_step_min=5, output_format="mp4", output_filename="Reflection_animation.mp4", fps=2)
+    #moving_target_detection.create_reflection_animation(time_step_min=5, output_filename="Reflection_animation.gif")
+    
     ####################################
     # 11. Plot orbits
     ####################################
@@ -151,6 +152,7 @@ def skagerrak_to_barents_sea(settings: dict):
     # 10. Calculate statistics
     ####################################
     coverage.calculate_statistics()
+
 
 if __name__ == "__main__":
     config, settings = initialize("Configuration_ship.ini")
