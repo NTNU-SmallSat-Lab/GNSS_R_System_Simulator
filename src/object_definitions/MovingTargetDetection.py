@@ -8,9 +8,12 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import geopandas as gpd
 import imageio
+import matplotlib
+matplotlib.use("Agg")  # Use Agg backend for off-screen rendering
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import imageio
 from pyproj import Geod
 from shapely.errors import GEOSException
 from shapely.geometry import MultiPolygon, Polygon, box
@@ -473,7 +476,10 @@ class MovingTargetDetection:
         # Plot the target position and the reflection points with footprints
         fig, ax = plt.subplots(figsize=(10, 6), subplot_kw={"projection": ccrs.PlateCarree()})
         # Set the map extent to your bounding box (order: west, east, south, north)
-        ax.set_global()
+        
+        #ax.set_global()
+        west, east, south, north = -10, 35, 35, 82
+        ax.set_extent([west, east, south, north], crs=ccrs.PlateCarree())
 
         ax.set_title(f"Reflections and Target Position at {time_i}")
         ax.set_xlabel("Longitude")
@@ -543,6 +549,9 @@ class MovingTargetDetection:
                     if not np.all(np.isnan(coordinates_reflection)):
                         lon = refl_obj.refl_LL_vec[reflection_index][1]
                         lat = refl_obj.refl_LL_vec[reflection_index][0]
+                        # Skip points outside the map extent
+                        if lon < west or lon > east or lat < south or lat > north:
+                            continue
                         if np.isnan(lon) or np.isnan(lat):
                             # If the coordinates are NaN, skip this reflection point
                             if verbose:
@@ -597,22 +606,34 @@ class MovingTargetDetection:
         # Save the figure if the file name is provided
         if file_name is not None:
             file_path = os.path.join(Constants.output_folder_path, file_name)
-            # Check if the file path is valid
-            if not os.path.exists(os.path.dirname(file_path)):
-                os.makedirs(os.path.dirname(file_path))
-                # downscale the figure size
-                if downscale_factor > 1:
-                    fig.set_size_inches(fig.get_size_inches() / downscale_factor)
-                # Save the figure
+            # Ensure output directory exists
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            # Downscale the figure size if needed
+            if downscale_factor > 1:
+                fig.set_size_inches(fig.get_size_inches() / downscale_factor)
+            # Save the figure
             fig.savefig(file_path, dpi=300, bbox_inches="tight")
-        # Close the figure
-        plt.close(fig)
+            plt.close(fig)
+            return None  # nothing to return when saving to file
+        else:
+            # Convert figure to numpy array for in-memory animation
+            fig.canvas.draw()  # ensure rendering
+            buffer = np.frombuffer(fig.canvas.tostring_argb(), dtype=np.uint8)
+            w, h = fig.canvas.get_width_height()
+            buffer = buffer.reshape((h, w, 4))  # ARGB format
 
-    def create_reflection_animation(self, time_step_min=10, output_format="gif", output_filename=None, fps=3) -> None:
+            # Convert ARGB → RGB
+            img_array = np.roll(buffer, -1, axis=2)[:, :, :3]
+            plt.close(fig)
+            return img_array
+        
+    def create_reflection_animation(self, time_step_min=3, output_format="gif", output_filename=None, fps=3):
         """
         Create animation showing reflections over time.
+        Supports GIF or video (MP4/AVI) output.
         """
         print("Creating an animation of the moving target and the reflections")
+
         # Generate time points
         time_points = []
         current_time = self.moving_target_object.start_time
@@ -623,42 +644,42 @@ class MovingTargetDetection:
 
         print(f"Creating {len(time_points)} frames...")
 
-        # Create temp directory
-        temp_dir = os.path.join(Constants.output_folder_path, "temp_frames")
-        os.makedirs(temp_dir, exist_ok=True)
-
-        # Generate frames
-        frame_files = []
-        for i, time_point in enumerate(tqdm(time_points)):
-            frame_path = os.path.join(temp_dir, f"frame_{i:04d}.png")
-
+        # Generate frames in memory
+        frames = []
+        for time_point in tqdm(time_points):
             try:
-                self.show_reflections_and_target_position_at_time_i(
+                img_array = self.show_reflections_and_target_position_at_time_i(
                     time_i=time_point,
-                    file_name=frame_path,
+                    file_name=None,  # return image instead of saving
                     show=False,
                     label_reflections=False,
                 )
-                frame_files.append(frame_path)
-            except:  # noqa: E722
+                if img_array is not None:
+                    frames.append(img_array)
+            except Exception as e:
+                print(f"Skipping frame at {time_point} due to error: {e}")
                 continue
-            # Create output filename
+
+        # Create output filename
         if output_filename is None:
             timestamp = self.moving_target_object.start_time.strftime("%Y%m%d_%H%M")
             output_filename = f"animation_{timestamp}.{output_format}"
 
         output_path = os.path.join(Constants.output_folder_path, output_filename)
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-        # Create animation
-        print(f"Creating {output_format}...")  # TODO improve this
-        with imageio.get_writer(output_path, mode="I", fps=fps, loop=0) as writer:
-            for frame_file in frame_files:
-                writer.append_data(imageio.imread(frame_file))
+        print(f"Creating {output_format} at {output_path}...")
 
-        # Cleanup
-        for frame_file in frame_files:
-            os.remove(frame_file)
-        os.rmdir(temp_dir)
+        # Save as MP4 or GIF
+        if output_format.lower() in ["mp4", "avi"]:
+            # Video writer
+            writer = imageio.get_writer(output_path, fps=fps, codec="libx264")
+            for frame in frames:
+                writer.append_data(frame)
+            writer.close()
+        else:
+            # GIF
+            imageio.mimsave(output_path, frames, fps=fps)
 
         print(f"Animation created at: {output_path}")
 

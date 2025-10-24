@@ -1,5 +1,10 @@
 from collections import namedtuple
-from datetime import UTC, datetime, timedelta
+import datetime  # Import the module itself first
+# ✅ Monkey patch for Python < 3.11 compatibility
+if not hasattr(datetime, "UTC"):
+    from datetime import timezone
+    datetime.UTC = timezone.utc
+from datetime import datetime, timezone, timedelta
 import os
 import re
 
@@ -341,7 +346,7 @@ class ReadWriteSatData:
 
         # Calculate the datetime by adding the whole days and fractional day time
         result_datetime = start_of_year + timedelta(days=whole_day - 1) + day_time
-        result_datetime = result_datetime.replace(tzinfo=UTC)
+        result_datetime = result_datetime.replace(tzinfo=timezone.utc)
 
         return result_datetime
 

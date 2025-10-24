@@ -5,7 +5,7 @@ import cartopy.feature as cfeature
 import matplotlib
 import numpy as np
 
-matplotlib.use("TkAgg", force=True)
+matplotlib.use("Agg", force=True)
 from matplotlib import pyplot as plt
 
 import functions.functions as fn

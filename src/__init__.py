@@ -1,6 +1,11 @@
 import ast
 import configparser as cp
-from datetime import UTC, datetime, timezone
+import datetime  # Import the module itself first
+# ✅ Monkey patch for Python < 3.11 compatibility
+if not hasattr(datetime, "UTC"):
+    from datetime import timezone
+    datetime.UTC = timezone.utc
+from datetime import datetime, timezone
 import json as json
 import os
 import re
@@ -75,7 +80,7 @@ def initialize(config_file_name="Configuration.ini"):
     #[SIMULATION SETTINGS]
     try:
         start_time_dt = datetime.strptime(config["SIMULATION SETTINGS"]["startTime"], "%d.%m.%Y %H:%M:%S")  # Start time: Year, Month, Day, Hour, Minute, Second
-        start_time_dt = start_time_dt.replace(tzinfo=UTC)  # Add timezone information
+        start_time_dt = start_time_dt.replace(tzinfo=timezone.utc)  # Add timezone information
     except KeyError:
         raise KeyError("The 'startTime' key is missing in the 'SIMULATION SETTINGS' section of the configuration file.")  # noqa: B904
 
