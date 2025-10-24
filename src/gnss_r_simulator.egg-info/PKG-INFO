@@ -4,7 +4,7 @@ Version: 0.1.0
 Summary: GNSS-R Simulator for marine vessel detection
 Author-email: Oliver Hasler <oliver.hasler@ntnu.no>, Corrado Chiatante <corrado.chiatante@ntnu.no>
 Project-URL: Repository, https://github.com/NTNU-SmallSat-Lab/GNSS_R_System_Simulator.git
-Requires-Python: >=3.12.6
+Requires-Python: >=3.12.3
 Requires-Dist: numpy>=2.0.2
 Requires-Dist: pandas>=2.2.3
 Requires-Dist: scipy>=1.14.1

@@ -10,7 +10,7 @@ authors = [
     {name = "Oliver Hasler", email = "oliver.hasler@ntnu.no"},
     {name = "Corrado Chiatante", email = "corrado.chiatante@ntnu.no"},
 ]
-requires-python = ">=3.12.6"  # Updated for Black compatibility
+requires-python = ">=3.12.3"  # Updated for Black compatibility
 dependencies = [
     # Core scientific computing
     "numpy>=2.0.2",
