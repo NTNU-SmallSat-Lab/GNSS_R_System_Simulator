@@ -1,6 +1,10 @@
 import datetime as dt
 
 import numpy as np
+from skyfield.api import load, wgs84
+# Load timescale once
+from collections import defaultdict
+from shapely.geometry import Point
 
 from object_definitions.Constants_def import Constants
 from object_definitions.SatConstellation_def import SatelliteConstellation
@@ -352,3 +356,137 @@ def rotation_matrix_from_vectors(v1, v2):
     angle = np.arccos(np.clip(dot_product, -1.0, 1.0))
 
     return rodrigues_rotation_matrix(axis, angle)
+
+
+
+
+def compute_visible_times_and_resample_ship(moving_target_detection, sat_const, elev_min=40):
+    """
+    ==========================================================================
+    Compute times when at least one satellite is visible from the moving ship
+    and resample the ship trajectory at exactly those timestamps.
+
+    = INPUT:                                                                 =
+    =   moving_target_detection : object containing ship trajectory          =
+    =   sat_const              : satellite constellation (Skyfield objects)  =
+    =   elev_min               : minimum elevation angle for visibility [°]  =
+    =                                                                     =
+    = OUTPUT:                                                                =
+    =   all_visible_times        -> list of datetimes with ≥1 visible sat    =
+    =   ship_positions_resampled -> ship (lat,lon) interpolated at those times =
+    =   sat_visible_times        -> dict {satellite_name: visible timestamps} =
+    ==========================================================================
+    """
+    ts = load.timescale()
+
+    ship_times = moving_target_detection.moving_target_object.timestamps
+    ship_positions = [(float(lat), float(lon)) for lat, lon in moving_target_detection.moving_target_object.trajectory_points]
+
+    sat_times_dt = [t.utc_datetime() for t in sat_const.times_skyfield]
+
+    # Convert to seconds for interpolation
+    ship_times_sec = np.array([(t - ship_times[0]).total_seconds() for t in ship_times])
+    sat_times_sec = np.array([(t - ship_times[0]).total_seconds() for t in sat_times_dt])
+    lats = np.array([pos[0] for pos in ship_positions])
+    lons = np.array([pos[1] for pos in ship_positions])
+
+    # Interpolate ship positions
+    interp_lats = np.interp(sat_times_sec, ship_times_sec, lats)
+    interp_lons = np.interp(sat_times_sec, ship_times_sec, lons)
+    ship_positions_all = list(zip(interp_lats, interp_lons))
+
+    # Compute visibility
+    sat_visible_times = defaultdict(list)
+    for pos, t in zip(ship_positions_all, sat_times_dt):
+        lat, lon = pos
+        observer = wgs84.latlon(lat, lon)
+        for sat in sat_const.satellites:
+            topocentric = (sat.skf - observer).at(ts.from_datetime(t))
+            alt, az, distance = topocentric.altaz()
+            if alt.degrees >= elev_min:
+                sat_visible_times[sat.skf.name].append(t)
+
+    # Collect all timestamps where at least one satellite is visible
+    all_visible_times = sorted({t for times in sat_visible_times.values() for t in times})
+    indices = [sat_times_dt.index(t) for t in all_visible_times]
+    resampled_ship_positions = [ship_positions_all[i] for i in indices]
+
+    print(Point(lon, lat)
+        for lat, lon in resampled_ship_positions)
+    # Save resampled ship positions in the object
+    moving_target_detection.ship_positions_resampled = [
+        Point(lon, lat)  # Note: Shapely expects Point(x, y) = Point(lon, lat)
+        for lat, lon in resampled_ship_positions
+    ]
+    moving_target_detection.timestamps_resampled = all_visible_times
+
+    return resampled_ship_positions, sat_visible_times
+
+
+def propagate_only_visible_satellites(sat_const, sat_visible_times, gnss_constl_dict=None):
+    """
+    ==========================================================================
+    Propagate satellites only at timestamps where they were visible from
+    the moving ship (or GNSS satellites at all visible times if provided).
+
+    Much faster and memory-efficient for sparse timestamp sets.
+
+    = INPUT:                                                                =
+    =   sat_const         : main satellite constellation (LEO or others)    =
+    =   sat_visible_times : dict {satellite_name : list of datetimes}       =
+    =   gnss_constl_dict  : optional dict {name : GNSS constellation}       =
+    =                                                                       =
+    = OUTPUT:                                                               =
+    =   visible_sat_objs  : list of satellites propagated only at relevant   =
+    =                       (visible) timestamps                              =
+    ==========================================================================
+    """
+    ts = load.timescale()
+
+    all_visible_times = sorted({t for times in sat_visible_times.values() for t in times})
+
+    visible_times_skyfield = ts.from_datetimes(all_visible_times)
+    visible_sat_objs = []
+
+    # --- LEO satellites ---
+    for sat in sat_const.satellites:
+        if sat.skf.name not in sat_visible_times:
+            continue
+
+        times_for_sat = sat_visible_times[sat.skf.name]
+        if not times_for_sat:
+            continue
+
+        # Propagate only at visible timestamps
+        sat.propagate_orbit_for_times(ts.from_datetimes(times_for_sat))
+        sat_times_dt = [t.utc_datetime() for t in sat.time_prop_vec]
+
+        # Synchronize to all_visible_times, filling missing with NaN
+        sat_positions_sync = []
+        sat_velocities_sync = []
+
+        for t in all_visible_times:
+            if t in sat_times_dt:
+                idx = sat_times_dt.index(t)
+                sat_positions_sync.append(sat.positions_eci[:, idx])
+                sat_velocities_sync.append(sat.velocities_eci[:, idx])
+            else:
+                sat_positions_sync.append(np.full(3, np.nan))
+                sat_velocities_sync.append(np.full(3, np.nan))
+
+        sat.positions_eci = np.array(sat_positions_sync).T
+        sat.velocities_eci = np.array(sat_velocities_sync).T
+        sat.time_prop_vec = visible_times_skyfield
+        visible_sat_objs.append(sat)
+
+    # --- GNSS satellites propagated at all visible times ---
+    if gnss_constl_dict is not None:
+        for gnss_name, gnss_const in gnss_constl_dict.items():
+            for sat in gnss_const.satellites:
+                sat.propagate_orbit_for_times(visible_times_skyfield)
+                sat.time_prop_vec = visible_times_skyfield
+                visible_sat_objs.append(sat)
+
+    return visible_sat_objs
+
+

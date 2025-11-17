@@ -217,6 +217,38 @@ class Satellite:
         self.positions_eci = np.transpose(position)
         self.velocities_eci = np.transpose(velocity)
 
+    def propagate_orbit_for_times(self, times_skyfield) -> None:
+        """
+        ==========================================================================
+        Propagate the satellite at specific Skyfield times only.
+        Much faster and memory-efficient for sparse timestamp sets
+        (e.g., when GNSS positions are only needed at LEO-visible times).
+        = INPUT:                                                                =
+        =   times_skyfield : list of Skyf. Time object [skyfield.timelib.Time]   =
+        =                                                                        =
+        =    OUTPUT:     Position and velocity of the satellite at each time     =
+        =      -> This function used "Skyfield" to propagate the satellite orbit =
+        =                                                                        =
+        =      self.positions_eci (propagated position)                          =
+        =      self.velocity (propagated velocity)                               =
+        =      self.time_prop_vec (updated time vector)                          =
+        ==========================================================================
+        """
+        if times_skyfield is None or len(times_skyfield) == 0:
+            raise ValueError("times_skyfield must be a non-empty list of Skyfield times.")
+
+        # Ensure we have a valid Skyfield satellite
+        if not hasattr(self, "skf"):
+            raise ValueError("Satellite Skyfield object (self.skf) not initialized.")
+
+        # Compute ECI positions/velocities only at given timestamps
+        pos = np.array([self.skf.at(t).position.m for t in times_skyfield])
+        vel = np.array([self.skf.at(t).velocity.m_per_s for t in times_skyfield])
+
+        self.positions_eci = pos.T
+        self.velocities_eci = vel.T
+        self.time_prop_vec = times_skyfield
+
     def calculate_sunlight_time(self) -> None:
         """
         =========================================================================

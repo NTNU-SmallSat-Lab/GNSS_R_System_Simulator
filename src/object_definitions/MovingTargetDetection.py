@@ -121,7 +121,8 @@ class MovingTargetDetection:
             max_lat = max(max_lat, footprint_reflection.bounds[3], pos_tgt_i.latitude) + 0.1
             min_lat = min(min_lat, footprint_reflection.bounds[1], pos_tgt_i.latitude) - 0.1
             new_bounding_box = (min_lon, max_lon, min_lat, max_lat)
-            ax.set_extent(new_bounding_box, crs=ccrs.PlateCarree())
+            west, east, south, north = -10, 35, 35, 82
+            ax.set_extent([west, east, south, north], crs=ccrs.PlateCarree())
 
             ax.set_title("GNSS-R Reflection and Target Position")
             ax.set_xlabel("Longitude")
@@ -213,9 +214,7 @@ class MovingTargetDetection:
         ###########################################
         # Get the satellite constellation times in UTC format
         # Reflection times are identical to the satellite constellation times
-        times_reflections = [
-            time.utc_datetime() for time in self.sat_constellation.times_skyfield
-        ]
+        times_reflections = [t.utc_datetime() for t in self.sat_constellation.satellites[0].time_prop_vec]
         times_refl_array = np.array(times_reflections)
 
         # Calculate the total number of reflection points for all GNSS constellations (for the progress bar)
@@ -343,16 +342,16 @@ class MovingTargetDetection:
         #########################################################
         # Iterate through each satellite constellation
         for gnss_name, _ in self.gnss_constellation.items():
-            # Iterate through each position in the moving target trajectory
-            for pos_tgt_i in tqdm(
-                self.gdf_time_series.itertuples(),
+            # Iterate through each position in the resampled moving target trajectory
+            for idx, (time_tgt_i, pos_tgt_i) in tqdm(
+                enumerate(zip(self.timestamps_resampled, self.ship_positions_resampled)),
                 desc=f"Detection of moving target using {gnss_name}",
                 unit=" time-step ",
-                total=len(self.gdf_time_series),
+                total=len(self.timestamps_resampled),
                 leave=False,
             ):
                 # Get the time for the current position of the moving target / convert to UTC format
-                time_tgt_i = dt.datetime.strptime(pos_tgt_i.datetime_s, "%Y-%m-%d %H:%M:%S").replace(tzinfo=dt.UTC)
+                time_tgt_i = time_tgt_i.replace(tzinfo=dt.UTC)
                 ###############################################################################################################
                 # Find the closest time in the reflection trajectory matching the current time at the moving target position  #
                 ###############################################################################################################
@@ -395,7 +394,7 @@ class MovingTargetDetection:
 
                                 ## DEBUG: Plot the footprint and the moving target position
                                 # show_reflection_and_target_position(pos_tgt_i, footprint_reflection, spec_refl_point, gnss_name)
-                                if footprint_reflection.intersects(pos_tgt_i.geometry):
+                                if footprint_reflection.intersects(pos_tgt_i):
                                     # Moving Target could be detected! Initialize the moving target detection structure
                                     possible_target_detection = MovingTargetDetectionStruct()
 
@@ -414,7 +413,7 @@ class MovingTargetDetection:
                     tqdm.write(
                         f"WARNING: No matching time found for target time {time_tgt_i.strftime('%Y-%m-%d %H:%M:%S')} for the {gnss_name} constellation\n     Closest time is {time_refl_i.strftime('%Y-%m-%d %H:%M:%S')} [deltaT = {time_diff_sec} seconds]\n     -> Make sure skyfield times and moving target times are overlapping."
                     )
-
+                        
     def show_reflections_and_target_position_at_time_i(
         self,
         time_i,
@@ -1269,6 +1268,8 @@ class MovingTargetDetection:
         handles, labels = plt.gca().get_legend_handles_labels()
         by_label = dict(zip(labels, handles, strict=False))
         ax.legend(by_label.values(), by_label.keys(), loc="upper right")
+        west, east, south, north = -10, 35, 35, 82
+        ax.set_extent([west, east, south, north], crs=ccrs.PlateCarree())
 
         if file_name is not None:
             file_path = os.path.join(Constants.output_folder_path, file_name)
