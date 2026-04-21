@@ -221,11 +221,21 @@ def initialize(config_file_name="Configuration.ini"):
     except KeyError:
         raise KeyError("The 'gnss_tle_files' key is missing in the 'GNSS CONSTELLATIONS' section of the configuration file.") # noqa: B904
 
+
+
+    # --- [REFLECTION] (NEW SECTION) ---
+    # We read the reflection type here to pass it to MovingTargetDetection later
+    reflection_type = "specular"  # Default fallback
+    if "REFLECTION" in config:
+        reflection_type = config["REFLECTION"].get("reflection_type", "specular").strip('"').strip("'")
+
+
     simulation_settings = {
         #[SIMULATION SETTINGS]
         "start_time": start_time_dt,
         "step_size": step_size,
         "sim_duration": sim_duration,
+        "reflection_type": reflection_type,
         #[ORBITS]
         "orbits": orbits_input,
         "No_satellites": len(orbits_input),

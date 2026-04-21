@@ -24,6 +24,7 @@ from tqdm import tqdm
 import functions.functions as fn
 from object_definitions.Constants_def import Constants
 from object_definitions.Reflection_def import Reflection
+from object_definitions.BackScattPoint_def import BRP as Backscatter
 from object_definitions.ShipTrajectory_def import ShipTrajectory
 
 
@@ -32,11 +33,12 @@ class MovingTargetDetection:
         self,
         sat_const,
         gnss_const,
-        moving_target_object,
+        moving_target_object,        
         antenna_obj,
         create_shapefile_for_visualization=False,
         deltaT=60,
         earth_model="spherical",
+        reflection_mode="specular",  # <--- add this argument
     ) -> None:
         """
         =========================================================================================================
@@ -83,6 +85,7 @@ class MovingTargetDetection:
 
         self.deltaT_sec = deltaT  # Time tolerance in seconds for matching reflection points to moving target positions (default: 60 seconds) | This should match the time step of the simulation
         self.earth_model = earth_model  # Earth model to use for the reflection calculation (default: 'spherical')
+        self.reflection_mode = reflection_mode  # Either Specular reflection, or backscattering calculation
         self.initialization()
 
     def initialization(self) -> None:
@@ -244,16 +247,26 @@ class MovingTargetDetection:
                             # Update progress bar description (only every 5th iteration)
                             pbar.set_description(f"GNSS-R Sat-{sat_no + 1} with {gnss_name} [{i}/{len(gnss_const.satellites)}]")
 
-                        # Perform the reflection calculation
-                        reflection = Reflection(
-                            sat_tx.satID,
-                            sat_rx.satID,
-                            earth_model=self.earth_model,
-                            angle=45, # Reflections "shallower" than 45 degrees are ignored
-                            gnss_const=gnss_name,
-                        )
-                        reflection.compute_reflection_coordinates(sat_tx, sat_rx, times_refl_array)
-                        reflections_vec.append(reflection)
+                        if self.reflection_mode == "specular":
+                            reflection = Reflection(
+                                sat_tx.satID,
+                                sat_rx.satID,
+                                earth_model=self.earth_model,
+                                angle=45,
+                                gnss_const=gnss_name,
+                            )
+                            reflection.compute_reflection_coordinates(sat_tx, sat_rx, times_refl_array)
+                            reflections_vec.append(reflection)
+                        elif self.reflection_mode == "backscatter":
+                            reflection = Backscatter(
+                                sat_tx.satID,
+                                sat_rx.satID,
+                                earth_model=self.earth_model,
+                                cutoff_angle=45,
+                                gnss_const=gnss_name,
+                            )
+                            reflection.compute_brp_coordinates(sat_tx, sat_rx, times_refl_array)
+                            reflections_vec.append(reflection)
 
                         # Update progress bar after each reflection calculation
                         pbar.update(1)
@@ -397,14 +410,16 @@ class MovingTargetDetection:
                                 if footprint_reflection.intersects(pos_tgt_i):
                                     # Moving Target could be detected! Initialize the moving target detection structure
                                     possible_target_detection = MovingTargetDetectionStruct()
-
-                                    possible_target_detection.position_ecef = refl_obj.refl_ECI_vec[reflection_index]
+                                    possible_target_detection.position_eci = refl_obj.refl_ECI_vec[reflection_index]
                                     possible_target_detection.position_ll = refl_obj.refl_LL_vec[reflection_index]
                                     possible_target_detection.time = time_tgt_i
                                     possible_target_detection.footprint_shape = footprint_reflection
                                     possible_target_detection.spec_refl_point = spec_refl_point  # Specular reflection point
                                     possible_target_detection.refl_obj = refl_obj
                                     possible_target_detection.frequency = freq
+                                    possible_target_detection.pos_tgt_i = pos_tgt_i
+                                    possible_target_detection.tx_satID = refl_obj.tx_satID
+                                    possible_target_detection.rx_satID = refl_obj.rx_satID
 
                                     # Append the possible target detection to the target detection list
                                     self.target_detect_dict[gnss_name].append(possible_target_detection)
@@ -413,7 +428,7 @@ class MovingTargetDetection:
                     tqdm.write(
                         f"WARNING: No matching time found for target time {time_tgt_i.strftime('%Y-%m-%d %H:%M:%S')} for the {gnss_name} constellation\n     Closest time is {time_refl_i.strftime('%Y-%m-%d %H:%M:%S')} [deltaT = {time_diff_sec} seconds]\n     -> Make sure skyfield times and moving target times are overlapping."
                     )
-                        
+
     def show_reflections_and_target_position_at_time_i(
         self,
         time_i,
@@ -720,7 +735,7 @@ class MovingTargetDetection:
         # Create a bounding box tuple (min_lon, max_lon, min_lat, max_lat)
         return (min_lon, max_lon, min_lat, max_lat)
 
-    def _reflection_point_footprint(self, refl_obj: Reflection, i: int, frequency: float, verbose: bool = False) -> Polygon:
+    def _reflection_point_footprint(self, refl_obj: Reflection | Backscatter, i: int, frequency: float, verbose: bool = False) -> Polygon:
         """
         Create a circle around a given point with a specified radius in meters.
         """
@@ -1281,9 +1296,9 @@ class MovingTargetDetection:
 
 @dataclass
 class MovingTargetDetectionStruct:
-    position_ecef: np.ndarray = field(default_factory=lambda: np.full(3, np.nan, dtype=np.float32))
+    position_eci: np.ndarray = field(default_factory=lambda: np.full(3, np.nan, dtype=np.float32))
     position_ll: np.ndarray = field(default_factory=lambda: np.full(2, np.nan, dtype=np.float32))
     time: dt = None
     footprint_shape: float = np.nan
-    refl: Reflection = None  # Reference to the reflection object that caused the detection
+    refl_obj: Reflection | Backscatter = None  # Reference to the reflection object that caused the detection
     frequency: float = np.nan

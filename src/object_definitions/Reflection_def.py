@@ -99,11 +99,11 @@ class Reflection:
         # Loop through satellite positions with valid LOS to compute reflection points
         for i in np.where(valid_indices)[0]:
             if self.earth_model == "elliptical":
-                specular_point_ecef, theta_degrees2, theta_degrees3 = self.find_specular_point_ellipse(
+                specular_point_eci, theta_degrees2, theta_degrees3 = self.find_specular_point_ellipse(
                     GNSS_state.positions_eci[:, i], Sat_state.positions_eci[:, i]
                 )
                 theta_vec[i, :] = [theta_degrees2, theta_degrees3, theta[i]]
-                specular_point_vec[i, :] = specular_point_ecef
+                specular_point_vec[i, :] = specular_point_eci
             elif self.earth_model == "spherical":
                 reflection_point, theta_2_circ, theta_3_circ = self.get_reflection_point_ff(GNSS_state.positions_eci[:, i], Sat_state.positions_eci[:, i])
                 theta_vec[i, :] = [theta_2_circ, theta_3_circ, theta[i]]
@@ -169,7 +169,7 @@ class Reflection:
                 return np.array([np.nan, np.nan, np.nan]), np.nan, np.nan
 
         # Get rotation matrix
-        Rot = self.get_rotation_ecef_to_plane_coords(satCoord, GPSCoord)
+        Rot = self.get_rotation_3D_to_plane_coords(satCoord, GPSCoord)
 
         # Rotate satellite and GPS coordinates
         satCoord1 = Rot @ satCoord
@@ -181,7 +181,7 @@ class Reflection:
         # Transform reflection point to 3D (z = 0)
         N = np.array([N[0], N[1], 0])
 
-        # Convert reflection point back to ECEF coordinates
+        # Convert reflection point back to ECEF/ECI coordinates
         ReflectionPoint = Rot.T @ N
 
         # Calculate angles between vectors
@@ -194,9 +194,9 @@ class Reflection:
 
         return ReflectionPoint, theta_degrees2, theta_degrees3
 
-    def find_specular_point_ellipse(self, Tx_ecef, Rx_ecef):
+    def find_specular_point_ellipse(self, Tx_eci, Rx_eci):
         # Check if transmitting and receiving satellites have a clear line of sight (if so there is no LOS => no reflection)
-        if not self._check_los_satellites(Rx_ecef, Tx_ecef):
+        if not self._check_los_satellites(Rx_eci, Tx_eci):
             # No line of sight, return NaN values
             return np.array([np.nan, np.nan, np.nan]), np.nan, np.nan
 
@@ -215,8 +215,8 @@ class Reflection:
             Both angles measured from the surface normal.
             """
             S = np.array(S)
-            tx_to_S = S - Tx_ecef  # Vector from the transmitting satellite to the specular point
-            S_to_rx = Rx_ecef - S  # Vector from the specular point to the receiving satellite
+            tx_to_S = S - Tx_eci  # Vector from the transmitting satellite to the specular point
+            S_to_rx = Rx_eci - S  # Vector from the specular point to the receiving satellite
 
             # Normalize the vectors
             tx_to_S = tx_to_S / np.linalg.norm(tx_to_S)
@@ -246,23 +246,23 @@ class Reflection:
 
         # Initial guess for the specular point from "get_reflection_point_FF"
         try:
-            spec_init_guess_ecef, _, _ = self.get_reflection_point_ff(Tx_ecef, Rx_ecef)
+            spec_init_guess_eci, _, _ = self.get_reflection_point_ff(Tx_eci, Rx_eci)
 
-            if np.any(np.isnan(spec_init_guess_ecef)):
+            if np.any(np.isnan(spec_init_guess_eci)):
                 # If the initial guess is NaN, return NaN values
-                spec_init_guess_ecef = (Tx_ecef + Rx_ecef) / 2  # Use midpoint as fallback
+                spec_init_guess_eci = (Tx_eci + Rx_eci) / 2  # Use midpoint as fallback
         except Exception:
             # Use fallback method if the initial guess fails
-            spec_init_guess_ecef = (Tx_ecef + Rx_ecef) / 2  # Use midpoint as fallback
+            spec_init_guess_eci = (Tx_eci + Rx_eci) / 2  # Use midpoint as fallback
 
         # Ensure the initial guess is on the ellipsoid
-        scale = 1.0 / np.sqrt((spec_init_guess_ecef[0] / a) ** 2 + (spec_init_guess_ecef[1] / a) ** 2 + (spec_init_guess_ecef[2] / b) ** 2)
-        spec_init_guess_ecef = scale * spec_init_guess_ecef
+        scale = 1.0 / np.sqrt((spec_init_guess_eci[0] / a) ** 2 + (spec_init_guess_eci[1] / a) ** 2 + (spec_init_guess_eci[2] / b) ** 2)
+        spec_init_guess_eci = scale * spec_init_guess_eci
 
         # Run optimization to find the specular point
         result = minimize(
             objective_function,
-            spec_init_guess_ecef,
+            spec_init_guess_eci,
             constraints={"type": "eq", "fun": ellipsoid_constraint},
             method="SLSQP",
             options={"ftol": 1e-14, "maxiter": 200, "disp": False},
@@ -281,9 +281,9 @@ class Reflection:
         S = scale * S
 
         # Recompute the incident/reflected angles with respect to the true normal
-        v_in = S - Tx_ecef
+        v_in = S - Tx_eci
         v_in /= np.linalg.norm(v_in)
-        v_out = Rx_ecef - S
+        v_out = Rx_eci - S
         v_out /= np.linalg.norm(v_out)
 
         Nx = 2 * S[0] / (a**2)
@@ -299,8 +299,8 @@ class Reflection:
 
         return S, theta_degrees2, theta_degrees3
 
-    def get_rotation_ecef_to_plane_coords(self, satCoord, GPSCoord):
-        # Calculate the rotation matrix to transform from ECEF to plane coordinates
+    def get_rotation_3D_to_plane_coords(self, satCoord, GPSCoord):
+        # Calculate the rotation matrix to transform from 3D coordinates to plane coordinates
         plane = np.cross(satCoord.flatten(), GPSCoord.flatten())
         plane = plane / np.linalg.norm(plane)
         z = np.array([0, 0, 1])
