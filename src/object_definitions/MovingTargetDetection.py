@@ -1147,8 +1147,8 @@ class MovingTargetDetection:
             print(f"Error clipping polygon: {e}")
             return Polygon()
 
-    def show_track_and_detection_points(self, gnss_constellation=None, file_name=None, show_figure=False, 
-                                       delta_lon=0.5, delta_lat=0.5, verbose=False) -> None:
+    def show_track_and_detection_points(self, gnss_constellation=None, file_name=None, show_figure=False,
+                                       delta_lon=0.5, delta_lat=0.5, verbose=False, label_detections=False) -> None:
         """
         Plot the detection points for each GNSS constellation.
         Filters out problematic polygons that cause horizontal lines.
@@ -1159,6 +1159,7 @@ class MovingTargetDetection:
             show_figure: Whether to display the plot
             delta_lon: Buffer to add to longitude bounds (degrees)
             delta_lat: Buffer to add to latitude bounds (degrees)
+            label_detections: If True, annotate each detection with "<GNSS> sat-ID <tx>, GNSS-R sat. <rx>".
         """
         # Calculate plot bounds once (with buffer for better visualization)
         min_lon, max_lon, min_lat, max_lat = self.bounding_box
@@ -1265,9 +1266,9 @@ class MovingTargetDetection:
                         if not success and verbose:
                             print(f"Skipped invalid footprint for {gnss_name}[{idx}]")
 
-                            plotted_count += 1
+                        plotted_count += 1
 
-                            # Add text label for the detection point
+                        if label_detections:
                             ax.text(
                                 pos_ll[1],  # longitude
                                 pos_ll[0],  # latitude

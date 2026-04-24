@@ -9,6 +9,17 @@ from datetime import datetime, timezone
 import json as json
 import os
 import re
+import warnings
+
+# Cartopy passes reflection arrays containing NaN gaps through pyproj; pyproj
+# wraps those entries as masked and then warns on the round-trip back to NaN.
+# The plot output is correct (NaNs become line breaks), so silence the noise.
+warnings.filterwarnings(
+    "ignore",
+    message="Warning: converting a masked element to nan.",
+    category=UserWarning,
+    module=r"pyproj\.transformer",
+)
 
 # import numpy              as np
 # import xmltodict          as xd

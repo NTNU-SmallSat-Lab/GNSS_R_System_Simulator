@@ -3,7 +3,6 @@ import math
 
 from matplotlib import pyplot as plt
 import numpy as np
-from scipy.interpolate import splev, splprep
 
 from object_definitions.Constants_def import Constants
 
@@ -76,7 +75,7 @@ class RxAntenna:
             if frequency not in self.frequencies_radi_pattern:
                 self.frequencies_radi_pattern.append(frequency)
             if elevation not in self.steering_elevation:
-                self.steering_elevation.append(elevation)
+                self.steering_elevation.append(elevation) 
             if azimuth not in self.steering_azimuth:
                 self.steering_azimuth.append(azimuth)
         self.polarizations = settings.get("polarizations") # Antenna polarizations (e.g., ["LHCP", "RHCP"])
