@@ -204,8 +204,9 @@ class Reflection:
 
     def get_reflection_point_ff(self, gnssPos, satPos):
         """
-        This function calculates the reflection point between a satellite and a GNSS satellite position
-        (Same method as in FreeFlyer) for an spherical earth.
+        Calculate the reflection point between a satellite and a GNSS satellite position
+        for a spherical Earth, using the same method as in FreeFlyer (the `_ff` suffix
+        denotes FreeFlyer).
         """
         # Convert positions to column vectors
         satCoord = np.array(satPos).reshape(-1, 1)

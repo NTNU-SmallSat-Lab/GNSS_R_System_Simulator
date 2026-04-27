@@ -14,7 +14,7 @@ from object_definitions.Static_classes_def import Plotting
 #############################################################################################################################
 ##################################################### - MAIN FUNCTION - #####################################################
 #############################################################################################################################
-def main_calculate_coverage_norwegian_coast(sim_settings):
+def run_area_coverage_simulation(sim_settings):
     """
     Run satellite simulation to calculate the coverage of GNSS-R satellites over the Norwegian coast.
     This function initializes the simulation, propagates orbits, calculates reflection points,
@@ -104,4 +104,4 @@ def main_calculate_coverage_norwegian_coast(sim_settings):
 
 if __name__ == "__main__":
     config, settings = initialize("Configuration_area.ini")
-    main_calculate_coverage_norwegian_coast(settings)
+    run_area_coverage_simulation(settings)

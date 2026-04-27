@@ -14,7 +14,7 @@ from object_definitions.Static_classes_def import Plotting
 # Force non-interactive backend for server/headless environments
 matplotlib.use("Agg", force=True)
 
-def skagerrak_to_barents_sea(settings: dict):
+def run_moving_target_detection(settings: dict):
     """
     Calculates the probability of detecting a ship traveling from point A to B
     using GNSS-R LEO satellites.
@@ -106,4 +106,4 @@ def skagerrak_to_barents_sea(settings: dict):
 if __name__ == "__main__":
     # Initialize returns both config (raw) and settings (processed)
     _, simulation_settings = initialize("Configuration_ship.ini")
-    skagerrak_to_barents_sea(simulation_settings)
+    run_moving_target_detection(simulation_settings)

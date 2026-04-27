@@ -83,7 +83,7 @@ The simulator allows currently two kind of analysis:
  - This analysis allows to determine the possible intersection points of a moving target.
  - A start and endposition are defined 
  
- ### main_simulaton_areaCoverage.py
+ ### main_simulation_areaCoverage.py
 
 This is used to analyse the coverage of a certain area with a given satellite constellation.
 
@@ -125,7 +125,7 @@ gnss_tle_files = [GPS_operational.tle, GALILEO.tle] <br>
 
 
 
-### main_simulaton_movingTarget.py
+### main_simulation_movingTarget.py
 
 #### Minimal example configuration file for area-coverage analysis (configuration.ini)
 [SIMULATION SETTINGS]

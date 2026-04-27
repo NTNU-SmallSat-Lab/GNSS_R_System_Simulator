@@ -210,9 +210,9 @@ class ShipTrajectory:
             self.ocean_polygons = None
             return False
 
-    def _calculate_havresin_distance(self, pos1: tuple, pos2: tuple) -> float:
+    def _calculate_haversine_distance(self, pos1: tuple, pos2: tuple) -> float:
         """
-        Calculate the havresin distance between two points in meter.
+        Calculate the haversine distance between two points in meter.
 
         INPUT:
             pos1 (tuple): First position (latitude, longitude)
@@ -426,7 +426,7 @@ class ShipTrajectory:
         if not self.intersects_land(start_safe, end_safe):
             print("Direct path possible - no land obstacles")
             self.waypoints = [start_safe, end_safe]
-            self.route_distance = self._calculate_havresin_distance(start_safe, end_safe)
+            self.route_distance = self._calculate_haversine_distance(start_safe, end_safe)
             return
 
         print("Planning route to avoid land")
@@ -496,7 +496,7 @@ class ShipTrajectory:
             # Calculate total route distance
             total_distance = 0
             for i in range(len(simplified_waypoints) - 1):
-                total_distance += self._calculate_havresin_distance(simplified_waypoints[i], simplified_waypoints[i + 1])
+                total_distance += self._calculate_haversine_distance(simplified_waypoints[i], simplified_waypoints[i + 1])
 
             self.waypoints = simplified_waypoints
             self.route_distance = total_distance
@@ -608,7 +608,7 @@ class ShipTrajectory:
                     p2 = all_points[p2_idx]
 
                     # Calculate distance
-                    dist = self._calculate_havresin_distance(p1, p2)
+                    dist = self._calculate_haversine_distance(p1, p2)
 
                     # Check if this connection crosses land
                     if not self.intersects_land(p1, p2):
@@ -661,7 +661,7 @@ class ShipTrajectory:
                     for point in valid_points:
                         point_id = f"{point[0]:.4f}_{point[1]:.4f}"
                         if point_id != mid_id:
-                            mid_dist = self._calculate_havresin_distance(midpoint, point)
+                            mid_dist = self._calculate_haversine_distance(midpoint, point)
                             if mid_dist < self.grid_resolution and not self.intersects_land(midpoint, point):
                                 G.add_edge(mid_id, point_id, weight=mid_dist)
 
@@ -715,7 +715,7 @@ class ShipTrajectory:
                 point = valid_points[idx]
                 point_id = point_ids[point]
 
-                dist_to_start = self._calculate_havresin_distance(start_pos, point)  # Fixed: was using end_pos
+                dist_to_start = self._calculate_haversine_distance(start_pos, point)  # Fixed: was using end_pos
                 if dist_to_start < self.mesh_connection_radius and not self.intersects_land(start_pos, point):
                     G.add_edge("start", point_id, weight=dist_to_start)  # Fixed: was using "end"
                     start_connections += 1
@@ -725,7 +725,7 @@ class ShipTrajectory:
                 point = valid_points[idx]
                 point_id = point_ids[point]
 
-                dist_to_end = self._calculate_havresin_distance(end_pos, point)
+                dist_to_end = self._calculate_haversine_distance(end_pos, point)
                 if dist_to_end < self.mesh_connection_radius and not self.intersects_land(end_pos, point):
                     G.add_edge(point_id, "end", weight=dist_to_end)
                     end_connections += 1
@@ -738,7 +738,7 @@ class ShipTrajectory:
             for i in range(len(indices)):
                 point = valid_points[indices[i]]
                 if not self.intersects_land(start_pos, point):
-                    dist = self._calculate_havresin_distance(start_pos, point)
+                    dist = self._calculate_haversine_distance(start_pos, point)
                     point_id = point_ids[point]
                     G.add_edge("start", point_id, weight=dist)
                     print(f"Added edge from start to a point at distance {1e-3 * dist:.2f} km")
@@ -751,7 +751,7 @@ class ShipTrajectory:
             for i in range(len(indices)):
                 point = valid_points[indices[i]]
                 if not self.intersects_land(end_pos, point):
-                    dist = self._calculate_havresin_distance(end_pos, point)
+                    dist = self._calculate_haversine_distance(end_pos, point)
                     point_id = point_ids[point]
                     G.add_edge(point_id, "end", weight=dist)
                     print(f"Added edge from end to point at distance {1e-3 * dist:.2f} km")
@@ -772,7 +772,7 @@ class ShipTrajectory:
             for end_node in connected_to_end:
                 end_position = G.nodes[end_node]["pos"]
 
-                dist = self._calculate_havresin_distance(start_position, end_position)
+                dist = self._calculate_haversine_distance(start_position, end_position)
                 if dist < self.mesh_connection_radius and not self.intersects_land(start_position, end_position):
                     priority_edges.append((start_node, end_node, {"weight": dist}))
 
@@ -897,7 +897,7 @@ class ShipTrajectory:
         elif not self.waypoints:
             # Direct route if no land data
             self.waypoints = [self.start_position, self.end_position]
-            self.route_distance = self._calculate_havresin_distance(self.start_position, self.end_position)
+            self.route_distance = self._calculate_haversine_distance(self.start_position, self.end_position)
 
         # Calculate total route distance and time
         total_time = (self.end_time - self.start_time).total_seconds()
@@ -977,7 +977,7 @@ class ShipTrajectory:
         elif not self.waypoints:
             # Direct route if no land data
             self.waypoints = [self.start_position, self.end_position]
-            self.route_distance = self._calculate_havresin_distance(self.start_position, self.end_position)
+            self.route_distance = self._calculate_haversine_distance(self.start_position, self.end_position)
 
         if self.interval_minutes == 0:
             print("Warning: interval_minutes must be positive. Using default value of 10 minutes.")

@@ -71,9 +71,9 @@ class Coverage:
         else:
             self.earth_model = earth_model
 
-        self.intialize_coverage(overwrite_shapefile)
+        self.initialize_coverage(overwrite_shapefile)
 
-    def intialize_coverage(self, overwrite_shapefile) -> None:
+    def initialize_coverage(self, overwrite_shapefile) -> None:
         #############################
         # Loading "Gridded Shapefile"
         #############################
