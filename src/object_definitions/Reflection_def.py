@@ -156,8 +156,12 @@ class Reflection:
             if finite_mask.any():
                 incidence_deg[i] = float(np.mean(angle_candidates[finite_mask]))
 
-        rx_gain_dbi = np.full(num_positions, np.nan, dtype=float)
-        if antenna is not None:
+        # No antenna pattern → assume isotropic (0 dBi). Otherwise NaN gains
+        # (e.g. reflection outside FOV) propagate to NaN power.
+        if antenna is None:
+            rx_gain_dbi = np.zeros(num_positions, dtype=float)
+        else:
+            rx_gain_dbi = np.full(num_positions, np.nan, dtype=float)
             freq_mhz = float(frequency_hz) / 1e6
             for i in range(num_positions):
                 if not np.isfinite(distance_R_m[i]) or not np.isfinite(distance_T_m[i]):

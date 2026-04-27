@@ -92,7 +92,6 @@ def initialize(config_file_name="Configuration.ini"):
         ocean_sigma_slope_db_per_deg = linear incidence-angle slope [dB/deg]
         ocean_sigma_floor_db         = lower bound on effective sigma0 [dB]
         fresnel_rcs_scale            = scalar multiplier on Fresnel-area RCS [-]
-        fallback_rx_gain_dbi         = fallback gain when direction lookup fails [dBi]
 
         Note: The current ocean model uses sigma = sigma0(theta_i) * A_fresnel.
               `ocean_sigma*` parameters are effective calibration terms in this
@@ -265,7 +264,6 @@ def initialize(config_file_name="Configuration.ini"):
         "ocean_sigma_slope_db_per_deg": 0.25,
         "ocean_sigma_floor_db": -45.0,
         "fresnel_rcs_scale": 1.0,
-        "fallback_rx_gain_dbi": 0.0,
     }
     if "LINK BUDGET" in config:
         section = config["LINK BUDGET"]

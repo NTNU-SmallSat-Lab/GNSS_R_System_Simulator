@@ -31,7 +31,6 @@ class BistaticLinkBudgetSettings:
     ocean_sigma_slope_db_per_deg: float = 0.25
     ocean_sigma_floor_db: float = -45.0
     fresnel_rcs_scale: float = 1.0
-    fallback_rx_gain_dbi: float = 0.0
 
 
 def coerce_link_budget_settings(settings: dict | BistaticLinkBudgetSettings | None) -> BistaticLinkBudgetSettings:
@@ -233,7 +232,6 @@ def compute_bistatic_link_budget(
     if np.any(valid_bistatic):
         bistatic_spreading_loss_db[valid_bistatic] = fspl_sum_db[valid_bistatic] - 10.0 * np.log10((4.0 * np.pi) / (wavelength_m**2))
 
-    rx_gain_dbi = np.where(np.isfinite(rx_gain_dbi), rx_gain_dbi, settings_obj.fallback_rx_gain_dbi)
     sigma0_db, fresnel_area_m2, rcs_m2 = compute_simple_ocean_rcs(range_tx_m, range_rx_m, incidence_deg, wavelength_m, settings_obj)
 
     total_losses_lin = _linear_from_db(settings_obj.system_losses_db + settings_obj.polarization_losses_db)
