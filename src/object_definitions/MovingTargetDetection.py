@@ -39,6 +39,7 @@ class MovingTargetDetection:
         deltaT=60,
         earth_model="spherical",
         reflection_mode="specular",  # <--- add this argument
+        link_budget_settings=None,
     ) -> None:
         """
         =========================================================================================================
@@ -86,6 +87,11 @@ class MovingTargetDetection:
         self.deltaT_sec = deltaT  # Time tolerance in seconds for matching reflection points to moving target positions (default: 60 seconds) | This should match the time step of the simulation
         self.earth_model = earth_model  # Earth model to use for the reflection calculation (default: 'spherical')
         self.reflection_mode = reflection_mode  # Either Specular reflection, or backscattering calculation
+        self.link_budget_settings = link_budget_settings
+        if self.sat_antenna is not None and hasattr(self.sat_antenna, "frequencies") and self.sat_antenna.frequencies:
+            self.link_budget_frequency_hz = float(self.sat_antenna.frequencies[0]) * 1e6
+        else:
+            self.link_budget_frequency_hz = Constants.BANDS_CENTER_FREQUENCIES_Hz["L1"]
         self.initialization()
 
     def initialization(self) -> None:
@@ -255,7 +261,14 @@ class MovingTargetDetection:
                                 angle=45,
                                 gnss_const=gnss_name,
                             )
-                            reflection.compute_reflection_coordinates(sat_tx, sat_rx, times_refl_array)
+                            reflection.compute_reflection_coordinates(
+                                sat_tx,
+                                sat_rx,
+                                times_refl_array,
+                                antenna=self.sat_antenna,
+                                frequency_hz=self.link_budget_frequency_hz,
+                                link_budget_settings=self.link_budget_settings,
+                            )
                             reflections_vec.append(reflection)
                         elif self.reflection_mode == "backscatter":
                             reflection = Backscatter(
@@ -265,7 +278,14 @@ class MovingTargetDetection:
                                 cutoff_angle=45,
                                 gnss_const=gnss_name,
                             )
-                            reflection.compute_brp_coordinates(sat_tx, sat_rx, times_refl_array)
+                            reflection.compute_brp_coordinates(
+                                sat_tx,
+                                sat_rx,
+                                times_refl_array,
+                                antenna=self.sat_antenna,
+                                frequency_hz=self.link_budget_frequency_hz,
+                                link_budget_settings=self.link_budget_settings,
+                            )
                             reflections_vec.append(reflection)
 
                         # Update progress bar after each reflection calculation

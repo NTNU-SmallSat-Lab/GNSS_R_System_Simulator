@@ -72,6 +72,7 @@ def skagerrak_to_barents_sea(settings: dict):
         deltaT=step_size,
         earth_model=earth_model,
         reflection_mode=settings["reflection_type"],
+        link_budget_settings=settings.get("link_budget"),
     )
 
     # Optimize: only compute and propagate for visible windows

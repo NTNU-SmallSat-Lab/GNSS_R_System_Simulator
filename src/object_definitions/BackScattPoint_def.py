@@ -6,6 +6,7 @@ from astropy.coordinates import CartesianRepresentation, GCRS, ITRS, SkyCoord
 import datetime
 
 import functions.functions as fn
+import functions.link_budget as lb
 from object_definitions.Constants_def import Constants
 from object_definitions.Satellite_def import Satellite
 from object_definitions.Rx_antenna_def import RxAntenna
@@ -41,8 +42,24 @@ class BRP:
         self.gnss_vel_vec = []
         self.sat_pos_vec = []
         self.sat_vel_vec = []
+        self.power_proxy = []
+        self.link_budget = {}
 
-    def compute_brp_coordinates(self, GNSS_state: Satellite, Sat_state: Satellite, times):
+    def compute_brp_coordinates(
+        self,
+        GNSS_state: Satellite,
+        Sat_state: Satellite,
+        times,
+        antenna: RxAntenna | None = None,
+        frequency_hz: float | None = None,
+        link_budget_settings: dict | lb.BistaticLinkBudgetSettings | None = None,
+        q_sat: np.ndarray | None = None,
+    ):
+        settings = lb.coerce_link_budget_settings(link_budget_settings)
+        if frequency_hz is None:
+            frequency_hz = Constants.BANDS_CENTER_FREQUENCIES_Hz["L1"]
+        if q_sat is None:
+            q_sat = np.array([1.0, 0.0, 0.0, 0.0], dtype=float)
 
         # --- Convert ECI → ECEF first
         T_ecef_all = eci_gcrs_to_ecef(GNSS_state.positions_eci.T, times)
@@ -94,9 +111,39 @@ class BRP:
 
             brp_LL_vec[valid_brp_idx] = np.column_stack((lat_list, lon_list))
 
-        distance_R = np.linalg.norm((brp_ECI_vec - Sat_state.positions_eci.T) * 1e-3, axis=1)
-        distance_T = np.linalg.norm((brp_ECI_vec - GNSS_state.positions_eci.T) * 1e-3, axis=1)
-        power = 1 / (distance_R**2 * distance_T**2) * 1e15# --- Store times as a Python-datetime array (NO helper function!)
+        distance_R_km = np.linalg.norm((brp_ECI_vec - Sat_state.positions_eci.T) * 1e-3, axis=1)
+        distance_T_km = np.linalg.norm((brp_ECI_vec - GNSS_state.positions_eci.T) * 1e-3, axis=1)
+        power_proxy = 1 / (distance_R_km**2 * distance_T_km**2) * 1e15
+
+        distance_R_m = distance_R_km * 1e3
+        distance_T_m = distance_T_km * 1e3
+
+        rx_gain_dbi = np.full(num_positions, np.nan, dtype=float)
+        if antenna is not None:
+            freq_mhz = float(frequency_hz) / 1e6
+            for i in range(num_positions):
+                if not np.isfinite(distance_R_m[i]) or not np.isfinite(distance_T_m[i]):
+                    continue
+                if np.isnan(brp_ECI_vec[i]).any():
+                    continue
+                look_dir_a = lb.compute_rx_look_direction_antenna_frame(
+                    Sat_state.positions_eci[:, i],
+                    Sat_state.velocities_eci[:, i],
+                    brp_ECI_vec[i, :],
+                    antenna,
+                    q_sat=q_sat,
+                )
+                rx_gain_dbi[i] = antenna.get_gain_dbi_for_direction(look_dir_a, freq_mhz)
+
+        link_budget = lb.compute_bistatic_link_budget(
+            range_tx_m=distance_T_m,
+            range_rx_m=distance_R_m,
+            incidence_deg=incidence_angles,
+            rx_gain_dbi=rx_gain_dbi,
+            frequency_hz=frequency_hz,
+            settings=settings,
+        )
+        power = link_budget["received_power_w"]
 
         self.time_vec = times#np.array([t.utc_datetime() for t in times], dtype=object)
 
@@ -108,6 +155,8 @@ class BRP:
         self.gnss_vel_vec = GNSS_state.velocities_eci
         self.sat_pos_vec  = Sat_state.positions_eci
         self.sat_vel_vec  = Sat_state.velocities_eci
+        self.power_proxy = power_proxy
+        self.link_budget = link_budget
         self.power = power
 
     def _compute_footprint(self, index: int, antenna: RxAntenna, frequency: float, q_sat=np.array([1.0, 0.0, 0.0, 0.0]), earth_model="spherical") -> tuple:

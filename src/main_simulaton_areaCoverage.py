@@ -78,6 +78,7 @@ def main_calculate_coverage_norwegian_coast(sim_settings):
         sim_settings["shapefile_path"],
         grid_size_m=30_000,
         earth_model=earth,
+        link_budget_settings=sim_settings.get("link_budget"),
     )
     coverage.calculate_reflection_points_and_coverage(verbose=True)
 

@@ -240,6 +240,26 @@ def initialize(config_file_name="Configuration.ini"):
     if "REFLECTION" in config:
         reflection_type = config["REFLECTION"].get("reflection_type", "specular").strip('"').strip("'")
 
+    # --- [LINK BUDGET] (OPTIONAL SECTION) ---
+    link_budget = {
+        "tx_eirp_dbw": 27.0,
+        "system_losses_db": 2.0,
+        "polarization_losses_db": 0.5,
+        "ocean_sigma0_db": -20.0,
+        "ocean_sigma_slope_db_per_deg": 0.25,
+        "ocean_sigma_floor_db": -45.0,
+        "fresnel_rcs_scale": 1.0,
+        "fallback_rx_gain_dbi": 0.0,
+    }
+    if "LINK BUDGET" in config:
+        section = config["LINK BUDGET"]
+        for key in link_budget:
+            if key in section:
+                try:
+                    link_budget[key] = float(section[key])
+                except ValueError:
+                    raise ValueError(f"Invalid value for '{key}' in [LINK BUDGET]: {section[key]}") from None
+
 
     simulation_settings = {
         #[SIMULATION SETTINGS]
@@ -264,6 +284,8 @@ def initialize(config_file_name="Configuration.ini"):
         "polarizations": antenna_polarizations,
         "bands": antenna_bands,
         "footprint_dB": float(footprint_dB) if footprint_dB is not None else None,
+        #[LINK BUDGET]
+        "link_budget": link_budget,
     }
     return config, simulation_settings
 

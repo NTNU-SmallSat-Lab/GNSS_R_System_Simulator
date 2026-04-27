@@ -249,9 +249,11 @@ class RxAntenna:
         if refl_dir_antenna_frame.shape != (3,):
             raise ValueError("Input 'refl_dir_antenna_frame' must be a 3-element vector.")
 
+        lookup_key = self._resolve_lookup_key(frequency, azimuth_deg=np.rad2deg(azimuth), elevation_deg=np.rad2deg(elevation))
+
         # Check if the direction is the same as nadir (no rotation needed)
         if np.allclose(refl_dir_antenna_frame, nadir):
-            return self.antenna_footprint_vectors
+            return self.antenna_lookuptable[lookup_key]["vector_bundle"]
 
         # Compute rotation axis and angle
         axis = np.cross(nadir, refl_dir_antenna_frame)
@@ -273,18 +275,80 @@ class RxAntenna:
         ])
         R = np.eye(3) + np.sin(angle) * K + (1 - np.cos(angle)) * np.dot(K, K)
 
-        # Find the closest lookup key
-#        azim_deg = np.rad2deg(azimuth)
-#        elev_deg = np.rad2deg(elevation)
-#        lookup_key = min(self.antenna_lookuptable.keys(), key=lambda k: (abs(k[0]-azim_deg) + abs(k[1]-elev_deg) + abs(k[2]-frequency)))
-        # Hardcode key to use (90, 0, frequency)
-        lookup_key = (90, 0, frequency)
-
         ## DEBUG
         # delta_azim = azim_deg - lookup_key[0]
         # delta_elev = elev_deg - lookup_key[1]
         rotated_footprint_vectors = self.antenna_lookuptable[lookup_key]["vector_bundle"] @ R.T #Rotate the footprint vectors to the reflection beam coordinate system
         return rotated_footprint_vectors
+
+    @staticmethod
+    def _circular_abs_diff_deg(a: float, b: float) -> float:
+        """Absolute smallest angular difference in degrees on a circle."""
+        return abs((a - b + 180.0) % 360.0 - 180.0)
+
+    def _resolve_lookup_key(self, frequency_mhz: float, azimuth_deg: float | None = None, elevation_deg: float | None = None) -> tuple:
+        """
+        Resolve closest antenna-pattern key for the requested frequency and steering angles.
+        """
+        if not self.antenna_lookuptable:
+            raise ValueError("Antenna lookup table is empty.")
+
+        freq_target = float(frequency_mhz)
+        az_target = 90.0 if azimuth_deg is None else float(azimuth_deg)
+        el_target = 0.0 if elevation_deg is None else float(elevation_deg)
+
+        keys = list(self.antenna_lookuptable.keys())
+        return min(
+            keys,
+            key=lambda key: (
+                abs(key[2] - freq_target),
+                self._circular_abs_diff_deg(key[0], az_target),
+                abs(key[1] - el_target),
+            ),
+        )
+
+    @staticmethod
+    def _sample_radiation_pattern_db(pattern_db: np.ndarray, theta_deg: float, phi_deg: float) -> float:
+        """
+        Nearest-neighbor sample of radiation pattern at (theta, phi).
+        """
+        n_theta, n_phi = pattern_db.shape
+        theta_idx = int(np.clip(np.round(theta_deg * (n_theta - 1) / 180.0), 0, n_theta - 1))
+        phi_idx = int(np.clip(np.round((phi_deg % 360.0) * (n_phi - 1) / 360.0), 0, n_phi - 1))
+        return float(pattern_db[theta_idx, phi_idx])
+
+    def get_gain_dbi_for_direction(
+        self,
+        direction_antenna_frame: np.ndarray,
+        frequency_mhz: float,
+        azimuth_deg: float | None = None,
+        elevation_deg: float | None = None,
+    ) -> float:
+        """
+        Get absolute gain [dBi] for a given look direction in antenna coordinates.
+        """
+        direction = np.asarray(direction_antenna_frame, dtype=float)
+        if direction.shape != (3,) or not np.isfinite(direction).all():
+            return np.nan
+
+        direction_norm = np.linalg.norm(direction)
+        if direction_norm <= 0.0:
+            return np.nan
+        direction = direction / direction_norm
+
+        # If reflection is behind the antenna boresight hemisphere, return NaN.
+        if direction[2] <= 0.0:
+            return np.nan
+
+        theta_deg = float(np.degrees(np.arccos(np.clip(direction[2], -1.0, 1.0))))
+        phi_deg = float((np.degrees(np.arctan2(direction[1], direction[0])) + 360.0) % 360.0)
+
+        lookup_key = self._resolve_lookup_key(frequency_mhz, azimuth_deg=azimuth_deg, elevation_deg=elevation_deg)
+        lookup = self.antenna_lookuptable[lookup_key]
+        relative_gain_db = self._sample_radiation_pattern_db(lookup["radiation_pattern_dB"], theta_deg, phi_deg)
+
+        # Pattern is relative to peak (0 dB), so add directivity offset for absolute gain.
+        return float(lookup["directivity_dB"] + relative_gain_db)
 
     @staticmethod
     def _calculate_directivity(rad_pattern_lin_spherical, theta_rad, phi_rad, theta_mesh):

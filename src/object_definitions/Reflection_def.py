@@ -3,6 +3,7 @@ import pymap3d
 from scipy.optimize import minimize
 
 import functions.functions as fn
+import functions.link_budget as lb
 from object_definitions.Constants_def import Constants
 from object_definitions.Satellite_def import Satellite
 from object_definitions.Rx_antenna_def import RxAntenna
@@ -75,10 +76,28 @@ class Reflection:
         self.sat_pos_vec = []
         self.sat_vel_vec = []
         self.refl_ang_vec = []
+        self.power_proxy = []
+        self.link_budget = {}
 
-    def compute_reflection_coordinates(self, GNSS_state: Satellite, Sat_state: Satellite, times: np.ndarray):
+    def compute_reflection_coordinates(
+        self,
+        GNSS_state: Satellite,
+        Sat_state: Satellite,
+        times: np.ndarray,
+        antenna: RxAntenna | None = None,
+        frequency_hz: float | None = None,
+        link_budget_settings: dict | lb.BistaticLinkBudgetSettings | None = None,
+        q_sat: np.ndarray | None = None,
+    ):
         if type(times) is not np.ndarray:
             times = np.array(times, dtype="datetime64[s]")  # Ensure times is a numpy array of datetime64 objects
+
+        settings = lb.coerce_link_budget_settings(link_budget_settings)
+        if frequency_hz is None:
+            frequency_hz = Constants.BANDS_CENTER_FREQUENCIES_Hz["L1"]
+        if q_sat is None:
+            q_sat = np.array([1.0, 0.0, 0.0, 0.0], dtype=float)
+
         # Preallocate outputs for efficiency
         num_positions = Sat_state.positions_eci.shape[1]
         theta_vec = np.full((num_positions, 3), np.nan)
@@ -124,10 +143,45 @@ class Reflection:
             lons = np.nan
             lats = np.nan
 
-        distance_R = np.linalg.norm((specular_point_vec - np.transpose(Sat_state.positions_eci)) * 1e-3, axis=1)
-        distance_T = np.linalg.norm((specular_point_vec - np.transpose(GNSS_state.positions_eci)) * 1e-3, axis=1)
+        distance_R_km = np.linalg.norm((specular_point_vec - np.transpose(Sat_state.positions_eci)) * 1e-3, axis=1)
+        distance_T_km = np.linalg.norm((specular_point_vec - np.transpose(GNSS_state.positions_eci)) * 1e-3, axis=1)
+        power_proxy = 1 / (distance_R_km**2 * distance_T_km**2) * 1e15
 
-        power = 1 / (distance_R**2 * distance_T**2) * 1e15
+        distance_R_m = distance_R_km * 1e3
+        distance_T_m = distance_T_km * 1e3
+        incidence_deg = np.full(num_positions, np.nan, dtype=float)
+        for i in range(num_positions):
+            angle_candidates = theta_vec[i, :2]
+            finite_mask = np.isfinite(angle_candidates)
+            if finite_mask.any():
+                incidence_deg[i] = float(np.mean(angle_candidates[finite_mask]))
+
+        rx_gain_dbi = np.full(num_positions, np.nan, dtype=float)
+        if antenna is not None:
+            freq_mhz = float(frequency_hz) / 1e6
+            for i in range(num_positions):
+                if not np.isfinite(distance_R_m[i]) or not np.isfinite(distance_T_m[i]):
+                    continue
+                if np.isnan(specular_point_vec[i]).any():
+                    continue
+                look_dir_a = lb.compute_rx_look_direction_antenna_frame(
+                    Sat_state.positions_eci[:, i],
+                    Sat_state.velocities_eci[:, i],
+                    specular_point_vec[i, :],
+                    antenna,
+                    q_sat=q_sat,
+                )
+                rx_gain_dbi[i] = antenna.get_gain_dbi_for_direction(look_dir_a, freq_mhz)
+
+        link_budget = lb.compute_bistatic_link_budget(
+            range_tx_m=distance_T_m,
+            range_rx_m=distance_R_m,
+            incidence_deg=incidence_deg,
+            rx_gain_dbi=rx_gain_dbi,
+            frequency_hz=frequency_hz,
+            settings=settings,
+        )
+        power = link_budget["received_power_w"]
 
         # Store results in the object
         self.time_vec = times  # Time vector numpy array
@@ -144,7 +198,9 @@ class Reflection:
         self.refl_ang_vec = (
             theta_vec  # Reflection angles         ECI coordinates [deg] # TODO: Change from vector n x 3 to 3 x n (actually 2 x n) (same as sat_pos_vec)
         )
-        self.power = power  # Power of the reflection   []
+        self.power_proxy = power_proxy
+        self.link_budget = link_budget
+        self.power = power  # Received reflection power [W]
 
     def get_reflection_point_ff(self, gnssPos, satPos):
         """

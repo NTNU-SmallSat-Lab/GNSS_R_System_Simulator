@@ -30,6 +30,7 @@ class Coverage:
         grid_size_m=None,
         overwrite_shapefile=False,
         earth_model="spherical",
+        link_budget_settings=None,
     ) -> None:
         """
         =========================================================================================================
@@ -64,6 +65,7 @@ class Coverage:
 
         self.sat_constellation = sat_const  # Satellite constellation object
         self.gnss_constellation = gnss_const  # Dictionary with GNSS constellation objects
+        self.link_budget_settings = link_budget_settings
         if earth_model not in ["spherical", "elliptical"]:
             raise ValueError("earth_model must be either 'spherical' or 'elliptical'")
         else:
@@ -243,7 +245,18 @@ class Coverage:
                             angle=angle,
                             gnss_const=gnss_name,
                         )
-                        refl_gnss.compute_reflection_coordinates(gnss_sat, sat, times)
+                        antenna_obj = sat.gnss_r_antenna if hasattr(sat, "gnss_r_antenna") else None
+                        frequency_hz = None
+                        if antenna_obj is not None and hasattr(antenna_obj, "frequencies") and antenna_obj.frequencies:
+                            frequency_hz = antenna_obj.frequencies[0] * 1e6
+                        refl_gnss.compute_reflection_coordinates(
+                            gnss_sat,
+                            sat,
+                            times,
+                            antenna=antenna_obj,
+                            frequency_hz=frequency_hz,
+                            link_budget_settings=self.link_budget_settings,
+                        )
                         reflections_vec.append(refl_gnss)
 
                         # Update progress bar after each reflection calculation
