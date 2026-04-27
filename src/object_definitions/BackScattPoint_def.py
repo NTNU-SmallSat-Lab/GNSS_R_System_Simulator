@@ -42,7 +42,6 @@ class BRP:
         self.gnss_vel_vec = []
         self.sat_pos_vec = []
         self.sat_vel_vec = []
-        self.power_proxy = []
         self.link_budget = {}
 
     def compute_brp_coordinates(
@@ -113,7 +112,6 @@ class BRP:
 
         distance_R_km = np.linalg.norm((brp_ECI_vec - Sat_state.positions_eci.T) * 1e-3, axis=1)
         distance_T_km = np.linalg.norm((brp_ECI_vec - GNSS_state.positions_eci.T) * 1e-3, axis=1)
-        power_proxy = 1 / (distance_R_km**2 * distance_T_km**2) * 1e15
 
         distance_R_m = distance_R_km * 1e3
         distance_T_m = distance_T_km * 1e3
@@ -159,7 +157,6 @@ class BRP:
         self.gnss_vel_vec = GNSS_state.velocities_eci
         self.sat_pos_vec  = Sat_state.positions_eci
         self.sat_vel_vec  = Sat_state.velocities_eci
-        self.power_proxy = power_proxy
         self.link_budget = link_budget
         self.power = power
 

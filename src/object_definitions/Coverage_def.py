@@ -15,6 +15,7 @@ from shapely.geometry import LineString, Polygon
 from tqdm import tqdm
 
 import functions.functions as fn
+import functions.link_budget as lb
 from object_definitions.Constants_def import Constants
 from object_definitions.Reflection_def import Reflection
 from object_definitions.Static_classes_def import Plotting
@@ -246,9 +247,7 @@ class Coverage:
                             gnss_const=gnss_name,
                         )
                         antenna_obj = sat.gnss_r_antenna if hasattr(sat, "gnss_r_antenna") else None
-                        frequency_hz = None
-                        if antenna_obj is not None and hasattr(antenna_obj, "frequencies") and antenna_obj.frequencies:
-                            frequency_hz = antenna_obj.frequencies[0] * 1e6
+                        frequency_hz = lb.resolve_single_link_budget_frequency_hz(antenna_obj)
                         refl_gnss.compute_reflection_coordinates(
                             gnss_sat,
                             sat,

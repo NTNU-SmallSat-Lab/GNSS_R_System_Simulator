@@ -22,6 +22,7 @@ from shapely.validation import explain_validity
 from tqdm import tqdm
 
 import functions.functions as fn
+import functions.link_budget as lb
 from object_definitions.Constants_def import Constants
 from object_definitions.Reflection_def import Reflection
 from object_definitions.BackScattPoint_def import BRP as Backscatter
@@ -88,10 +89,7 @@ class MovingTargetDetection:
         self.earth_model = earth_model  # Earth model to use for the reflection calculation (default: 'spherical')
         self.reflection_mode = reflection_mode  # Either Specular reflection, or backscattering calculation
         self.link_budget_settings = link_budget_settings
-        if self.sat_antenna is not None and hasattr(self.sat_antenna, "frequencies") and self.sat_antenna.frequencies:
-            self.link_budget_frequency_hz = float(self.sat_antenna.frequencies[0]) * 1e6
-        else:
-            self.link_budget_frequency_hz = Constants.BANDS_CENTER_FREQUENCIES_Hz["L1"]
+        self.link_budget_frequency_hz = lb.resolve_single_link_budget_frequency_hz(self.sat_antenna)
         self.initialization()
 
     def initialization(self) -> None:

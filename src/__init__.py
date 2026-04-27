@@ -5,6 +5,7 @@ import datetime  # Import the module itself first
 if not hasattr(datetime, "UTC"):
     from datetime import timezone
     datetime.UTC = timezone.utc
+from dataclasses import fields
 from datetime import datetime, timezone
 import json as json
 import os
@@ -23,6 +24,7 @@ warnings.filterwarnings(
 
 # import numpy              as np
 # import xmltodict          as xd
+from functions.link_budget import BistaticLinkBudgetSettings
 from object_definitions.Constants_def import Constants
 
 ## UPDATE THE SIMULATIOR VERSION HERE ##
@@ -85,17 +87,9 @@ def initialize(config_file_name="Configuration.ini"):
         gnss_const_names = [const1, const2, ...]          (Names of the GNSS constellations, e.g., GPS, GLONASS, GALILEO, BEIDOU)
 
         [LINK BUDGET] (optional)
-        tx_eirp_dbw                  = GNSS transmitter EIRP [dBW]
-        system_losses_db             = lumped implementation losses [dB]
-        polarization_losses_db       = polarization mismatch losses [dB]
-        ocean_sigma0_db              = effective sigma0 at nadir [dB]
-        ocean_sigma_slope_db_per_deg = linear incidence-angle slope [dB/deg]
-        ocean_sigma_floor_db         = lower bound on effective sigma0 [dB]
-        fresnel_rcs_scale            = scalar multiplier on Fresnel-area RCS [-]
-
-        Note: The current ocean model uses sigma = sigma0(theta_i) * A_fresnel.
-              `ocean_sigma*` parameters are effective calibration terms in this
-              simplified model, not a full coherent/diffuse scattering model.
+        See `BistaticLinkBudgetSettings` in `functions/link_budget.py` for the
+        list of accepted keys, units and defaults. Any subset can be supplied;
+        unspecified keys fall back to the dataclass defaults.
     =========================================================================================================
     """
     config = cp.ConfigParser()
@@ -254,17 +248,8 @@ def initialize(config_file_name="Configuration.ini"):
         reflection_type = config["REFLECTION"].get("reflection_type", "specular").strip('"').strip("'")
 
     # --- [LINK BUDGET] (OPTIONAL SECTION) ---
-    # Note: `ocean_sigma*` parameters are interpreted as effective coefficients
-    # in the simplified model sigma = sigma0(theta_i) * A_fresnel * scale.
-    link_budget = {
-        "tx_eirp_dbw": 27.0,
-        "system_losses_db": 2.0,
-        "polarization_losses_db": 0.5,
-        "ocean_sigma0_db": -20.0,
-        "ocean_sigma_slope_db_per_deg": 0.25,
-        "ocean_sigma_floor_db": -45.0,
-        "fresnel_rcs_scale": 1.0,
-    }
+    # Defaults derived from BistaticLinkBudgetSettings so the two stay in sync.
+    link_budget = {f.name: f.default for f in fields(BistaticLinkBudgetSettings)}
     if "LINK BUDGET" in config:
         section = config["LINK BUDGET"]
         for key in link_budget:

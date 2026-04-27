@@ -12,14 +12,34 @@ class BistaticLinkBudgetSettings:
     """
     Configuration values for a simplified bistatic GNSS-R link budget.
 
+    This dataclass is the single source of truth for the `[LINK BUDGET]`
+    INI section: field names, defaults and units defined here are picked up
+    automatically by the configuration loader.
+
+    Parameters
+    ----------
+    tx_eirp_dbw : float
+        GNSS transmitter EIRP [dBW].
+    system_losses_db : float
+        Lumped implementation losses [dB].
+    polarization_losses_db : float
+        Polarization mismatch losses [dB].
+    ocean_sigma0_db : float
+        Effective sigma0 at nadir [dB].
+    ocean_sigma_slope_db_per_deg : float
+        Linear incidence-angle slope of sigma0 [dB/deg].
+    ocean_sigma_floor_db : float
+        Lower bound on effective sigma0 [dB].
+    fresnel_rcs_scale : float
+        Scalar multiplier on Fresnel-area RCS [-].
+
     Notes
     -----
-    - `tx_eirp_dbw` is the transmit EIRP at the GNSS satellite.
-    - Ocean RCS is modeled as:
+    - Ocean RCS is modeled as
       `sigma = sigma0(theta_i) * A_fresnel * fresnel_rcs_scale`.
-    - In this simplified model, `ocean_sigma0_*` is an effective calibration
-      term used together with Fresnel area scaling. It is not a strict
-      geophysical NRCS model split into coherent and diffuse components.
+    - `ocean_sigma*` parameters are effective calibration terms in this
+      simplified model, not a strict geophysical NRCS split into coherent
+      and diffuse components.
     - This is intentionally a first-order engineering model for rapid
       trade studies.
     """
@@ -41,6 +61,26 @@ def coerce_link_budget_settings(settings: dict | BistaticLinkBudgetSettings | No
     if isinstance(settings, dict):
         return BistaticLinkBudgetSettings(**settings)
     raise TypeError("settings must be None, dict, or BistaticLinkBudgetSettings")
+
+
+def resolve_single_link_budget_frequency_hz(antenna) -> float:
+    """
+    Resolve the carrier frequency to use for the link budget.
+
+    Multi-band support (one link budget per Rx band, across multiple GNSS
+    constellations) is planned but not yet implemented. Until then, the
+    antenna must be configured with exactly one band; this helper enforces
+    that and falls back to L1 when no antenna is provided.
+    """
+    if antenna is None or not getattr(antenna, "frequencies", None):
+        return Constants.BANDS_CENTER_FREQUENCIES_Hz["L1"]
+    if len(antenna.frequencies) > 1:
+        raise NotImplementedError(
+            f"Multi-band link budget is not yet supported "
+            f"(antenna configured for bands {antenna.bands}). "
+            "Configure exactly one band for now."
+        )
+    return float(antenna.frequencies[0]) * 1e6
 
 
 def _linear_from_db(values_db):

@@ -76,7 +76,6 @@ class Reflection:
         self.sat_pos_vec = []
         self.sat_vel_vec = []
         self.refl_ang_vec = []
-        self.power_proxy = []
         self.link_budget = {}
 
     def compute_reflection_coordinates(
@@ -145,7 +144,6 @@ class Reflection:
 
         distance_R_km = np.linalg.norm((specular_point_vec - np.transpose(Sat_state.positions_eci)) * 1e-3, axis=1)
         distance_T_km = np.linalg.norm((specular_point_vec - np.transpose(GNSS_state.positions_eci)) * 1e-3, axis=1)
-        power_proxy = 1 / (distance_R_km**2 * distance_T_km**2) * 1e15
 
         distance_R_m = distance_R_km * 1e3
         distance_T_m = distance_T_km * 1e3
@@ -202,7 +200,6 @@ class Reflection:
         self.refl_ang_vec = (
             theta_vec  # Reflection angles         ECI coordinates [deg] # TODO: Change from vector n x 3 to 3 x n (actually 2 x n) (same as sat_pos_vec)
         )
-        self.power_proxy = power_proxy
         self.link_budget = link_budget
         self.power = power  # Received reflection power [W]
 
