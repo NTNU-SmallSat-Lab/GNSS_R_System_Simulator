@@ -15,8 +15,13 @@ class BistaticLinkBudgetSettings:
     Notes
     -----
     - `tx_eirp_dbw` is the transmit EIRP at the GNSS satellite.
-    - Ocean RCS is modeled as sigma0 times a first-Fresnel-zone area.
-    - This is intentionally a simple first-order model.
+    - Ocean RCS is modeled as:
+      `sigma = sigma0(theta_i) * A_fresnel * fresnel_rcs_scale`.
+    - In this simplified model, `ocean_sigma0_*` is an effective calibration
+      term used together with Fresnel area scaling. It is not a strict
+      geophysical NRCS model split into coherent and diffuse components.
+    - This is intentionally a first-order engineering model for rapid
+      trade studies.
     """
 
     tx_eirp_dbw: float = 27.0
@@ -132,6 +137,13 @@ def compute_simple_ocean_rcs(
     The model is:
     sigma = sigma0(theta_i) * A_fresnel
     where A_fresnel is an isotropic first Fresnel-zone area approximation.
+
+    Notes
+    -----
+    - `sigma0` here is treated as an effective coefficient in the simplified
+      model above.
+    - The function does not explicitly separate coherent/specular and
+      diffuse/incoherent scattering physics.
     """
     range_tx_m = np.asarray(range_tx_m, dtype=float)
     range_rx_m = np.asarray(range_rx_m, dtype=float)
@@ -184,6 +196,11 @@ def compute_bistatic_link_budget(
     -------
     dict
         Link budget components and received power arrays.
+
+        `fspl_sum_db` is the sum of one-way FSPL terms (Tx->surface plus
+        surface->Rx).
+        `bistatic_spreading_loss_db` is the corresponding spreading term used
+        in the simplified bistatic radar equation implementation.
     """
     settings_obj = coerce_link_budget_settings(settings)
 
@@ -210,6 +227,12 @@ def compute_bistatic_link_budget(
     fspl_tx_db[valid_tx] = 20.0 * np.log10((4.0 * np.pi * range_tx_m[valid_tx]) / wavelength_m)
     fspl_rx_db[valid_rx] = 20.0 * np.log10((4.0 * np.pi * range_rx_m[valid_rx]) / wavelength_m)
 
+    fspl_sum_db = fspl_tx_db + fspl_rx_db
+    bistatic_spreading_loss_db = np.full(range_tx_m.shape, np.nan, dtype=float)
+    valid_bistatic = valid_tx & valid_rx
+    if np.any(valid_bistatic):
+        bistatic_spreading_loss_db[valid_bistatic] = fspl_sum_db[valid_bistatic] - 10.0 * np.log10((4.0 * np.pi) / (wavelength_m**2))
+
     rx_gain_dbi = np.where(np.isfinite(rx_gain_dbi), rx_gain_dbi, settings_obj.fallback_rx_gain_dbi)
     sigma0_db, fresnel_area_m2, rcs_m2 = compute_simple_ocean_rcs(range_tx_m, range_rx_m, incidence_deg, wavelength_m, settings_obj)
 
@@ -232,7 +255,8 @@ def compute_bistatic_link_budget(
         "surface_to_rx_range_m": range_rx_m,
         "fspl_tx_db": fspl_tx_db,
         "fspl_rx_db": fspl_rx_db,
-        "total_fspl_db": fspl_tx_db + fspl_rx_db,
+        "fspl_sum_db": fspl_sum_db,
+        "bistatic_spreading_loss_db": bistatic_spreading_loss_db,
         "incidence_deg": incidence_deg,
         "rx_gain_dbi": rx_gain_dbi,
         "ocean_sigma0_db": sigma0_db,

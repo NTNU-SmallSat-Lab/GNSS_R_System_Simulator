@@ -83,6 +83,20 @@ def initialize(config_file_name="Configuration.ini"):
         [GNSS CONSTELLATIONS]
         gnss_tle_files   = [file1.tle, file2.tle, ...]    (TLE files for GNSS constellations)
         gnss_const_names = [const1, const2, ...]          (Names of the GNSS constellations, e.g., GPS, GLONASS, GALILEO, BEIDOU)
+
+        [LINK BUDGET] (optional)
+        tx_eirp_dbw                  = GNSS transmitter EIRP [dBW]
+        system_losses_db             = lumped implementation losses [dB]
+        polarization_losses_db       = polarization mismatch losses [dB]
+        ocean_sigma0_db              = effective sigma0 at nadir [dB]
+        ocean_sigma_slope_db_per_deg = linear incidence-angle slope [dB/deg]
+        ocean_sigma_floor_db         = lower bound on effective sigma0 [dB]
+        fresnel_rcs_scale            = scalar multiplier on Fresnel-area RCS [-]
+        fallback_rx_gain_dbi         = fallback gain when direction lookup fails [dBi]
+
+        Note: The current ocean model uses sigma = sigma0(theta_i) * A_fresnel.
+              `ocean_sigma*` parameters are effective calibration terms in this
+              simplified model, not a full coherent/diffuse scattering model.
     =========================================================================================================
     """
     config = cp.ConfigParser()
@@ -241,6 +255,8 @@ def initialize(config_file_name="Configuration.ini"):
         reflection_type = config["REFLECTION"].get("reflection_type", "specular").strip('"').strip("'")
 
     # --- [LINK BUDGET] (OPTIONAL SECTION) ---
+    # Note: `ocean_sigma*` parameters are interpreted as effective coefficients
+    # in the simplified model sigma = sigma0(theta_i) * A_fresnel * scale.
     link_budget = {
         "tx_eirp_dbw": 27.0,
         "system_losses_db": 2.0,
