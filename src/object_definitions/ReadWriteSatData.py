@@ -1,14 +1,271 @@
 from collections import namedtuple
-import datetime  # Import the module itself first
-# ✅ Monkey patch for Python < 3.11 compatibility
-if not hasattr(datetime, "UTC"):
-    from datetime import timezone
-    datetime.UTC = timezone.utc
-from datetime import datetime, timezone, timedelta
+import datetime as datetime_module  # Import the module itself first
+from datetime import datetime, timedelta
+import math
 import os
-import re
+
+import numpy as np
+from scipy.optimize import least_squares
+from sgp4.api import WGS72, Satrec, jday
+from skyfield.api import EarthSatellite, load
+
+from object_definitions.Constants_def import Constants
 
 # import fortranformat as ff
+
+_SGP4_EPOCH_JD_OFFSET = 2433281.5
+_TIMESCALE = None
+
+
+def _get_timescale():
+    global _TIMESCALE
+    if _TIMESCALE is None:
+        _TIMESCALE = load.timescale()
+    return _TIMESCALE
+
+
+def _wrap_rad(angle):
+    return float(angle % (2.0 * np.pi))
+
+
+def _wrap_deg(angle_rad):
+    return float(np.degrees(angle_rad) % 360.0)
+
+
+def _tle_epoch_offset_days(epoch):
+    jd, fr = jday(
+        epoch.year,
+        epoch.month,
+        epoch.day,
+        epoch.hour,
+        epoch.minute,
+        epoch.second + epoch.microsecond / 1e6,
+    )
+    return jd + fr - _SGP4_EPOCH_JD_OFFSET
+
+
+def _format_tle_epoch(epoch):
+    seconds = epoch.hour * 3600 + epoch.minute * 60 + epoch.second + epoch.microsecond / 1e6
+    return f"{epoch:%y%j}" + f"{seconds / Constants.SEC_PER_DAY:.8f}"[1:]
+
+
+def _format_tle_ndot(value):
+    field = f"{float(value): .8f}"
+    return field.replace(" 0.", " .").replace("-0.", "-.")
+
+
+def _norad_id_to_tle_str(norad_id):
+    norad_id_int = int(norad_id)
+    if norad_id_int > 99999:
+        raise ValueError(f"TLE format cannot represent catalog number {norad_id_int}. Use OMM for catalog numbers above 99999.")
+    return f"{norad_id_int:05d}"
+
+
+def _mean_anomaly_to_true_anomaly(M, e):
+    E = float(M)
+    for _ in range(30):
+        E -= (E - e * np.sin(E) - M) / (1.0 - e * np.cos(E))
+    return _wrap_rad(2.0 * np.arctan2(np.sqrt(1.0 + e) * np.sin(E / 2.0), np.sqrt(1.0 - e) * np.cos(E / 2.0)))
+
+
+def _rotation_1(angle):
+    c = np.cos(angle)
+    s = np.sin(angle)
+    return np.array([[1.0, 0.0, 0.0], [0.0, c, -s], [0.0, s, c]])
+
+
+def _rotation_3(angle):
+    c = np.cos(angle)
+    s = np.sin(angle)
+    return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
+
+
+def _state_from_classical_elements(elements):
+    a = elements["a"]
+    e = elements["e"]
+    i = elements["i"]
+    raan = elements["raan"]
+    arg_perigee = elements["arg_perigee"]
+    mean_anomaly = elements["mean_anomaly"]
+
+    true_anomaly = _mean_anomaly_to_true_anomaly(mean_anomaly, e)
+    semi_latus_rectum = a * (1.0 - e**2)
+    radius_pf = semi_latus_rectum / (1.0 + e * np.cos(true_anomaly))
+    r_pf = np.array([radius_pf * np.cos(true_anomaly), radius_pf * np.sin(true_anomaly), 0.0])
+    v_pf = np.array(
+        [
+            -np.sqrt(Constants.GM_EARTH_TT / semi_latus_rectum) * np.sin(true_anomaly),
+            np.sqrt(Constants.GM_EARTH_TT / semi_latus_rectum) * (e + np.cos(true_anomaly)),
+            0.0,
+        ]
+    )
+
+    rotation = _rotation_3(raan) @ _rotation_1(i) @ _rotation_3(arg_perigee)
+    return rotation @ r_pf, rotation @ v_pf
+
+
+def _orbit_to_classical_elements(orbit):
+    return {
+        "a": float(orbit.a),
+        "e": float(orbit.e),
+        "i": np.deg2rad(float(orbit.i)),
+        "raan": np.deg2rad(float(orbit.RAAN)),
+        "arg_perigee": np.deg2rad(float(orbit.p)),
+        "mean_anomaly": np.deg2rad(float(orbit.M)),
+    }
+
+
+def _classical_to_equinoctial_solver_vars(elements):
+    e = elements["e"]
+    arg_perigee = elements["arg_perigee"]
+    mean_anomaly = elements["mean_anomaly"]
+    return np.array(
+        [
+            elements["a"],
+            elements["i"],
+            elements["raan"],
+            e * np.cos(arg_perigee),
+            e * np.sin(arg_perigee),
+            arg_perigee + mean_anomaly,
+        ],
+        dtype=float,
+    )
+
+
+def _equinoctial_solver_vars_to_classical(values):
+    a, i, raan, e_cos_argp, e_sin_argp, mean_longitude = values
+    a = max(float(a), Constants.RADIUS_EARTH_EQUAT + 1.0)
+    i = float(np.clip(i, 0.0, np.pi))
+    e = float(np.hypot(e_cos_argp, e_sin_argp))
+    e = float(np.clip(e, 0.0, 0.999999))
+    if e < 1e-12:
+        arg_perigee = 0.0
+        mean_anomaly = _wrap_rad(mean_longitude)
+    else:
+        arg_perigee = _wrap_rad(np.arctan2(e_sin_argp, e_cos_argp))
+        mean_anomaly = _wrap_rad(mean_longitude - arg_perigee)
+
+    return {
+        "a": a,
+        "e": e,
+        "i": i,
+        "raan": _wrap_rad(raan),
+        "arg_perigee": arg_perigee,
+        "mean_anomaly": mean_anomaly,
+    }
+
+
+def _skyfield_state_from_sgp4_mean_elements(elements, epoch, satnum, bstar=0.0, ndot=0.0, nddot=0.0):
+    mean_motion_rad_min = math.sqrt(Constants.GM_EARTH_TT / elements["a"] ** 3) * 60.0
+    satrec = Satrec()
+    satrec.sgp4init(
+        WGS72,
+        "i",
+        int(satnum),
+        _tle_epoch_offset_days(epoch),
+        float(bstar),
+        float(ndot),
+        float(nddot),
+        float(elements["e"]),
+        float(elements["arg_perigee"]),
+        float(elements["i"]),
+        float(elements["mean_anomaly"]),
+        mean_motion_rad_min,
+        float(elements["raan"]),
+    )
+    timescale = _get_timescale()
+    geocentric = EarthSatellite.from_satrec(satrec, timescale).at(timescale.from_datetime(epoch))
+    return geocentric.position.m, geocentric.velocity.m_per_s
+
+
+def _solve_sgp4_mean_elements_from_osculating(satellite):
+    """
+    Convert the user-specified osculating orbit to SGP4 mean elements.
+
+    A TLE stores SGP4 mean elements, not an instantaneous Keplerian state.
+    This fit chooses mean elements whose Skyfield/SGP4 state at the TLE epoch
+    matches the osculating state implied by the configuration file.
+    """
+    osculating_elements = _orbit_to_classical_elements(satellite.orbit_n)
+    target_position, target_velocity = _state_from_classical_elements(osculating_elements)
+    initial_guess = _classical_to_equinoctial_solver_vars(osculating_elements)
+    epoch = satellite.orbit_n.dt_start
+    satnum = int(satellite.satID)
+    bstar = satellite.B_star if satellite.B_star is not None else 0.0
+    ndot = satellite.meanMotion_1 if satellite.meanMotion_1 is not None else 0.0
+    nddot = satellite.meanMotion_2 if satellite.meanMotion_2 is not None else 0.0
+
+    def residual(values):
+        mean_elements = _equinoctial_solver_vars_to_classical(values)
+        position, velocity = _skyfield_state_from_sgp4_mean_elements(mean_elements, epoch, satnum, bstar=bstar, ndot=ndot, nddot=nddot)
+        return np.concatenate(((position - target_position) / 100.0, (velocity - target_velocity) / 0.1))
+
+    result = least_squares(
+        residual,
+        initial_guess,
+        x_scale=np.array([1e4, 1e-3, 1e-3, 1e-4, 1e-4, 1e-3]),
+        ftol=1e-12,
+        xtol=1e-12,
+        gtol=1e-12,
+        max_nfev=100,
+    )
+    mean_elements = _equinoctial_solver_vars_to_classical(result.x)
+
+    if not result.success:
+        print(f"Warning: SGP4 mean-element fit did not report convergence for satellite {satellite.satName}: {result.message}")
+
+    return mean_elements
+
+
+def _generate_tle_from_mean_elements(satellite, mean_elements):
+    sat_id_str = _norad_id_to_tle_str(satellite.satID)
+    classification = getattr(satellite, "classification", "U")
+    classification = classification[0].upper() if classification and classification[0].upper() in ["U", "C", "S"] else "U"
+    launch_no_year = getattr(satellite, "launch_no_year", getattr(satellite, "lauch_Noyear", 1))
+    launch_piece = getattr(satellite, "launch_piece", getattr(satellite, "lauch_piece", "A"))
+    element_set_no = satellite.element_set_no if satellite.element_set_no is not None else 1
+    ndot = satellite.meanMotion_1 if satellite.meanMotion_1 is not None else 0.0
+    nddot = satellite.meanMotion_2 if satellite.meanMotion_2 is not None else 0.0
+    bstar = satellite.B_star if satellite.B_star is not None else 0.0
+
+    line0_str = satellite.satName
+    line_no_1_str = "1"
+    int_designator_year = f"{satellite.launch_year % 100:02d}"
+    int_designator_no = f"{int(launch_no_year):03d}"
+    int_designator_piece = f"{launch_piece:<3}"[:3]
+    epoch_str = _format_tle_epoch(satellite.orbit_n.dt_start)
+    ndot_str = _format_tle_ndot(ndot)
+    nddot_str = ReadWriteSatData._str2tle_format(nddot)
+    bstar_str = ReadWriteSatData._str2tle_format(bstar)
+    ephemeris_str = "0"
+    element_set_no_str = f"{int(element_set_no):03d}"
+
+    line1_content = (
+        f"{line_no_1_str} {sat_id_str}{classification} {int_designator_year}{int_designator_no}{int_designator_piece} "
+        f"{epoch_str} {ndot_str} {nddot_str} {bstar_str} {ephemeris_str}  {element_set_no_str}"
+    )
+    checksum1 = ReadWriteSatData._calc_checksum([line1_content])
+    line1_str = f"{line1_content}{checksum1}"
+
+    line_no_2_str = "2"
+    inclination_str = f"{np.degrees(mean_elements['i']):8.4f}"
+    raan_str = f"{_wrap_deg(mean_elements['raan']):8.4f}"
+    eccentricity_tle = int(np.clip(round(mean_elements["e"] * 1e7), 0, 9999999))
+    eccentricity_str = f"{eccentricity_tle:07d}"
+    arg_perigee_str = f"{_wrap_deg(mean_elements['arg_perigee']):8.4f}"
+    mean_anomaly_str = f"{_wrap_deg(mean_elements['mean_anomaly']):8.4f}"
+    mean_motion_rev_day = math.sqrt(Constants.GM_EARTH_TT / mean_elements["a"] ** 3) * Constants.SEC_PER_DAY / (2.0 * math.pi)
+    mean_motion_str = f"{mean_motion_rev_day:11.8f}"
+    rev_str = f"{0:05d}"
+
+    line2_content = (
+        f"{line_no_2_str} {sat_id_str} {inclination_str} {raan_str} {eccentricity_str} "
+        f"{arg_perigee_str} {mean_anomaly_str} {mean_motion_str}{rev_str}"
+    )
+    checksum2 = ReadWriteSatData._calc_checksum([line2_content])
+    line2_str = f"{line2_content}{checksum2}"
+
+    return f"{line0_str}\n{line1_str}\n{line2_str}"
 
 
 class ReadWriteSatData:
@@ -29,80 +286,9 @@ class ReadWriteSatData:
             print("Warning: Epoch was not specified when this Orbit was created.\n-- Insufficient information to generate a TLE --")
             return None
 
-        balistic_coeff = satellite.meanMotion_1 if satellite.meanMotion_1 is not None else 0
-        meanMotionSecDer = satellite.meanMotion_2 if satellite.meanMotion_2 is not None else 0
-        B_star = satellite.B_star if satellite.B_star is not None else 0
-        element_set_no = satellite.element_set_no if satellite.element_set_no is not None else 1
+        mean_elements = _solve_sgp4_mean_elements_from_osculating(satellite)
 
-        # Line 0
-        line0_str = satellite.satName  # Satellite name
-
-        # Line 1
-        line_no_1_str = "1"  # Line number "1"
-        satIDStr = f"{satellite.satID:05d}"  # Sat_<n> n is satellite, resulting in "Sat_1.tle"
-        classStr = satellite.classification  # The satellite is unclassified [Can be U: Unclassified, C: Classified, S: Secret]
-        IntD_LYear = f"{satellite.launch_year % 100:02d}"  # International Designator (last two digits of launch year) COSPAR ID
-        IntD_LNo = f"{int(satellite.lauch_Noyear):03d}"  # International Designator (launch no. of the year)         COSPAR ID
-        IntD_POL = satellite.lauch_piece  # International Designator (piece of the launch)            COSPAR ID [hardcoded to 'A']
-        epochStr = satellite.orbit_n.epoch_str  # Epoch in TLE format [YYDDD.DDDDDDDD]
-        balisticCoefStr = re.sub(r"-0", "-", f"{balistic_coeff:10.8f}")  # Balistic coeffizient / First derivative of the mean motion in TLE format
-        balisticCoefStr = balisticCoefStr.replace("0.", " .") if balistic_coeff > 0 else balisticCoefStr.replace("0.", "-.")  # Remove the decimal point
-        meanMotionStr_2 = ReadWriteSatData._str2tle_format(
-            meanMotionSecDer
-        )  # Second derivative of Mean Motion (decimal point assumed) HARDCODED FOR NOW /TODO
-        b_star_str = ReadWriteSatData._str2tle_format(
-            B_star
-        )  # B* the drag term, or radiation pressure coefficient (decimal point assumed) e.g. 1.234e-8 => 12345-8 [https://en.wikipedia.org/wiki/BSTAR] TODO
-        ephemeris_str = "0"  # TODO                                                                                         # Ephemeris type (always zero; only used in undistributed TLE data) (0: unclassified, 1: classified) [hardcoded to '0']
-        elem_st_no_str = f"{element_set_no:03d}"  # Element set number. Incremented when a new TLE is generated for this object TODO
-        checksum1 = ReadWriteSatData._calc_checksum(
-            [
-                line_no_1_str,
-                satIDStr,
-                IntD_LYear,
-                IntD_LNo,
-                epochStr,
-                balisticCoefStr,
-                meanMotionStr_2,
-                b_star_str,
-                ephemeris_str,
-                elem_st_no_str,
-            ]
-        )
-        # Checksum for line 1 (modulo 10)
-
-        line1_str = f"{line_no_1_str} {satIDStr}{classStr} {IntD_LYear}{IntD_LNo}{IntD_POL}   {epochStr} {balisticCoefStr} {meanMotionStr_2} {b_star_str} {ephemeris_str} {elem_st_no_str}{checksum1}"
-
-        # Line 2
-        line_no_2_str = "2"  # Line number "2"
-        satcat_str = satIDStr  # Satellite Catalog Number (5 digits) [same as satID]
-        i_str = f"{satellite.orbit_n.i:8.4f}"  # Inclination in degrees
-        raan_str = f"{satellite.orbit_n.RAAN:8.4f}"  # Right Ascension of Ascending Node in degrees
-        eccen_str = f"{int(satellite.orbit_n.e * 1e7):07d}"  # Eccentricity  * 10^7 as decimal value / decimal point assumed
-        per_str = f"{satellite.orbit_n.p:8.4f}"  # Argument of perigee in degrees
-        mean_anom_str = f"{satellite.orbit_n.M:8.4f}"  # Mean anomaly
-        # rev_per_day     = (satellite.orbit_n.n / (2 * math.pi)) * Constants.Sec_per_day
-        mean_Mot_str = f"{satellite.orbit_n.n:11.8f}"  # Revolutions per day
-        rev_str = f"{0:05d}"  # Revolution number at epoch [hardcoded to '00000']
-        checksum2 = ReadWriteSatData._calc_checksum(
-            [
-                line_no_2_str,
-                satcat_str,
-                i_str,
-                raan_str,
-                eccen_str,
-                per_str,
-                mean_anom_str,
-                mean_Mot_str,
-                rev_str,
-            ]
-        )  # Checksum for line 2 (modulo 10)
-
-        line2_str = f"{line_no_2_str} {satcat_str} {i_str} {raan_str} {eccen_str} {per_str} {mean_anom_str} {mean_Mot_str}{rev_str}{checksum2}"
-
-        # Combine the lines to the full TLE
-        tle_str = f"{line0_str}\n{line1_str}\n{line2_str}"
-        return tle_str
+        return _generate_tle_from_mean_elements(satellite, mean_elements)
 
     @staticmethod
     def read_tle_data(tle_file_path) -> list[namedtuple]:
@@ -150,7 +336,7 @@ class ReadWriteSatData:
             tle_data = file.readlines()
         # Read TLE data line by line
         for line in tle_data:
-            if readNextSat == True:
+            if readNextSat:
                 if line.startswith("1"):
                     line_1 = line.strip()
                     # Extract satellite ID
@@ -227,7 +413,7 @@ class ReadWriteSatData:
                     revNoatEpoch_str = None
                     checksum_str1 = None
                     checksum_str2 = None
-            if readNextSat == False:
+            if not readNextSat:
                 satName = sat_name_str.strip()  # Satellite name                       [str]
                 satCatalogNumber = int(satID_1_str)
                 classification = classification_str
@@ -346,7 +532,7 @@ class ReadWriteSatData:
 
         # Calculate the datetime by adding the whole days and fractional day time
         result_datetime = start_of_year + timedelta(days=whole_day - 1) + day_time
-        result_datetime = result_datetime.replace(tzinfo=timezone.utc)
+        result_datetime = result_datetime.replace(tzinfo=datetime_module.UTC)
 
         return result_datetime
 
