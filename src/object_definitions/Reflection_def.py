@@ -101,6 +101,7 @@ class Reflection:
         num_positions = Sat_state.positions_eci.shape[1]
         theta_vec = np.full((num_positions, 3), np.nan)
         specular_point_vec = np.full((num_positions, 3), np.nan)
+        specular_point_ecef_vec = None
 
         # Calculate the angles (theta) between GPS and satellite positions
         dot_product = np.einsum("ij,ij->j", GNSS_state.positions_eci, Sat_state.positions_eci)
@@ -112,16 +113,72 @@ class Reflection:
         # Precompute line-of-sight (LOS) and valid theta indices for efficiency
         los_mask = np.array([self._check_los_satellites(Sat_state.positions_eci[:, i], GNSS_state.positions_eci[:, i]) for i in range(num_positions)])
         valid_indices = (theta < self.cutoff_angle) & los_mask
+        valid_index_array = np.where(valid_indices)[0]
 
         # Loop through satellite positions with valid LOS to compute reflection points
-        for i in np.where(valid_indices)[0]:
-            if self.earth_model == "elliptical":
-                specular_point_eci, theta_degrees2, theta_degrees3 = self.find_specular_point_ellipse(
-                    GNSS_state.positions_eci[:, i], Sat_state.positions_eci[:, i]
+        if self.earth_model == "elliptical" and valid_index_array.size > 0:
+            specular_point_ecef_vec = np.full((num_positions, 3), np.nan)
+            valid_times = times[valid_index_array]
+
+            gnss_pos_ecef = np.column_stack(
+                pymap3d.eci2ecef(
+                    GNSS_state.positions_eci[0, valid_index_array],
+                    GNSS_state.positions_eci[1, valid_index_array],
+                    GNSS_state.positions_eci[2, valid_index_array],
+                    valid_times,
+                )
+            )
+            sat_pos_ecef = np.column_stack(
+                pymap3d.eci2ecef(
+                    Sat_state.positions_eci[0, valid_index_array],
+                    Sat_state.positions_eci[1, valid_index_array],
+                    Sat_state.positions_eci[2, valid_index_array],
+                    valid_times,
+                )
+            )
+
+            specular_init_guess_ecef = np.full((valid_index_array.size, 3), np.nan)
+            specular_init_guess_eci = np.full((valid_index_array.size, 3), np.nan)
+            for local_idx, i in enumerate(valid_index_array):
+                try:
+                    spec_init_guess_eci, _, _ = self.get_reflection_point_ff(GNSS_state.positions_eci[:, i], Sat_state.positions_eci[:, i])
+                    if np.isfinite(spec_init_guess_eci).all():
+                        specular_init_guess_eci[local_idx] = spec_init_guess_eci
+                except Exception:
+                    pass
+
+            valid_init_guess = np.isfinite(specular_init_guess_eci[:, 0])
+            if valid_init_guess.any():
+                specular_init_guess_ecef[valid_init_guess, :] = np.column_stack(
+                    pymap3d.eci2ecef(
+                        specular_init_guess_eci[valid_init_guess, 0],
+                        specular_init_guess_eci[valid_init_guess, 1],
+                        specular_init_guess_eci[valid_init_guess, 2],
+                        valid_times[valid_init_guess],
+                    )
+                )
+
+            for local_idx, i in enumerate(valid_index_array):
+                specular_point_ecef, theta_degrees2, theta_degrees3 = self._find_specular_point_ellipse_ecef(
+                    gnss_pos_ecef[local_idx],
+                    sat_pos_ecef[local_idx],
+                    initial_guess_ecef=specular_init_guess_ecef[local_idx],
                 )
                 theta_vec[i, :] = [theta_degrees2, theta_degrees3, theta[i]]
-                specular_point_vec[i, :] = specular_point_eci
-            elif self.earth_model == "spherical":
+                specular_point_ecef_vec[i, :] = specular_point_ecef
+
+            valid_ecef_points = ~np.isnan(specular_point_ecef_vec[:, 0])
+            if valid_ecef_points.any():
+                specular_point_vec[valid_ecef_points, :] = np.column_stack(
+                    pymap3d.ecef2eci(
+                        specular_point_ecef_vec[valid_ecef_points, 0],
+                        specular_point_ecef_vec[valid_ecef_points, 1],
+                        specular_point_ecef_vec[valid_ecef_points, 2],
+                        times[valid_ecef_points],
+                    )
+                )
+        else:
+            for i in valid_index_array:
                 reflection_point, theta_2_circ, theta_3_circ = self.get_reflection_point_ff(GNSS_state.positions_eci[:, i], Sat_state.positions_eci[:, i])
                 theta_vec[i, :] = [theta_2_circ, theta_3_circ, theta[i]]
                 specular_point_vec[i, :] = reflection_point
@@ -130,17 +187,26 @@ class Reflection:
         valid_specular_points = ~np.isnan(specular_point_vec[:, 0])
         latlon_ref = np.full((num_positions, 2), np.nan)
         if valid_specular_points.any():
-            lat, lon, _ = pymap3d.eci2geodetic(
-                specular_point_vec[valid_specular_points, 0],
-                specular_point_vec[valid_specular_points, 1],
-                specular_point_vec[valid_specular_points, 2],
-                times[valid_specular_points],
-            )
-            latlon_ref[valid_specular_points, :] = np.column_stack((lat, lon))
+            if self.earth_model == "elliptical" and specular_point_ecef_vec is not None:
+                valid_ecef_points = ~np.isnan(specular_point_ecef_vec[:, 0])
+                lat, lon, _ = pymap3d.ecef2geodetic(
+                    specular_point_ecef_vec[valid_ecef_points, 0],
+                    specular_point_ecef_vec[valid_ecef_points, 1],
+                    specular_point_ecef_vec[valid_ecef_points, 2],
+                )
+                latlon_ref[valid_ecef_points, :] = np.column_stack((lat, lon))
+            else:
+                lat, lon, _ = pymap3d.eci2geodetic(
+                    specular_point_vec[valid_specular_points, 0],
+                    specular_point_vec[valid_specular_points, 1],
+                    specular_point_vec[valid_specular_points, 2],
+                    times[valid_specular_points],
+                )
+                latlon_ref[valid_specular_points, :] = np.column_stack((lat, lon))
             lons, lats = self._prevent_longitude_wraparound(latlon_ref[:, 1], latlon_ref[:, 0])
         else:
-            lons = np.nan
-            lats = np.nan
+            lons = latlon_ref[:, 1]
+            lats = latlon_ref[:, 0]
 
         incidence_deg = np.full(num_positions, np.nan, dtype=float)
         for i in range(num_positions):
@@ -228,106 +294,111 @@ class Reflection:
 
         return ReflectionPoint, theta_degrees2, theta_degrees3
 
-    def find_specular_point_ellipse(self, Tx_eci, Rx_eci):
+    def find_specular_point_ellipse(self, Tx_eci, Rx_eci, time_i):
         # Check if transmitting and receiving satellites have a clear line of sight (if so there is no LOS => no reflection)
         if not self._check_los_satellites(Rx_eci, Tx_eci):
             # No line of sight, return NaN values
             return np.array([np.nan, np.nan, np.nan]), np.nan, np.nan
 
+        # The WGS84 ellipsoid is body-fixed, so the specular geometry is solved in ECEF.
+        Tx_ecef = np.array(pymap3d.eci2ecef(Tx_eci[0], Tx_eci[1], Tx_eci[2], time_i), dtype=float)
+        Rx_ecef = np.array(pymap3d.eci2ecef(Rx_eci[0], Rx_eci[1], Rx_eci[2], time_i), dtype=float)
+
+        S_ecef, theta_degrees2, theta_degrees3 = self._find_specular_point_ellipse_ecef(Tx_ecef, Rx_ecef)
+        if np.isnan(S_ecef).any():
+            return np.array([np.nan, np.nan, np.nan]), np.nan, np.nan
+
+        S_eci = np.array(pymap3d.ecef2eci(S_ecef[0], S_ecef[1], S_ecef[2], time_i), dtype=float)
+
+        return S_eci, theta_degrees2, theta_degrees3
+
+    def _find_specular_point_ellipse_ecef(self, Tx_ecef, Rx_ecef, initial_guess_ecef=None):
         # Radius at the poles for elliptical Earth model
         a = Constants.RADIUS_EARTH_EQUAT
         b = Constants.RADIUS_EARTH_EQUAT * (1 - Constants.EARTH_FLATTENING)
 
+        Tx_solve = np.asarray(Tx_ecef, dtype=float)
+        Rx_solve = np.asarray(Rx_ecef, dtype=float)
+
         # Ellipsoid constraint
         def ellipsoid_constraint(S):
-            return (S[0] ** 2 / Constants.RADIUS_EARTH_EQUAT**2 + S[1] ** 2 / Constants.RADIUS_EARTH_EQUAT**2 + S[2] ** 2 / (b) ** 2) - 1
+            return (S[0] ** 2 / a**2 + S[1] ** 2 / a**2 + S[2] ** 2 / b**2) - 1
+
+        def ellipsoid_normal(S):
+            S = np.array(S)
+            n_surface = np.array([S[0] / a**2, S[1] / a**2, S[2] / b**2])
+            return n_surface / np.linalg.norm(n_surface)
+
+        def unit_vector(vec):
+            norm = np.linalg.norm(vec)
+            if norm < 1e-12:
+                raise ZeroDivisionError("Cannot normalize near-zero vector.")
+            return vec / norm
 
         # Reflection constraint
-        def reflection_error(S):
+        def reflection_residual(S):
             """
-            For specular reflection: angle of incidence = angle of reflection
-            Both angles measured from the surface normal.
+            For specular reflection, mirror the incoming propagation direction
+            about the local ellipsoid normal and compare it to the outgoing
+            propagation direction.
             """
-            S = np.array(S)
-            tx_to_S = S - Tx_eci  # Vector from the transmitting satellite to the specular point
-            S_to_rx = Rx_eci - S  # Vector from the specular point to the receiving satellite
+            S = np.array(S, dtype=float)
+            v_in = unit_vector(S - Tx_solve)  # Incoming propagation direction, Tx -> S
+            v_out = unit_vector(Rx_solve - S)  # Outgoing propagation direction, S -> Rx
+            n_surface = ellipsoid_normal(S)
 
-            # Normalize the vectors
-            tx_to_S = tx_to_S / np.linalg.norm(tx_to_S)
-            S_to_rx = S_to_rx / np.linalg.norm(S_to_rx)
+            v_reflected = v_in - 2.0 * np.dot(v_in, n_surface) * n_surface
+            cos_incident = -np.dot(v_in, n_surface)
+            cos_reflected = np.dot(v_out, n_surface)
 
-            # compute ellipsoid normal at S (outward)
-            Nx = 2 * S[0] / (a**2)
-            Ny = 2 * S[1] / (a**2)
-            Nz = 2 * S[2] / (b**2)
-            n_surface = np.array([Nx, Ny, Nz])
-            n_surface = n_surface / np.linalg.norm(n_surface)  # Normalize the normal vector
-
-            # Specular reflection: angle of incidence = angle of reflection
-            # => cos(θ_incident) = cos(θ_reflected)
-            cos_incident = -np.dot(tx_to_S, n_surface)  # Angle between incoming ray and normal
-            cos_reflected = np.dot(S_to_rx, n_surface)  # Angle between outgoing ray and normal
-
-            # The reflection condition: both rays should make equal angles with normal
-            return cos_incident - cos_reflected
+            return v_reflected - v_out, cos_incident, cos_reflected
 
         def objective_function(S):
             try:
-                return reflection_error(S) ** 2
+                S = np.array(S, dtype=float)
+                return float(np.linalg.norm(S - Tx_solve) + np.linalg.norm(Rx_solve - S))
             except (ZeroDivisionError, np.linalg.LinAlgError):
                 # Avoid this point if the reflection error calculation fails
                 return 1e10
 
-        # Initial guess for the specular point from "get_reflection_point_FF"
-        try:
-            spec_init_guess_eci, _, _ = self.get_reflection_point_ff(Tx_eci, Rx_eci)
-
-            if np.any(np.isnan(spec_init_guess_eci)):
-                # If the initial guess is NaN, return NaN values
-                spec_init_guess_eci = (Tx_eci + Rx_eci) / 2  # Use midpoint as fallback
-        except Exception:
-            # Use fallback method if the initial guess fails
-            spec_init_guess_eci = (Tx_eci + Rx_eci) / 2  # Use midpoint as fallback
+        if initial_guess_ecef is not None and np.isfinite(initial_guess_ecef).all():
+            spec_init_guess = np.asarray(initial_guess_ecef, dtype=float)
+        else:
+            # Initial guess from the spherical FF solution in the same ECEF frame.
+            try:
+                spec_init_guess, _, _ = self.get_reflection_point_ff(Tx_solve, Rx_solve)
+                if np.any(np.isnan(spec_init_guess)):
+                    spec_init_guess = (Tx_solve + Rx_solve) / 2
+            except Exception:
+                spec_init_guess = (Tx_solve + Rx_solve) / 2
 
         # Ensure the initial guess is on the ellipsoid
-        scale = 1.0 / np.sqrt((spec_init_guess_eci[0] / a) ** 2 + (spec_init_guess_eci[1] / a) ** 2 + (spec_init_guess_eci[2] / b) ** 2)
-        spec_init_guess_eci = scale * spec_init_guess_eci
+        scale_denominator = (spec_init_guess[0] / a) ** 2 + (spec_init_guess[1] / a) ** 2 + (spec_init_guess[2] / b) ** 2
+        if not np.isfinite(scale_denominator) or scale_denominator <= 0.0:
+            return np.array([np.nan, np.nan, np.nan]), np.nan, np.nan
+        spec_init_guess = spec_init_guess / np.sqrt(scale_denominator)
 
         # Run optimization to find the specular point
         result = minimize(
             objective_function,
-            spec_init_guess_eci,
+            spec_init_guess,
             constraints={"type": "eq", "fun": ellipsoid_constraint},
             method="SLSQP",
-            options={"ftol": 1e-14, "maxiter": 200, "disp": False},
+            options={"ftol": 1e-10, "maxiter": 500, "disp": False},
         )
 
-        if not (result.success and result.fun < 1e-3):
-            # if it fails to meet tight tolerance, warn or bail
-            print(f"Ellipse optimization did not converge tightly: success={result.success}, residual={result.fun:.2e}")
-            return np.array([np.nan, np.nan, np.nan]), np.nan, np.nan
-
-        # Extract final specular point S
         S = result.x
 
         # coerce exactly onto ellipsoid (avoid tiny drift)
         scale = 1.0 / np.sqrt((S[0] / a) ** 2 + (S[1] / a) ** 2 + (S[2] / b) ** 2)
         S = scale * S
 
-        # Recompute the incident/reflected angles with respect to the true normal
-        v_in = S - Tx_eci
-        v_in /= np.linalg.norm(v_in)
-        v_out = Rx_eci - S
-        v_out /= np.linalg.norm(v_out)
+        residual, cos_inc, cos_refl = reflection_residual(S)
+        residual_norm = np.linalg.norm(residual)
 
-        Nx = 2 * S[0] / (a**2)
-        Ny = 2 * S[1] / (a**2)
-        Nz = 2 * S[2] / (b**2)
-        n_surface = np.array([Nx, Ny, Nz])
-        n_surface /= np.linalg.norm(n_surface)
+        if not (cos_inc > 0.0 and cos_refl > 0.0 and residual_norm <= 5e-2):
+            return np.array([np.nan, np.nan, np.nan]), np.nan, np.nan
 
-        cos_inc = np.dot(-v_in, n_surface)
-        cos_refl = np.dot(v_out, n_surface)
         theta_degrees2 = np.degrees(np.arccos(np.clip(cos_inc, -1, 1)))
         theta_degrees3 = np.degrees(np.arccos(np.clip(cos_refl, -1, 1)))
 

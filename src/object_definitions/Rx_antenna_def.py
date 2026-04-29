@@ -249,11 +249,14 @@ class RxAntenna:
         if refl_dir_antenna_frame.shape != (3,):
             raise ValueError("Input 'refl_dir_antenna_frame' must be a 3-element vector.")
 
-        lookup_key = self._resolve_lookup_key(frequency, azimuth_deg=np.rad2deg(azimuth), elevation_deg=np.rad2deg(elevation))
+        # Footprint projection starts from the unsteered contour and rotates it
+        # to the requested reflection direction. Steered patterns remain valid
+        # for gain lookup, but using them here would apply steering twice.
+        footprint_lookup_key = self._resolve_lookup_key(frequency, azimuth_deg=90.0, elevation_deg=0.0)
 
         # Check if the direction is the same as nadir (no rotation needed)
         if np.allclose(refl_dir_antenna_frame, nadir):
-            return self.antenna_lookuptable[lookup_key]["vector_bundle"]
+            return self.antenna_lookuptable[footprint_lookup_key]["vector_bundle"]
 
         # Compute rotation axis and angle
         axis = np.cross(nadir, refl_dir_antenna_frame)
@@ -275,10 +278,7 @@ class RxAntenna:
         ])
         R = np.eye(3) + np.sin(angle) * K + (1 - np.cos(angle)) * np.dot(K, K)
 
-        ## DEBUG
-        # delta_azim = azim_deg - lookup_key[0]
-        # delta_elev = elev_deg - lookup_key[1]
-        rotated_footprint_vectors = self.antenna_lookuptable[lookup_key]["vector_bundle"] @ R.T #Rotate the footprint vectors to the reflection beam coordinate system
+        rotated_footprint_vectors = self.antenna_lookuptable[footprint_lookup_key]["vector_bundle"] @ R.T  # Rotate the footprint vectors to the reflection beam coordinate system
         return rotated_footprint_vectors
 
     @staticmethod
