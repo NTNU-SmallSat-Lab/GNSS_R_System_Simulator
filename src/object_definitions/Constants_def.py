@@ -15,10 +15,10 @@ class Constants:
     # Physical constants
     ###########################
     SPEED_OF_LIGHT = 299792458  # Speed of light in                          [m/s]
-    G_CONST = 6.6743015e-11  # Gravitational constant in                  [N m^2 / kg^2}
+    G_CONST = 6.67430e-11  # Gravitational constant (CODATA)             [N m^2 / kg^2]
     GM_EARTH_TT = 3.986004415e14  # Earth's gravitational parameter in         [m^3/s^2]
     R_EARTH_MEAN = 6.371e6  # Earth's radius in                          [m]
-    RADIUS_EARTH_EQUAT = 6378136.6  # Earth's equatorial radius in               [m]
+    RADIUS_EARTH_EQUAT = 6378137.0  # Earth's equatorial radius (WGS-84)         [m]
     SEC_PER_DAY = 86400  # Seconds in a day                           [s/day]
     SEC_PER_HOUR = 3600  # Seconds in an hour                         [s/hour]
     EARTH_FLATTENING = 1 / 298.257223563  # flattening                                 [-]

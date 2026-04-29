@@ -502,12 +502,10 @@ class Coverage:
         # Then plot cells with count>1 (blue) on top
         for idx in self.grid_gdf.index:
             count = intersection_count[idx]
-            color, alpha_vec = _get_color(count)
+            color, alpha_val = _get_color(count)
 
             if color == "blue":  # Only plot blue cells (more than 1 intersection)
-                # self.coverage_vector[idx].shape.plot(
-                #    ax=ax, edgecolor='blue', facecolor=color, alpha=0.3)
-                self.grid_gdf.loc[[idx]].boundary.plot(ax=ax, edgecolor="blue", facecolor=color, alpha=0.3)
+                self.grid_gdf.loc[[idx]].boundary.plot(ax=ax, edgecolor="blue", facecolor=color, alpha=alpha_val)
 
         # Plot reflection lines
         # Loop through the reflection vectors for each GNSS constellation
