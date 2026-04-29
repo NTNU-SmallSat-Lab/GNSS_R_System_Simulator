@@ -1,0 +1,231 @@
+@startuml
+!pragma layout smetana
+title GNSS-R System Simulator -- Software Architecture
+
+skinparam shadowing false
+skinparam ArrowColor #333333
+skinparam packageStyle rectangle
+skinparam class {
+    BackgroundColor #ffffff
+    BorderColor #000000
+    FontStyle Italic
+    AttributeFontStyle Plain
+    AttributeIconSize 0
+    StereotypeFontColor #555555
+}
+hide empty members
+
+package "Analysis" <<Rectangle>> #F4FFF4 {
+    class Coverage {
+        sat_constellation
+        gnss_constellation
+        shp_input_file_path
+        gridded_shapefile_path
+        grid_size_deg / grid_size_m
+        bounding_box
+        reflection_dict
+        coverage_dict
+        earth_model
+        --
+        calculate_reflection_points_and_coverage()
+        calculate_statistics()
+        plot_coverage_shapefile()
+        plot_coverage_gridded_shapefile()
+    }
+
+    class MovingTargetDetection {
+        moving_target_object
+        sat_constellation
+        gnss_constellation
+        sat_antenna
+        reflection_dict_timeSorted
+        target_detect_dict
+        earth_model
+        reflection_mode
+        deltaT_sec
+        --
+        calculate_moving_target_reflection_intersection()
+        show_track_and_detection_points()
+        create_reflection_animation()
+    }
+
+    class ShipTrajectory {
+        ship_id
+        ship_speed
+        start_position / time
+        end_position / time
+        waypoints
+        trajectory_points
+        shapefile_path
+        ocean_polygons
+        --
+        plan_route()
+        generate_trajectory_equal_time()
+        get_position_at_time(t)
+        get_travel_duration_hours()
+    }
+}
+
+package "Geometry" <<Rectangle>> #FFF4F4 {
+    class Reflection {
+        tx_satID, rx_satID
+        earth_model
+        cutoff_angle
+        gnss_const
+        time_vec
+        refl_ECI_vec / refl_LL_vec
+        refl_ang_vec
+        link_budget
+        --
+        compute_reflection_coordinates()
+        get_reflection_point_ff() <i>spherical</i>
+        find_specular_point_ellipse() <i>elliptical</i>
+    }
+
+    class BRP <<backscatter>> {
+        tx_satID, rx_satID
+        earth_model
+        cutoff_angle
+        gnss_const
+        time_vec
+        refl_ECI_vec / refl_LL_vec
+        refl_ang_vec
+        link_budget
+        --
+        compute_brp_coordinates()
+    }
+}
+
+package "Domain" <<Rectangle>> #F4F4FF {
+    class SatelliteConstellation {
+        satConfigName
+        satellites
+        no_satellites
+        orbits_array
+        times_skyfield
+        duration_sec
+        propagation_step_size
+        --
+        set_simulation_duration()
+        propagate_constellation()
+        generate_constellation_tle()
+        add_satellite() / remove_satellite()
+    }
+
+    class Satellite {
+        satID, satName
+        classification
+        orbit_n
+        skf
+        tle_file_path
+        gnss_r_antenna
+        battery, solarArray
+        positions_eci, velocities_eci
+        times_skyfield, time_prop_vec
+        sunlit_count, sunlit_fraction
+        --
+        propagate_orbit()
+        propagate_orbit_for_times()
+        calculate_sunlight_time()
+        set_orbit() / set_epoch()
+        write_tle_file()
+    }
+
+    class Orbit {
+        i, e, a
+        RAAN, p, M
+        n  <i>(mean motion)</i>
+        epoch_str
+        dt_start
+        --
+        set_start_time(dt)
+        conv_DateTime_to_Epoch()
+    }
+
+    class GNSS_R_antenna {
+        antenna_lookuptable
+        steering_azimuth / elevation
+        frequencies, bands
+        polarizations
+        footprint_dB_contour
+        R_antenna_to_body
+        --
+        get_gain_dbi_for_direction()
+    }
+
+    class "Skyfield satellite" as Skyfield <<external>> {
+        TLE-derived state propagator
+        --
+        at(time)
+        is_sunlit(planets)
+    }
+}
+
+package "Foundation" <<Rectangle>> #F5F5F5 {
+    class Constants <<static>> {
+        Physical constants
+        GNSS band frequencies
+        File paths
+        Coordinate-system tools
+    }
+
+    class BistaticLinkBudgetSettings <<dataclass>> {
+        tx_eirp_dbw
+        system_losses_db
+        polarization_losses_db
+        ocean_sigma0_db
+        ocean_sigma_slope_db_per_deg
+        ocean_sigma_floor_db
+        fresnel_rcs_scale
+    }
+
+    class ReadWriteData <<utility>> {
+        --
+        generate_tle_data_string(sat)
+        read_tle_data(path)
+        download_and_read_tle(path)
+    }
+
+    class Plotting <<static>> {
+        --
+        plot_reflection_traces_gnss_const()
+        plot_reflection_traces_total()
+        plot_orbits()
+    }
+}
+
+' ---- Composition / aggregation -----------------------------------
+SatelliteConstellation "1" *-- "1..*" Satellite : contains
+
+Satellite "1" o-- "0..1" Orbit
+Satellite "1" o-- "0..1" Skyfield : wraps
+Satellite "1" o-- "0..1" GNSS_R_antenna : may carry
+
+' ---- Reflection / BRP need a (Tx, Rx) Satellite pair -------------
+Reflection "*" -- "2" Satellite : Tx + Rx
+BRP        "*" -- "2" Satellite : Tx + Rx
+
+' ---- Coverage and MovingTargetDetection orchestrate the model ----
+Coverage "1" o-- "1..*" SatelliteConstellation : Rx + Tx
+Coverage "1" o-- "*"    Reflection             : stores
+
+MovingTargetDetection "1" o-- "1..*" SatelliteConstellation : Rx + Tx
+MovingTargetDetection "1" o-- "1"    ShipTrajectory          : target
+MovingTargetDetection "1" o-- "1"    GNSS_R_antenna          : Rx antenna
+MovingTargetDetection "1" o-- "*"    Reflection              : specular mode
+MovingTargetDetection "1" o-- "*"    BRP                     : backscatter mode
+
+' ---- Dependencies (uses) -----------------------------------------
+Reflection ..> GNSS_R_antenna : uses
+BRP        ..> GNSS_R_antenna : uses
+Reflection ..> BistaticLinkBudgetSettings : uses
+BRP        ..> BistaticLinkBudgetSettings : uses
+
+Satellite             ..> ReadWriteData : TLE I/O
+SatelliteConstellation ..> ReadWriteData : uses
+Coverage              ..> Plotting      : uses
+
+' Constants is imported almost everywhere - kept implicit so the
+' diagram stays readable.
+
+@enduml
