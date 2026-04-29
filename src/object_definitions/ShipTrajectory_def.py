@@ -38,12 +38,12 @@ class ShipTrajectory:
         ship_speed             (float):    Speed of the ship in knots.
         coastline_path         (str):      Path to the coastline shapefile.
         ocean_polygons         (object):   Loaded coastline data.
-        water_buffer           (float):    Safety distance from shore in degrees.
+        water_buffer           (float):    Safety distance from shore in meters.
         fast_method            (bool):     Flag for simplified path generation.
-        mesh_connection_radius (float):    Connection radius for grid points.
+        mesh_connection_radius (float):    Connection radius for grid points in meters.
         interval_minutes       (int):      Time interval in minutes for trajectory generation.
-        grid_resolution        (float):    Grid resolution in degrees for navigation mesh.
-        delta_m                (float):    Additional margin in degrees for the bounding box (added to max / min longitude and latitude).
+        grid_resolution        (float):    Grid resolution in meters for navigation mesh.
+        delta_m                (float):    Additional margin in meters for the bounding box (added to max / min longitude and latitude).
         trajectory_points      (list):     List of trajectory points.
         timestamps             (list):     List of timestamps for trajectory points.
         waypoints              (list):     List of waypoints for the ship's route.
@@ -74,14 +74,14 @@ class ShipTrajectory:
         self.interval_minutes = interval_minutes  # Time interval in minutes for trajectory generation
         self.grid_resolution = (
             grid_resolution_km * 1e3
-        )  # Grid resolution in km for navigation mesh (default: 100 km) [this has a BIG IMPACT ON THE PERFORMANCE of the path generation]
+        )  # Grid resolution in meters for navigation mesh [this has a BIG IMPACT ON THE PERFORMANCE of the path generation]
         self.delta_m = (
             delta_boudingBox_km * 1e3
-        )  # Additional margin in km for the bounding box (default: 1000 km | kept big to avoid being 'trapped' in a bay / corner / fjord)
+        )  # Additional margin in meters for the bounding box (default: 500 km | kept big to avoid being 'trapped' in a bay / corner / fjord)
         self.fast_method = (
             fast_path_gen_method  # Flag [boolean] to indicate if simplified path generation is used (faster computation / longer, more simple ship route)
         )
-        self.mesh_connection_radius = self.grid_resolution * 2 * 1e3  # Connection radius for grid points in km (default: 2'000 km)
+        self.mesh_connection_radius = self.grid_resolution * 2  # Connection radius for grid points in meters
         self.water_buffer = water_buffer_km * 1e3  # Safety distance from shore in meters (default: 22.2 km = 12 nm (Territorial Sea))
 
         self.ocean_polygons = None  # Loaded coastline data (geopandas object), will be loaded from shapefile
