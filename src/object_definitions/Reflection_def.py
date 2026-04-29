@@ -5,8 +5,9 @@ from scipy.optimize import minimize
 import functions.functions as fn
 import functions.link_budget as lb
 from object_definitions.Constants_def import Constants
-from object_definitions.Satellite_def import Satellite
 from object_definitions.Rx_antenna_def import RxAntenna
+from object_definitions.Satellite_def import Satellite
+
 
 class Reflection:
     def __init__(
@@ -88,10 +89,9 @@ class Reflection:
         link_budget_settings: dict | lb.BistaticLinkBudgetSettings | None = None,
         q_sat: np.ndarray | None = None,
     ):
-        if type(times) is not np.ndarray:
-            times = np.array(times, dtype="datetime64[s]")  # Ensure times is a numpy array of datetime64 objects
+        if not isinstance(times, np.ndarray):
+            times = fn.to_datetime64_seconds(times)
 
-        settings = lb.coerce_link_budget_settings(link_budget_settings)
         if frequency_hz is None:
             frequency_hz = Constants.BANDS_CENTER_FREQUENCIES_Hz["L1"]
         if q_sat is None:
@@ -142,11 +142,6 @@ class Reflection:
             lons = np.nan
             lats = np.nan
 
-        distance_R_km = np.linalg.norm((specular_point_vec - np.transpose(Sat_state.positions_eci)) * 1e-3, axis=1)
-        distance_T_km = np.linalg.norm((specular_point_vec - np.transpose(GNSS_state.positions_eci)) * 1e-3, axis=1)
-
-        distance_R_m = distance_R_km * 1e3
-        distance_T_m = distance_T_km * 1e3
         incidence_deg = np.full(num_positions, np.nan, dtype=float)
         for i in range(num_positions):
             angle_candidates = theta_vec[i, :2]
@@ -154,34 +149,16 @@ class Reflection:
             if finite_mask.any():
                 incidence_deg[i] = float(np.mean(angle_candidates[finite_mask]))
 
-        # No antenna pattern → assume isotropic (0 dBi). Otherwise NaN gains
-        # (e.g. reflection outside FOV) propagate to NaN power.
-        if antenna is None:
-            rx_gain_dbi = np.zeros(num_positions, dtype=float)
-        else:
-            rx_gain_dbi = np.full(num_positions, np.nan, dtype=float)
-            freq_mhz = float(frequency_hz) / 1e6
-            for i in range(num_positions):
-                if not np.isfinite(distance_R_m[i]) or not np.isfinite(distance_T_m[i]):
-                    continue
-                if np.isnan(specular_point_vec[i]).any():
-                    continue
-                look_dir_a = lb.compute_rx_look_direction_antenna_frame(
-                    Sat_state.positions_eci[:, i],
-                    Sat_state.velocities_eci[:, i],
-                    specular_point_vec[i, :],
-                    antenna,
-                    q_sat=q_sat,
-                )
-                rx_gain_dbi[i] = antenna.get_gain_dbi_for_direction(look_dir_a, freq_mhz)
-
-        link_budget = lb.compute_bistatic_link_budget(
-            range_tx_m=distance_T_m,
-            range_rx_m=distance_R_m,
+        link_budget = lb.compute_reflection_link_budget(
+            tx_positions_eci=GNSS_state.positions_eci,
+            rx_positions_eci=Sat_state.positions_eci,
+            rx_velocities_eci=Sat_state.velocities_eci,
+            reflection_positions_eci=specular_point_vec,
             incidence_deg=incidence_deg,
-            rx_gain_dbi=rx_gain_dbi,
+            antenna=antenna,
             frequency_hz=frequency_hz,
-            settings=settings,
+            settings=link_budget_settings,
+            q_sat=q_sat,
         )
         power = link_budget["received_power_w"]
 
@@ -356,7 +333,7 @@ class Reflection:
 
         return S, theta_degrees2, theta_degrees3
 
-    def get_rotation_3D_to_plane_coords(self, satCoord, GPSCoord):
+    def get_rotation_3D_to_plane_coords(self, satCoord, GPSCoord):  # noqa: N802
         # Calculate the rotation matrix to transform from 3D coordinates to plane coordinates
         plane = np.cross(satCoord.flatten(), GPSCoord.flatten())
         plane = plane / np.linalg.norm(plane)
@@ -364,7 +341,6 @@ class Reflection:
 
         vec = np.cross(plane, z)
         s = np.linalg.norm(vec)
-        c = np.dot(plane, z)
 
         # Handle the case where the vectors are parallel or anti-parallel (plane i== z)
         # Minimal fix: prevent division by zero but keep same approach
@@ -381,7 +357,7 @@ class Reflection:
         Rot = np.eye(3) + s2 * Sv + Sv @ Sv * (1 - c2)
         return Rot
 
-    def _compute_footprint(self, index: int, antenna: RxAntenna, frequency: float, q_sat=np.array([1.0, 0.0, 0.0, 0.0]), earth_model="spherical") -> tuple:
+    def _compute_footprint(self, index: int, antenna: RxAntenna, frequency: float, q_sat=None, earth_model="spherical") -> tuple:
         """Thin wrapper around :func:`functions.functions.compute_footprint`."""
         return fn.compute_footprint(
             self.sat_pos_vec[:, index],

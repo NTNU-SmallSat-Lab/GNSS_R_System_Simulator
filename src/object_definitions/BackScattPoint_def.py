@@ -1,15 +1,13 @@
-import numpy as np
-from astropy.time import Time
-import pymap3d
 from astropy import units as u
-from astropy.coordinates import CartesianRepresentation, GCRS, ITRS, SkyCoord
-import datetime
+from astropy.coordinates import GCRS, ITRS, CartesianRepresentation, SkyCoord
+import numpy as np
+import pymap3d
 
 import functions.functions as fn
 import functions.link_budget as lb
 from object_definitions.Constants_def import Constants
-from object_definitions.Satellite_def import Satellite
 from object_definitions.Rx_antenna_def import RxAntenna
+from object_definitions.Satellite_def import Satellite
 
 # WGS84 constants
 a = Constants.RADIUS_EARTH_EQUAT
@@ -54,7 +52,6 @@ class BRP:
         link_budget_settings: dict | lb.BistaticLinkBudgetSettings | None = None,
         q_sat: np.ndarray | None = None,
     ):
-        settings = lb.coerce_link_budget_settings(link_budget_settings)
         if frequency_hz is None:
             frequency_hz = Constants.BANDS_CENTER_FREQUENCIES_Hz["L1"]
         if q_sat is None:
@@ -110,40 +107,16 @@ class BRP:
 
             brp_LL_vec[valid_brp_idx] = np.column_stack((lat_list, lon_list))
 
-        distance_R_km = np.linalg.norm((brp_ECI_vec - Sat_state.positions_eci.T) * 1e-3, axis=1)
-        distance_T_km = np.linalg.norm((brp_ECI_vec - GNSS_state.positions_eci.T) * 1e-3, axis=1)
-
-        distance_R_m = distance_R_km * 1e3
-        distance_T_m = distance_T_km * 1e3
-
-        # No antenna pattern → assume isotropic (0 dBi). Otherwise NaN gains
-        # (e.g. reflection outside FOV) propagate to NaN power.
-        if antenna is None:
-            rx_gain_dbi = np.zeros(num_positions, dtype=float)
-        else:
-            rx_gain_dbi = np.full(num_positions, np.nan, dtype=float)
-            freq_mhz = float(frequency_hz) / 1e6
-            for i in range(num_positions):
-                if not np.isfinite(distance_R_m[i]) or not np.isfinite(distance_T_m[i]):
-                    continue
-                if np.isnan(brp_ECI_vec[i]).any():
-                    continue
-                look_dir_a = lb.compute_rx_look_direction_antenna_frame(
-                    Sat_state.positions_eci[:, i],
-                    Sat_state.velocities_eci[:, i],
-                    brp_ECI_vec[i, :],
-                    antenna,
-                    q_sat=q_sat,
-                )
-                rx_gain_dbi[i] = antenna.get_gain_dbi_for_direction(look_dir_a, freq_mhz)
-
-        link_budget = lb.compute_bistatic_link_budget(
-            range_tx_m=distance_T_m,
-            range_rx_m=distance_R_m,
+        link_budget = lb.compute_reflection_link_budget(
+            tx_positions_eci=GNSS_state.positions_eci,
+            rx_positions_eci=Sat_state.positions_eci,
+            rx_velocities_eci=Sat_state.velocities_eci,
+            reflection_positions_eci=brp_ECI_vec,
             incidence_deg=incidence_angles,
-            rx_gain_dbi=rx_gain_dbi,
+            antenna=antenna,
             frequency_hz=frequency_hz,
-            settings=settings,
+            settings=link_budget_settings,
+            q_sat=q_sat,
         )
         power = link_budget["received_power_w"]
 
@@ -160,7 +133,7 @@ class BRP:
         self.link_budget = link_budget
         self.power = power
 
-    def _compute_footprint(self, index: int, antenna: RxAntenna, frequency: float, q_sat=np.array([1.0, 0.0, 0.0, 0.0]), earth_model="spherical") -> tuple:
+    def _compute_footprint(self, index: int, antenna: RxAntenna, frequency: float, q_sat=None, earth_model="spherical") -> tuple:
         """Thin wrapper around :func:`functions.functions.compute_footprint`."""
         return fn.compute_footprint(
             self.sat_pos_vec[:, index],
@@ -178,11 +151,6 @@ class BRP:
 #   ECI <---> ECEF CONVERSION
 # ===============================
 def eci_gcrs_to_ecef(r_eci, epoch):
-    import numpy as np
-    from astropy.time import Time
-    from astropy import units as u
-    from astropy.coordinates import CartesianRepresentation, GCRS, ITRS, SkyCoord
-
     r = np.atleast_2d(r_eci).astype(float)
     single = r.shape[0] == 1
     t = epoch
@@ -209,11 +177,6 @@ def eci_gcrs_to_ecef(r_eci, epoch):
     return out[0] if single else out
 
 def ecef_to_eci(r_ecef, epoch):
-    import numpy as np
-    from astropy.time import Time
-    from astropy import units as u
-    from astropy.coordinates import CartesianRepresentation, GCRS, ITRS, SkyCoord
-
     # Ensure Nx3 array
     r = np.atleast_2d(r_ecef).astype(float)
     single = r.shape[0] == 1
@@ -284,10 +247,11 @@ def calculate_ellipsoid_intersection_t(R, T, a=a, b=b, cutoff_angle=45):
     t1 = (-B_t + sd) / A_p
     t2 = (-B_t - sd) / A_p
 
-    t = None
-    if t2 > 0: t = t2
-    elif t1 > 0: t = t1
-    else: 
+    if t2 > 0:
+        t = t2
+    elif t1 > 0:
+        t = t1
+    else:
         return None, None, "outside_segment"
 
     P = R + t*u

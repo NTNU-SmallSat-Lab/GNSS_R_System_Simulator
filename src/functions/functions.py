@@ -1,12 +1,12 @@
+from collections import defaultdict
 import datetime as dt
 
 import numpy as np
 import pymap3d
-from skyfield.api import load, wgs84
-# Load timescale once
-from collections import defaultdict
 from shapely.geometry import Point, Polygon
+from skyfield.api import load, wgs84
 
+from functions.rotations import quat_to_rotation_matrix
 from object_definitions.Constants_def import Constants
 from object_definitions.SatConstellation_def import SatelliteConstellation
 
@@ -44,6 +44,29 @@ def ensure_utc_aware(dt_obj):
     if dt_obj.tzinfo is None:
         return dt_obj.replace(tzinfo=dt.UTC)
     return dt_obj
+
+
+def to_datetime64_seconds(times):
+    """
+    Convert datetime-like values to numpy datetime64 seconds without timezone warnings.
+
+    NumPy datetime64 has no timezone representation. For timezone-aware Python
+    datetimes, convert the instant to UTC and then drop tzinfo before creating
+    the array. This preserves the UTC timestamp while avoiding NumPy's warning.
+    """
+    if isinstance(times, np.ndarray) and np.issubdtype(times.dtype, np.datetime64):
+        return times.astype("datetime64[s]")
+
+    if isinstance(times, dt.datetime):
+        times = [times]
+
+    normalized_times = []
+    for time_value in times:
+        if isinstance(time_value, dt.datetime) and time_value.tzinfo is not None:
+            normalized_times.append(time_value.astimezone(dt.UTC).replace(tzinfo=None))
+        else:
+            normalized_times.append(time_value)
+    return np.array(normalized_times, dtype="datetime64[s]")
 
 
 def angle_between_vectors(v1, v2, unit="degrees"):
@@ -280,30 +303,6 @@ def geodetic_to_ecef(lat_deg: float, lon_deg: float, h: float = 0) -> tuple:
     return X, Y, Z
 
 
-def quat_to_rotation_matrix(q: list) -> np.array:
-    """
-    =========================================================================================================
-    Convert quaternion [w, x, y, z] to 3x3 rotation matrix.
-
-    INPUTS:
-        q: [list or np.array] Quaternion in the form [w, x, y, z]
-    OUTPUTS:
-        R: [np.array] 3x3 Rotation matrix corresponding to the quaternion
-    =========================================================================================================
-    """
-    w, x, y, z = q
-    # Normalize quaternion
-    norm = np.sqrt(w**2 + x**2 + y**2 + z**2)
-    w, x, y, z = w / norm, x / norm, y / norm, z / norm
-
-    return np.array(
-        [
-            [1 - 2 * (y**2 + z**2), 2 * (x * y - w * z), 2 * (x * z + w * y)],
-            [2 * (x * y + w * z), 1 - 2 * (x**2 + z**2), 2 * (y * z - w * x)],
-            [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x**2 + y**2)],
-        ]
-    )
-
 def rotation_matrix_from_vectors(v1, v2):
     """
     =========================================================================================================
@@ -394,11 +393,11 @@ def compute_visible_times_and_resample_ship(moving_target_detection, sat_const, 
     # Interpolate ship positions
     interp_lats = np.interp(sat_times_sec, ship_times_sec, lats)
     interp_lons = np.interp(sat_times_sec, ship_times_sec, lons)
-    ship_positions_all = list(zip(interp_lats, interp_lons))
+    ship_positions_all = list(zip(interp_lats, interp_lons, strict=False))
 
     # Compute visibility
     sat_visible_times = defaultdict(list)
-    for pos, t in zip(ship_positions_all, sat_times_dt):
+    for pos, t in zip(ship_positions_all, sat_times_dt, strict=False):
         lat, lon = pos
         observer = wgs84.latlon(lat, lon)
         for sat in sat_const.satellites:
@@ -482,7 +481,7 @@ def propagate_only_visible_satellites(sat_const, sat_visible_times, gnss_constl_
 
     # --- GNSS satellites propagated at all visible times ---
     if gnss_constl_dict is not None:
-        for gnss_name, gnss_const in gnss_constl_dict.items():
+        for gnss_const in gnss_constl_dict.values():
             for sat in gnss_const.satellites:
                 sat.propagate_orbit_for_times(visible_times_skyfield)
                 sat.time_prop_vec = visible_times_skyfield

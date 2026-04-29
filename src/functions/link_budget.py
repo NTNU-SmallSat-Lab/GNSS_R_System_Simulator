@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-import functions.functions as fn
+from functions.rotations import quat_to_rotation_matrix
 from object_definitions.Constants_def import Constants
 from object_definitions.Rx_antenna_def import RxAntenna
 
@@ -83,6 +83,69 @@ def resolve_single_link_budget_frequency_hz(antenna) -> float:
     return float(antenna.frequencies[0]) * 1e6
 
 
+def compute_reflection_link_budget(
+    tx_positions_eci: np.ndarray,
+    rx_positions_eci: np.ndarray,
+    rx_velocities_eci: np.ndarray,
+    reflection_positions_eci: np.ndarray,
+    incidence_deg: np.ndarray,
+    antenna: RxAntenna | None,
+    frequency_hz: float,
+    settings: dict | BistaticLinkBudgetSettings | None = None,
+    q_sat: np.ndarray | None = None,
+) -> dict:
+    """
+    Compute the common GNSS-R reflection link budget for specular and BRP paths.
+
+    Position and velocity arrays are expected in the simulator's existing
+    convention: satellite state vectors as shape ``(3, n)`` and reflection
+    points as shape ``(n, 3)``.
+    """
+    settings_obj = coerce_link_budget_settings(settings)
+    if q_sat is None:
+        q_sat = np.array([1.0, 0.0, 0.0, 0.0], dtype=float)
+
+    tx_positions_eci = np.asarray(tx_positions_eci, dtype=float)
+    rx_positions_eci = np.asarray(rx_positions_eci, dtype=float)
+    rx_velocities_eci = np.asarray(rx_velocities_eci, dtype=float)
+    reflection_positions_eci = np.asarray(reflection_positions_eci, dtype=float)
+    incidence_deg = np.asarray(incidence_deg, dtype=float)
+
+    num_positions = reflection_positions_eci.shape[0]
+    range_rx_m = np.linalg.norm((reflection_positions_eci - rx_positions_eci.T) * 1e-3, axis=1) * 1e3
+    range_tx_m = np.linalg.norm((reflection_positions_eci - tx_positions_eci.T) * 1e-3, axis=1) * 1e3
+
+    # No antenna pattern -> assume isotropic (0 dBi). Otherwise NaN gains
+    # (e.g. reflection outside FOV) propagate to NaN power.
+    if antenna is None:
+        rx_gain_dbi = np.zeros(num_positions, dtype=float)
+    else:
+        rx_gain_dbi = np.full(num_positions, np.nan, dtype=float)
+        freq_mhz = float(frequency_hz) / 1e6
+        for i in range(num_positions):
+            if not np.isfinite(range_rx_m[i]) or not np.isfinite(range_tx_m[i]):
+                continue
+            if np.isnan(reflection_positions_eci[i]).any():
+                continue
+            look_dir_a = compute_rx_look_direction_antenna_frame(
+                rx_positions_eci[:, i],
+                rx_velocities_eci[:, i],
+                reflection_positions_eci[i, :],
+                antenna,
+                q_sat=q_sat,
+            )
+            rx_gain_dbi[i] = antenna.get_gain_dbi_for_direction(look_dir_a, freq_mhz)
+
+    return compute_bistatic_link_budget(
+        range_tx_m=range_tx_m,
+        range_rx_m=range_rx_m,
+        incidence_deg=incidence_deg,
+        rx_gain_dbi=rx_gain_dbi,
+        frequency_hz=frequency_hz,
+        settings=settings_obj,
+    )
+
+
 def _linear_from_db(values_db):
     return np.power(10.0, np.asarray(values_db, dtype=float) / 10.0)
 
@@ -153,7 +216,7 @@ def compute_rx_look_direction_antenna_frame(
     c_hat = c_hat / c_norm
 
     R_eci_to_vnc = np.vstack([v_hat, n_hat, c_hat])
-    R_attitude = fn.quat_to_rotation_matrix(q_sat)
+    R_attitude = quat_to_rotation_matrix(q_sat)
     R_vnc_to_body = R_attitude @ Constants.R_body_to_vnc_normal.T
 
     n_ar_a = antenna.R_antenna_to_body.T @ R_vnc_to_body @ R_eci_to_vnc @ n_ar_eci

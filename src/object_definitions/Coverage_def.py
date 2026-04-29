@@ -158,13 +158,14 @@ class Coverage:
         # Pre-compute KD-Tree for grid centroids
         #        kdtree = self._precompute_grid_kdtree()
 
+        # Loop through each GNSS constellation
         for gnss_name, _gnss_value in self.gnss_constellation.items():
             refl_vector = self.reflection_dict[gnss_name]  # Reflection vector for the current GNSS constellation
 
             for i in range(len(refl_vector)):
                 validity_mask, ref_points_in_box = self.validity_mask(refl_vector[i], self.bounding_box)
                 # Assembly of points in the bounding box for one GNSS-R satellite and one GNSS satellite
-                refl_clusters = self.__get_reflection_clusters(refl_vector[i], validity_mask)
+                refl_clusters = self._get_reflection_clusters(refl_vector[i], validity_mask)
                 for cluster in refl_clusters:
                     intersecting_rectangles = []
                     # Skip refl_clusters with no valid data
@@ -175,7 +176,6 @@ class Coverage:
                     if len(cluster) <= 1:  # not validity_mask[cluster].any() &
                         continue
                     # Extract valid times and positions for this cluster
-                    #                    valid_cluster  = cluster[validity_mask[cluster]]
                     valid_position = ref_points_in_box[cluster]
                     # print(valid_position)
                     line = LineString(zip(valid_position[:, 1], valid_position[:, 0], strict=False))
@@ -720,7 +720,16 @@ class Coverage:
         return validity_mask, refl_in_bounding_box
 
     @staticmethod
-    def __get_reflection_clusters(reflection_obj, validity_mask):
+    def _get_reflection_clusters(reflection_obj, validity_mask):
+        """
+        Get clusters of valid reflection points based on the validity mask.
+
+        INPUT:
+            reflection_obj: Reflection object containing the reflection points.
+            validity_mask:  Boolean mask indicating valid reflection points.
+        OUTPUT:
+            List of clusters, where each cluster is a list of indices corresponding to valid reflection points.
+        """
         validity_mask_bool = validity_mask.astype(bool)  # Convert to boolean mask
         clusters = np.split(np.arange(len(reflection_obj.refl_LL_vec)), np.where(~validity_mask_bool)[0])  # Split indices by NaN gaps
         return clusters
