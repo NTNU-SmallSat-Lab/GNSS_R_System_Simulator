@@ -103,9 +103,6 @@ class Constants:
         "NavIC_L1": 1.57542e9,
     }
 
-    BANDS_BANDWIDTH_Hz = {
-
-    }
     ###########################
     # 3rd Party Libraries and Tools
     ###########################

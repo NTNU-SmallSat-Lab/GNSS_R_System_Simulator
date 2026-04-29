@@ -44,14 +44,8 @@ class Reflection:
             # If not specified, use the 'spherical' earth model
             print("Earth model not specified - Using default ('spherical')")
             earth_model = "spherical"
-        else:
-            if not Reflection._is_valid_earth_model(earth_model):
-                # Raise a warning and return an empty object if a wrong earth model is chosen
-                print("Wrong earth model specified. Use either 'spherical' or 'elliptical'.")
-                return None
-            else:
-                # - Robustness - : If the earth model is correct, initialize the object
-                pass
+        elif not Reflection._is_valid_earth_model(earth_model):
+            raise ValueError(f"Invalid earth_model {earth_model!r}. Use either 'spherical' or 'elliptical'.")
 
         if angle is None:
             # If not specified, use the default cutoff angle of 45 degrees
@@ -59,12 +53,11 @@ class Reflection:
             angle = 45
 
         if tx_satID is None or rx_satID is None:
-            Warning("Transmitting or Receiving satellite IDs are not specified    \n WARNING: Reflection object not initialized")
-            return None
+            raise ValueError("Transmitting and Receiving satellite IDs are required to initialize a Reflection object.")
         self.initialization(earth_model, angle, tx_satID, rx_satID, gnss_const)
 
     def initialization(self, earth_model, angle, tx_satID, rx_satID, gnss_const):
-        self.earth_model = earth_model  # 'spherical' or 'circular'
+        self.earth_model = earth_model  # 'spherical' or 'elliptical'
         self.gnss_const = gnss_const  # Could be [GPS, GLONASS, GALILEO, BEIDOU]
         self.cutoff_angle = angle
         self.tx_satID = tx_satID

@@ -13,7 +13,6 @@ matplotlib.use("Agg")  # Use Agg backend for off-screen rendering
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import imageio
 from pyproj import Geod
 from shapely.errors import GEOSException
 from shapely.geometry import MultiPolygon, Polygon, box
@@ -67,7 +66,7 @@ class MovingTargetDetection:
             sat_constellation:            Satellite constellation object
         =========================================================================================================
         """
-        if type(moving_target_object) is ShipTrajectory:
+        if isinstance(moving_target_object, ShipTrajectory):
             self.moving_target_object = moving_target_object
             if moving_target_object.shapefile_path["time_series"] is None:
                 raise ValueError(
@@ -109,25 +108,9 @@ class MovingTargetDetection:
         """
 
         def show_reflection_and_target_position(pos_tgt_i: pd.Series, footprint_reflection: Polygon, spec_refl_point: np.ndarray, gnss_name: str) -> None:
-            """
-            This function is to show one reflection point and the target position at a given time.
-            It is used for debugging purposes.
-            """
-            """
-            Show the circle polygon on a map.
-            """
-            ## DEBUG plot circle_poly
+            """Debug plot: one reflection point and the target position at a given time."""
             fig, ax = plt.subplots(figsize=(10, 6), subplot_kw={"projection": ccrs.PlateCarree()})
 
-            # Make sure bounding box is appropriate for your circle
-            # If self.bounding_box is too large compared to your circle, adjust it
-            # Format should be [lon_min, lon_max, lat_min, lat_max]
-            max_lon, min_lon, max_lat, min_lat = self.bounding_box
-            max_lon = max(max_lon, footprint_reflection.bounds[2], pos_tgt_i.longitude) + 0.1
-            min_lon = min(min_lon, footprint_reflection.bounds[0], pos_tgt_i.longitude) - 0.1
-            max_lat = max(max_lat, footprint_reflection.bounds[3], pos_tgt_i.latitude) + 0.1
-            min_lat = min(min_lat, footprint_reflection.bounds[1], pos_tgt_i.latitude) - 0.1
-            new_bounding_box = (min_lon, max_lon, min_lat, max_lat)
             west, east, south, north = -10, 35, 35, 82
             ax.set_extent([west, east, south, north], crs=ccrs.PlateCarree())
 
@@ -327,11 +310,6 @@ class MovingTargetDetection:
                 tx_satID = refl_obj.tx_satID
                 rx_satID = refl_obj.rx_satID
                 refl_id = (tx_satID, rx_satID)
-                         # Pre-filter valid times to avoid checking each one individually
-                valid_time_indices = [
-                    (idx, time_i) for idx, time_i in enumerate(time_vector_all_refl)
-                    if time_i is not None and isinstance(time_i, dt.datetime)
-                ]
 
                 # Process times on-the-fly
                 invalid_count = 0

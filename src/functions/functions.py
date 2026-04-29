@@ -411,8 +411,6 @@ def compute_visible_times_and_resample_ship(moving_target_detection, sat_const, 
     indices = [sat_times_dt.index(t) for t in all_visible_times]
     resampled_ship_positions = [ship_positions_all[i] for i in indices]
 
-    print(Point(lon, lat)
-        for lat, lon in resampled_ship_positions)
     # Save resampled ship positions in the object
     moving_target_detection.ship_positions_resampled = [
         Point(lon, lat)  # Note: Shapely expects Point(x, y) = Point(lon, lat)

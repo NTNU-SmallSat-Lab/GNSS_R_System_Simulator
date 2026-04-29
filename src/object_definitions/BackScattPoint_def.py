@@ -22,8 +22,7 @@ class BRP:
 
         # Earth model check
         if not BRP._is_valid_earth_model(earth_model):
-            print("Wrong earth model specified. Use either 'spherical' or 'elliptical'.")
-            return None
+            raise ValueError(f"Invalid earth_model {earth_model!r}. Use either 'spherical' or 'elliptical'.")
 
         self.tx_satID = gps_index
         self.rx_satID = leo_index

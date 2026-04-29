@@ -188,7 +188,6 @@ class Coverage:
 
                     if len(intersecting_rectangles) > 0:
                         # Save results
-                        self.grid_gdf.loc[intersecting_rectangles]
                         valid_position_clean = valid_position[~np.isnan(valid_position).any(axis=1)]
                         valid_positions_flipped = valid_position_clean[:, [1, 0]]
                         with warnings.catch_warnings():  # TODO: This could be improved! resp. better documented
@@ -196,7 +195,7 @@ class Coverage:
                             centroids_array = np.array([(centroid.x, centroid.y) for centroid in self.grid_gdf.loc[intersecting_rectangles].centroid])
                         distances = cdist(centroids_array, valid_positions_flipped)
                         nearest_indices = np.argmin(distances, axis=1)
-                        times_at_nearest_points = [times[i] for i in cluster[nearest_indices]]
+                        times_at_nearest_points = [times[k] for k in cluster[nearest_indices]]
                         angle_at_nearest_points = refl_vector[i].refl_ang_vec[cluster[nearest_indices]]
                         power_at_nearest_points = refl_vector[i].power[cluster[nearest_indices]]
 
@@ -438,7 +437,7 @@ class Coverage:
             if count == 1:
                 return "aqua", 0.3  # Color for 1-time intersection
             elif count == 2:
-                return "azure", 0.3  # Color for more than 1-time intersection
+                return "blue", 0.3  # Color for 2-time intersection
             elif count > 2:
                 return "orange", 0.3
             else:
@@ -547,8 +546,8 @@ class Coverage:
         legend_elements = [
             Patch(facecolor="aqua", edgecolor="aqua", alpha=0.3, label="1  intersection"),
             Patch(
-                facecolor="azure",
-                edgecolor="azure",
+                facecolor="blue",
+                edgecolor="blue",
                 alpha=0.3,
                 label="2  intersections",
             ),
