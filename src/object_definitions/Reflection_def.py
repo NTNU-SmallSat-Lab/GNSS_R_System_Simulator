@@ -69,7 +69,8 @@ class Reflection:
         self.gnss_vel_vec = []
         self.sat_pos_vec = []
         self.sat_vel_vec = []
-        self.refl_ang_vec = []
+        self.refl_ang_vec = []        # incidence angle wrt local surface normal [deg], shape (n,)
+        self.angle_diagnostics = []   # solver diagnostics [theta_in, theta_out, central_angle], shape (n, 3)
         self.link_budget = {}
 
     def compute_reflection_coordinates(
@@ -233,9 +234,8 @@ class Reflection:
         self.gnss_vel_vec = GNSS_state.velocities_eci  # GNSS satellite velocities ECI coordinates
         self.sat_pos_vec = Sat_state.positions_eci  # LEO satellite positions   ECI coordinates
         self.sat_vel_vec = Sat_state.velocities_eci  # LEO satellite velocities  ECI coordinates
-        self.refl_ang_vec = (
-            theta_vec  # Reflection angles         ECI coordinates [deg] # TODO: Change from vector n x 3 to 3 x n (actually 2 x n) (same as sat_pos_vec)
-        )
+        self.refl_ang_vec = incidence_deg  # Incidence angle wrt local surface normal [deg], shape (n,)
+        self.angle_diagnostics = theta_vec  # Solver diagnostics [theta_in, theta_out, central_angle], shape (n, 3)
         self.link_budget = link_budget
         self.power = power  # Received reflection power [W]
 

@@ -79,7 +79,11 @@ class BRP:
             brp, tval, reason = calculate_ellipsoid_intersection_t(T_ecef, R_ecef, a=a, b=b, cutoff_angle=self.cutoff_angle)
             if reason == "ok":
                 ray_vec = R_ecef - brp
-                cos_theta = np.dot(ray_vec, brp) / (np.linalg.norm(ray_vec) * np.linalg.norm(brp))
+                # Incidence angle is measured from the local ellipsoid normal at the BRP
+                # (the geocentric position vector differs from the geodetic normal by up to ~0.19°).
+                n_surface = np.array([brp[0] / a**2, brp[1] / a**2, brp[2] / b**2])
+                n_surface = n_surface / np.linalg.norm(n_surface)
+                cos_theta = np.dot(ray_vec, n_surface) / np.linalg.norm(ray_vec)
                 cos_theta = np.clip(cos_theta, -1.0, 1.0)
                 theta_deg = np.degrees(np.arccos(cos_theta))
 
