@@ -3,6 +3,7 @@
 gnssr_satID_*.tle
 *.FFephem
 *.txt
+!requirements.txt
 *.md
 *.png
 *.gif
