@@ -78,31 +78,14 @@ class Coverage:
         #############################
         # Loading "Gridded Shapefile"
         #############################
-        if os.path.exists(self.gridded_shapefile_path):
-            if overwrite_shapefile:
-                print("Overwriting existing gridded shapefile.")
-                os.remove(self.gridded_shapefile_path)  # Remove the existing file
-                # Create a new gridded shapefile
-                if self.grid_size_m is None:
-                    print(f'Creating new gridded shapefile at with equal "latitude / longintude" spacing at: {self.gridded_shapefile_path}')
-                    self._create_coverage_shapefile_deg()
-                    self.grid_type = "equiangular"
-                else:
-                    print(f'Creating new gridded shapefile at with equal "meters" spacing at: {self.gridded_shapefile_path}')
-                    self._create_coverage_shapefile_m()
-                    self.grid_type = "equidistant"
-            else:
-                print(f"Grided shapefile already exists at: {self.gridded_shapefile_path} \n        Loading existing gridded shapefile.")
+        shapefile_exists = os.path.exists(self.gridded_shapefile_path)
+        if shapefile_exists and not overwrite_shapefile:
+            print(f"Grided shapefile already exists at: {self.gridded_shapefile_path} \n        Loading existing gridded shapefile.")
         else:
-            # Grided shapefile does not yet exist, create a new gridded shapefile
-            if self.grid_size_m is None:
-                print(f'Creating new gridded shapefile at with equal "latitude / longintude" spacing at: {self.gridded_shapefile_path}')
-                self._create_coverage_shapefile_deg()
-                self.grid_type = "equiangular"
-            else:
-                print(f'Creating new gridded shapefile at with equal "meters" spacing at: {self.gridded_shapefile_path}')
-                self._create_coverage_shapefile_m()
-                self.grid_type = "equidistant"
+            if shapefile_exists:
+                print("Overwriting existing gridded shapefile.")
+                os.remove(self.gridded_shapefile_path)
+            self._create_gridded_shapefile()
 
         # Check if the gridded shapefile was created successfully and load it if it exists
         if os.path.exists(self.gridded_shapefile_path):
@@ -567,6 +550,17 @@ class Coverage:
 
         # Close the plot to free up memory
         plt.close()
+
+    def _create_gridded_shapefile(self):
+        """Dispatch to the equidistant or equiangular shapefile generator based on grid_size_m."""
+        if self.grid_size_m is None:
+            print(f'Creating new gridded shapefile with equal "latitude / longitude" spacing at: {self.gridded_shapefile_path}')
+            self._create_coverage_shapefile_deg()
+            self.grid_type = "equiangular"
+        else:
+            print(f'Creating new gridded shapefile with equal "meters" spacing at: {self.gridded_shapefile_path}')
+            self._create_coverage_shapefile_m()
+            self.grid_type = "equidistant"
 
     def _create_coverage_shapefile_m(self):
         """
