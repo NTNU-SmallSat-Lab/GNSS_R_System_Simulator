@@ -46,16 +46,15 @@ def ensure_utc_aware(dt_obj):
     return dt_obj
 
 
-def to_datetime64_seconds(times):
-    """
-    Convert datetime-like values to numpy datetime64 seconds without timezone warnings.
+def to_utc_datetime_array(times):
+    """Coerce datetime-like input to an object-dtype ndarray of UTC-naive Python datetimes.
 
-    NumPy datetime64 has no timezone representation. For timezone-aware Python
-    datetimes, convert the instant to UTC and then drop tzinfo before creating
-    the array. This preserves the UTC timestamp while avoiding NumPy's warning.
+    pymap3d (>=3.2) requires its time argument to be Python ``datetime`` instances,
+    not ``numpy.datetime64``, so we keep the array as ``dtype=object``. Timezone-aware
+    inputs are converted to UTC and stripped of tzinfo for consistency.
     """
     if isinstance(times, np.ndarray) and np.issubdtype(times.dtype, np.datetime64):
-        return times.astype("datetime64[s]")
+        times = times.astype("datetime64[us]").tolist()
 
     if isinstance(times, dt.datetime):
         times = [times]
@@ -66,7 +65,7 @@ def to_datetime64_seconds(times):
             normalized_times.append(time_value.astimezone(dt.UTC).replace(tzinfo=None))
         else:
             normalized_times.append(time_value)
-    return np.array(normalized_times, dtype="datetime64[s]")
+    return np.array(normalized_times, dtype=object)
 
 
 def angle_between_vectors(v1, v2, unit="degrees"):

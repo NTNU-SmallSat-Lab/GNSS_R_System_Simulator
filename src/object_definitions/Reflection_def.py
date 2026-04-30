@@ -83,8 +83,7 @@ class Reflection:
         link_budget_settings: dict | lb.BistaticLinkBudgetSettings | None = None,
         q_sat: np.ndarray | None = None,
     ):
-        if not isinstance(times, np.ndarray):
-            times = fn.to_datetime64_seconds(times)
+        times = fn.to_utc_datetime_array(times)
 
         if frequency_hz is None:
             frequency_hz = Constants.BANDS_CENTER_FREQUENCIES_Hz["L1"]

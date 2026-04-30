@@ -1,8 +1,9 @@
-# Core scientific computing - will be installed via conda-forge first
-# numpy>=2.0.2
-# scipy>=1.14.1
-# matplotlib>=3.10.1
-# pandas>=2.2.3
+# Core scientific computing
+# (conda-forge is recommended for these on conda envs; pip handles them fine in plain venvs)
+numpy>=2.0.2
+scipy>=1.14.1
+matplotlib>=3.10.1
+pandas>=2.2.3
 
 # Space science and astronomy
 skyfield>=1.49
