@@ -19,47 +19,38 @@ dependencies = [
     "matplotlib>=3.10.1",
     
     # Space science and astronomy
+    # NOTE: astropy is not imported directly anywhere in the source code,
+    # but pymap3d uses it as an optional accuracy backend for ECI<->ECEF
+    # transforms. Without it, pymap3d falls back to a less accurate NumPy
+    # implementation and emits a runtime warning.
     "astropy>=6.1.6",
     "astropy-iers-data>=0.2024.11.0",
-    "poliastro>=0.7.0",
     "skyfield>=1.49",
-    "sgp4>=2.23", 
-    "jplephem>=2.22",
-    "pyerfa>=2.0.1",
-    
+    "sgp4>=2.23",
+
     # Geospatial and mapping
     "cartopy>=0.24.1",
-    "geopandas>=1.0.1", 
+    "geopandas>=1.0.1",
     "pyproj>=3.7.0",
     "shapely>=2.0.6",
     "pymap3d>=3.1.0",
-    "pyshp>=2.3.1",
     "pyogrio>=0.10.0",
-    
+
     # Graph algorithms and path planning
     "networkx>=3.4.2",  # Added for ship trajectory path planning
-    
-    # Data formats and I/O
-    "netCDF4>=1.7.2",
-    "cftime>=1.6.4",
+
+    # NASA data access
     "requests>=2.32.3",
     "PyYAML>=6.0.2",
-    
-    # NASA data access
     "podaac-data-subscriber>=1.15.2",
     "harmony-py>=0.4.15",
-    
+    "beautifulsoup4>=4.12.3",
+
     # Performance and utilities
-    "numba>=0.60.0",
     "imageio>=2.37.0",
     "pillow>=10.4.0",
     "tqdm>=4.67.1",
-    "beautifulsoup4>=4.12.3",
-    
-    # Time handling
-    "python-dateutil>=2.8.2",
-    "pytz>=2025.1",
-    
+
     # GUI (if needed)
     "PyQt5>=5.15.11",
 ]
@@ -161,8 +152,6 @@ module = [
     "cartopy.*",
     "geopandas.*",
     "pyogrio.*",
-    "astropy.*",
-    "numba.*",
     "imageio.*",
     "PyQt5.*",
     "networkx.*",  # Added for graph algorithms
