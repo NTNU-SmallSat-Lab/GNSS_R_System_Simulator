@@ -9,8 +9,6 @@ import geopandas as gpd
 from matplotlib import pyplot as plt
 import numpy as np
 
-# from shapely.geometry import Polygon, LineString
-# from astropy import units as u
 from skyfield.api import load
 from tqdm import tqdm
 

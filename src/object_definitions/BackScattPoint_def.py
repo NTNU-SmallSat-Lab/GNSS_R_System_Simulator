@@ -1,5 +1,3 @@
-from astropy import units as u
-from astropy.coordinates import GCRS, ITRS, CartesianRepresentation, SkyCoord
 import numpy as np
 import pymap3d
 
@@ -57,8 +55,12 @@ class BRP:
             q_sat = np.array([1.0, 0.0, 0.0, 0.0], dtype=float)
 
         # --- Convert ECI → ECEF first
-        T_ecef_all = eci_gcrs_to_ecef(GNSS_state.positions_eci.T, times)
-        R_ecef_all = eci_gcrs_to_ecef(Sat_state.positions_eci.T, times)
+        T_ecef_all = np.column_stack(pymap3d.eci2ecef(
+            GNSS_state.positions_eci[0], GNSS_state.positions_eci[1], GNSS_state.positions_eci[2], times,
+        ))
+        R_ecef_all = np.column_stack(pymap3d.eci2ecef(
+            Sat_state.positions_eci[0], Sat_state.positions_eci[1], Sat_state.positions_eci[2], times,
+        ))
 
         num_positions = len(times)
 
@@ -88,27 +90,20 @@ class BRP:
                 theta_deg = np.degrees(np.arccos(cos_theta))
 
                 if theta_deg < self.cutoff_angle:
-                    brp_ECI_vec[k] = ecef_to_eci(brp, times[k])
+                    brp_ECI_vec[k] = np.array(pymap3d.ecef2eci(brp[0], brp[1], brp[2], times[k]), dtype=float)
                     incidence_angles[k] = theta_deg
 
         # --- Compute lat/lon only for valid BRPs
         valid_brp_idx = np.where(~np.isnan(brp_ECI_vec[:,0]))[0]
 
         if len(valid_brp_idx) > 0:
-            lat_list, lon_list = [], []
-
-            for k in valid_brp_idx:
-                x, y, z = brp_ECI_vec[k]
-
-                # Convert a *single* Skyfield scalar time → Astropy Time
-                #t_astropy = Time(times[k].tt, format='jd', scale='tt')
-                t_astropy = times[k]
-
-                lat, lon, _ = pymap3d.eci2geodetic(x, y, z, t_astropy)
-                lat_list.append(lat)
-                lon_list.append(lon)
-
-            brp_LL_vec[valid_brp_idx] = np.column_stack((lat_list, lon_list))
+            lat, lon, _ = pymap3d.eci2geodetic(
+                brp_ECI_vec[valid_brp_idx, 0],
+                brp_ECI_vec[valid_brp_idx, 1],
+                brp_ECI_vec[valid_brp_idx, 2],
+                times[valid_brp_idx],
+            )
+            brp_LL_vec[valid_brp_idx] = np.column_stack((lat, lon))
 
         link_budget = lb.compute_reflection_link_budget(
             tx_positions_eci=GNSS_state.positions_eci,
@@ -123,7 +118,7 @@ class BRP:
         )
         power = link_budget["received_power_w"]
 
-        self.time_vec = times#np.array([t.utc_datetime() for t in times], dtype=object)
+        self.time_vec = times
 
         # --- Store other fields
         self.refl_ECI_vec = brp_ECI_vec
@@ -149,65 +144,6 @@ class BRP:
             earth_model=earth_model,
         )
 
-
-# ===============================
-#   ECI <---> ECEF CONVERSION
-# ===============================
-def eci_gcrs_to_ecef(r_eci, epoch):
-    r = np.atleast_2d(r_eci).astype(float)
-    single = r.shape[0] == 1
-    t = epoch
-    # Convert Skyfield Time to Astropy Time
-    #try:
-    #    t = Time([e.utc_datetime() for e in epoch], scale='utc')  # multiple times
-    #except TypeError:
-    #    t = Time(epoch.utc_datetime(), scale='utc')  # single time
-
-    # Broadcast single position to multiple times if needed
-    if r.shape[0] == 1 and len(np.atleast_1d(t)) > 1:
-        r = np.tile(r, (len(t), 1))
-
-    cart = CartesianRepresentation(r[:,0]*u.m, r[:,1]*u.m, r[:,2]*u.m)
-    sc = SkyCoord(cart, frame=GCRS(obstime=t))
-    sc_itrs = sc.transform_to(ITRS(obstime=t))
-
-    out = np.vstack([
-        sc_itrs.cartesian.x.to(u.m).value,
-        sc_itrs.cartesian.y.to(u.m).value,
-        sc_itrs.cartesian.z.to(u.m).value
-    ]).T
-
-    return out[0] if single else out
-
-def ecef_to_eci(r_ecef, epoch):
-    # Ensure Nx3 array
-    r = np.atleast_2d(r_ecef).astype(float)
-    single = r.shape[0] == 1
-
-    t = epoch
-    # Convert Skyfield Time to Astropy Time
-    #try:
-    #    t = Time([e.utc_datetime() for e in epoch], scale='utc')  # multiple times
-    #except TypeError:
-    #    t = Time(epoch.utc_datetime(), scale='utc')  # single time
-
-    # Broadcast single position to multiple times if needed
-    if r.shape[0] == 1 and len(np.atleast_1d(t)) > 1:
-        r = np.tile(r, (len(t), 1))
-
-    # Convert to CartesianRepresentation and wrap in ITRS frame
-    cart = CartesianRepresentation(r[:,0]*u.m, r[:,1]*u.m, r[:,2]*u.m)
-    sc = SkyCoord(cart, frame=ITRS(obstime=t))
-    sc_gcrs = sc.transform_to(GCRS(obstime=t))
-
-    # Extract x, y, z
-    out = np.vstack([
-        sc_gcrs.cartesian.x.to(u.m).value,
-        sc_gcrs.cartesian.y.to(u.m).value,
-        sc_gcrs.cartesian.z.to(u.m).value
-    ]).T
-
-    return out[0] if single else out
 
 # ===============================
 #   GEOMETRY FUNCTIONS
