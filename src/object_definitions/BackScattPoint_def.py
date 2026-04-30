@@ -55,11 +55,13 @@ class BRP:
             q_sat = np.array([1.0, 0.0, 0.0, 0.0], dtype=float)
 
         # --- Convert ECI → ECEF first
+        # pymap3d expects a Python list/sequence of datetimes for batch conversions.
+        times_list = list(times)
         T_ecef_all = np.column_stack(pymap3d.eci2ecef(
-            GNSS_state.positions_eci[0], GNSS_state.positions_eci[1], GNSS_state.positions_eci[2], times,
+            GNSS_state.positions_eci[0], GNSS_state.positions_eci[1], GNSS_state.positions_eci[2], times_list,
         ))
         R_ecef_all = np.column_stack(pymap3d.eci2ecef(
-            Sat_state.positions_eci[0], Sat_state.positions_eci[1], Sat_state.positions_eci[2], times,
+            Sat_state.positions_eci[0], Sat_state.positions_eci[1], Sat_state.positions_eci[2], times_list,
         ))
 
         num_positions = len(times)
@@ -101,7 +103,7 @@ class BRP:
                 brp_ECI_vec[valid_brp_idx, 0],
                 brp_ECI_vec[valid_brp_idx, 1],
                 brp_ECI_vec[valid_brp_idx, 2],
-                times[valid_brp_idx],
+                list(times[valid_brp_idx]),
             )
             brp_LL_vec[valid_brp_idx] = np.column_stack((lat, lon))
 

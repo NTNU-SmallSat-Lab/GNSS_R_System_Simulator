@@ -119,6 +119,8 @@ def initialize(config_file_name="Configuration.ini"):
         unspecified keys fall back to the dataclass defaults.
     =========================================================================================================
     """
+    _check_python_version()
+
     config = cp.ConfigParser()
     config.read(config_file_name)
 

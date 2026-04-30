@@ -6,6 +6,11 @@ matplotlib>=3.10.1
 pandas>=2.2.3
 
 # Space science and astronomy
+# astropy is not imported by our source, but pymap3d uses it as an optional
+# accuracy backend for ECI<->ECEF transforms (avoids a low-accuracy fallback
+# warning at runtime).
+astropy>=6.1.6
+astropy-iers-data>=0.2024.11.0
 skyfield>=1.49
 sgp4>=2.23
 

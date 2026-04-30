@@ -19,6 +19,12 @@ dependencies = [
     "matplotlib>=3.10.1",
     
     # Space science and astronomy
+    # NOTE: astropy is not imported directly anywhere in the source code,
+    # but pymap3d uses it as an optional accuracy backend for ECI<->ECEF
+    # transforms. Without it, pymap3d falls back to a less accurate NumPy
+    # implementation and emits a runtime warning.
+    "astropy>=6.1.6",
+    "astropy-iers-data>=0.2024.11.0",
     "skyfield>=1.49",
     "sgp4>=2.23",
 

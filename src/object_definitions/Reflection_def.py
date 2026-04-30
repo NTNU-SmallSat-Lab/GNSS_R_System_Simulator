@@ -112,13 +112,16 @@ class Reflection:
         if self.earth_model == "elliptical" and valid_index_array.size > 0:
             specular_point_ecef_vec = np.full((num_positions, 3), np.nan)
             valid_times = times[valid_index_array]
+            # pymap3d expects a Python list/sequence of datetimes, not an
+            # ndarray; tolist() unwraps the object array to plain datetimes.
+            valid_times_list = list(valid_times)
 
             gnss_pos_ecef = np.column_stack(
                 pymap3d.eci2ecef(
                     GNSS_state.positions_eci[0, valid_index_array],
                     GNSS_state.positions_eci[1, valid_index_array],
                     GNSS_state.positions_eci[2, valid_index_array],
-                    valid_times,
+                    valid_times_list,
                 )
             )
             sat_pos_ecef = np.column_stack(
@@ -126,7 +129,7 @@ class Reflection:
                     Sat_state.positions_eci[0, valid_index_array],
                     Sat_state.positions_eci[1, valid_index_array],
                     Sat_state.positions_eci[2, valid_index_array],
-                    valid_times,
+                    valid_times_list,
                 )
             )
 
@@ -147,7 +150,7 @@ class Reflection:
                         specular_init_guess_eci[valid_init_guess, 0],
                         specular_init_guess_eci[valid_init_guess, 1],
                         specular_init_guess_eci[valid_init_guess, 2],
-                        valid_times[valid_init_guess],
+                        list(valid_times[valid_init_guess]),
                     )
                 )
 
@@ -167,7 +170,7 @@ class Reflection:
                         specular_point_ecef_vec[valid_ecef_points, 0],
                         specular_point_ecef_vec[valid_ecef_points, 1],
                         specular_point_ecef_vec[valid_ecef_points, 2],
-                        times[valid_ecef_points],
+                        list(times[valid_ecef_points]),
                     )
                 )
         else:
@@ -193,7 +196,7 @@ class Reflection:
                     specular_point_vec[valid_specular_points, 0],
                     specular_point_vec[valid_specular_points, 1],
                     specular_point_vec[valid_specular_points, 2],
-                    times[valid_specular_points],
+                    list(times[valid_specular_points]),
                 )
                 latlon_ref[valid_specular_points, :] = np.column_stack((lat, lon))
             lons, lats = self._prevent_longitude_wraparound(latlon_ref[:, 1], latlon_ref[:, 0])
