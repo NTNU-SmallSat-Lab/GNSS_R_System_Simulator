@@ -251,9 +251,17 @@ class Reflection:
         satCoord = np.array(satPos).reshape(-1, 1)
         GPSCoord = np.array(gnssPos).reshape(-1, 1)
 
-        # Verify line of sight (no Earth obstruction between Tx and Rx)
-        if not self._check_los_satellites(np.asarray(satPos), np.asarray(gnssPos)):
-            return np.array([np.nan, np.nan, np.nan]), np.nan, np.nan
+        # Check for line of sight (LOS)
+        d = satCoord - GPSCoord
+        t_values = np.linspace(0, 1, 200)  # Sample points along the line
+
+        # Verify LOS by checking if any point along the line passes through Earth
+        for t in t_values:
+            r_t = GPSCoord + t * d
+            distance_to_earth_center = np.linalg.norm(r_t)
+            if distance_to_earth_center < Constants.RADIUS_EARTH_EQUAT:
+                # No line of sight, obstructed by Earth
+                return np.array([np.nan, np.nan, np.nan]), np.nan, np.nan
 
         # Get rotation matrix
         Rot = self.get_rotation_3D_to_plane_coords(satCoord, GPSCoord)
@@ -276,8 +284,8 @@ class Reflection:
         vec_2 = satPos - ReflectionPoint
         vec_3 = gnssPos - ReflectionPoint
 
-        theta_degrees2 = fn.angle_between_vectors(vec_1, vec_2)
-        theta_degrees3 = fn.angle_between_vectors(vec_1, vec_3)
+        theta_degrees2 = self._angle_between_vectors(vec_1, vec_2)
+        theta_degrees3 = self._angle_between_vectors(vec_1, vec_3)
 
         return ReflectionPoint, theta_degrees2, theta_degrees3
 
@@ -411,7 +419,7 @@ class Reflection:
         c2 = np.cos(theta)
         s2 = np.sin(theta)
 
-        Sv = fn.skew_matrix(vec2)
+        Sv = self._skew_matrix(vec2)
         Rot = np.eye(3) + s2 * Sv + Sv @ Sv * (1 - c2)
         return Rot
 
@@ -465,27 +473,39 @@ class Reflection:
         return None, None, None
 
     @staticmethod
-    def _check_los_satellites(r1, r2) -> bool:
-        """Closed-form line-of-sight check between two points over a spherical Earth."""
-        r1 = np.asarray(r1, dtype=float)
-        r2 = np.asarray(r2, dtype=float)
-        d = r2 - r1
-        d_dot_d = float(np.dot(d, d))
-        if d_dot_d == 0.0:
-            return float(np.linalg.norm(r1)) >= Constants.RADIUS_EARTH_EQUAT
+    def _angle_between_vectors(v1, v2):
+        # Calculate the angle between two vectors in degrees
+        dot_product = np.dot(v1, v2)
+        magnitude_a = np.linalg.norm(v1)
+        magnitude_b = np.linalg.norm(v2)
+        cos_theta = dot_product / (magnitude_a * magnitude_b)
+        theta_radians = np.arccos(cos_theta)
+        return np.degrees(theta_radians)
 
-        t_perp = -float(np.dot(r1, d)) / d_dot_d
-        if 0.0 <= t_perp <= 1.0:
-            min_dist = float(np.linalg.norm(r1 + t_perp * d))
-        else:
-            min_dist = min(float(np.linalg.norm(r1)), float(np.linalg.norm(r2)))
-        return min_dist >= Constants.RADIUS_EARTH_EQUAT
+    @staticmethod
+    def _check_los_satellites(r1, r2) -> bool:
+        """
+        Checks if there is a clear Line Of Sight (LOS) between two points r1 and r2,
+        given the Earth's radius in kilometers (spherical earth).
+        """
+        d = r2 - r1
+
+        t_values = np.linspace(0, 1, 100)
+        points_along_line = r1[np.newaxis, :] + t_values[:, np.newaxis] * d[np.newaxis, :]
+        distances_to_center = np.linalg.norm(points_along_line, axis=1)
+
+        return not np.any(distances_to_center < Constants.RADIUS_EARTH_EQUAT)
 
     @staticmethod
     def _is_valid_earth_model(earth_model) -> bool:
         # Check if earth_model is either 'spherical' or 'elliptical'
         valid_models = ["spherical", "elliptical"]
         return earth_model in valid_models
+
+    @staticmethod
+    def _skew_matrix(v):
+        # Returns the skew symmetric matrix of the vector v
+        return np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
 
     @staticmethod
     def _prevent_longitude_wraparound(lons, lats):

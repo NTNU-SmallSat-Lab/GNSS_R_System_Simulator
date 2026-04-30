@@ -47,11 +47,14 @@ def ensure_utc_aware(dt_obj):
 
 
 def to_utc_datetime_array(times):
-    """Coerce datetime-like input to an object-dtype ndarray of UTC-naive Python datetimes.
+    """Coerce datetime-like input to an object-dtype ndarray of UTC-aware Python datetimes.
 
     pymap3d (>=3.2) requires its time argument to be Python ``datetime`` instances,
     not ``numpy.datetime64``, so we keep the array as ``dtype=object``. Timezone-aware
-    inputs are converted to UTC and stripped of tzinfo for consistency.
+    inputs are converted to UTC; naive inputs are assumed to already represent UTC and
+    are tagged accordingly. Preserving tzinfo matters because downstream consumers
+    (e.g. MovingTargetDetection's reflection_dict_timeSorted) key by datetime and mix
+    naive/aware datetimes will never match in a dict lookup.
     """
     if isinstance(times, np.ndarray) and np.issubdtype(times.dtype, np.datetime64):
         times = times.astype("datetime64[us]").tolist()
@@ -61,8 +64,11 @@ def to_utc_datetime_array(times):
 
     normalized_times = []
     for time_value in times:
-        if isinstance(time_value, dt.datetime) and time_value.tzinfo is not None:
-            normalized_times.append(time_value.astimezone(dt.UTC).replace(tzinfo=None))
+        if isinstance(time_value, dt.datetime):
+            if time_value.tzinfo is None:
+                normalized_times.append(time_value.replace(tzinfo=dt.UTC))
+            else:
+                normalized_times.append(time_value.astimezone(dt.UTC))
         else:
             normalized_times.append(time_value)
     return np.array(normalized_times, dtype=object)
