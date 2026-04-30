@@ -10,7 +10,15 @@ from datetime import datetime, timezone
 import json as json
 import os
 import re
+import sys
 import warnings
+
+# Python versions the simulator has been validated against. The project's
+# pyproject.toml requires >=3.12.3; running on a newer minor (e.g. 3.13)
+# has surfaced issues with debugpy and binary-wheel availability for
+# scientific packages, so we warn the user explicitly.
+_PYTHON_MIN = (3, 12, 3)
+_PYTHON_TESTED_MAX_MINOR = (3, 12)
 
 # Cartopy passes reflection arrays containing NaN gaps through pyproj; pyproj
 # wraps those entries as masked and then warns on the round-trip back to NaN.
@@ -29,6 +37,25 @@ from object_definitions.Constants_def import Constants
 
 ## UPDATE THE SIMULATIOR VERSION HERE ##
 __version__ = "0.1.0"
+
+
+def _check_python_version() -> None:
+    current = sys.version_info[:3]
+    current_str = ".".join(map(str, current))
+    if current < _PYTHON_MIN:
+        min_str = ".".join(map(str, _PYTHON_MIN))
+        warnings.warn(
+            f"Python {current_str} is below the simulator's minimum supported version ({min_str}). "
+            "Some features may fail; please upgrade.",
+            stacklevel=2,
+        )
+    elif current[:2] > _PYTHON_TESTED_MAX_MINOR:
+        tested_str = ".".join(map(str, _PYTHON_TESTED_MAX_MINOR))
+        warnings.warn(
+            f"Python {current_str} is newer than the simulator's tested range (<= {tested_str}.x). "
+            "If you hit import errors (debugpy, cartopy, etc.), recreate the venv with Python 3.12.",
+            stacklevel=2,
+        )
 
 def parse_antenna_angles(filename):
     # Extract azimuth and elevation using regex
