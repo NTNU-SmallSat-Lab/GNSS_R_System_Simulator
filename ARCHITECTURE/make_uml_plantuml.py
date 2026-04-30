@@ -96,8 +96,7 @@ package "Geometry" <<Rectangle>> #FFF4F4 {
         link_budget
         --
         compute_reflection_coordinates()
-        get_reflection_point_ff() <i>spherical</i>
-        find_specular_point_ellipse() <i>elliptical</i>
+        get_reflection_point_ff() <i>spherical, initial guess</i>
     }
 
     class BRP <<backscatter>> {

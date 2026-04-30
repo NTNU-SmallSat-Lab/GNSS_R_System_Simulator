@@ -247,8 +247,7 @@ CLASSES: list[UClass] = [
         ],
         methods=[
             "compute_reflection_coordinates()",
-            "get_reflection_point_ff()  (spherical)",
-            "find_specular_point_ellipse()",
+            "get_reflection_point_ff()  (spherical, initial guess)",
         ],
     ),
     UClass(
