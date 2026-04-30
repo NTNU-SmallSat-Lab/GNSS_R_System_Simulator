@@ -1,6 +1,12 @@
 """Sanity check: at low latitudes, the elliptical specular point should
 agree with the spherical FF result to within a few km. Catches regressions
-in the SLSQP setup, frame conversions, or residual definition."""
+in the SLSQP setup, frame conversions, or residual definition.
+
+The test geometry is built directly in ECEF, which both
+- avoids an ECI <-> ECEF roundtrip purely for the test, and
+- exercises the same lower-level helper (_find_specular_point_ellipse_ecef)
+  that the production batch path uses.
+"""
 import os
 import sys
 
@@ -19,23 +25,24 @@ def main() -> None:
 
     # Equatorial-plane geometries, varying central angle. Low latitude => the
     # flattening effect on the specular point is small, so ellipse ~ sphere.
-    t = np.datetime64("2026-01-01T00:00:00")
     refl = Reflection(tx_satID="dummy", rx_satID="dummy",
                       earth_model="elliptical", angle=45)
 
     cases = []
     for sep_deg in (10.0, 20.0, 30.0, 40.0):
-        Rx = np.array([R_LEO, 0.0, 0.0])
+        Rx_ecef = np.array([R_LEO, 0.0, 0.0])
         a = np.deg2rad(sep_deg)
-        Tx = R_GNSS * np.array([np.cos(a), np.sin(a), 0.0])
+        Tx_ecef = R_GNSS * np.array([np.cos(a), np.sin(a), 0.0])
 
-        S_ell, _, _ = refl.find_specular_point_ellipse(Tx, Rx, t)
-        S_sph, _, _ = refl.get_reflection_point_ff(Tx, Rx)
-        if np.any(np.isnan(S_ell)) or np.any(np.isnan(S_sph)):
-            raise AssertionError(f"NaN at sep={sep_deg} deg: ellipse={S_ell}, sphere={S_sph}")
+        S_ell_ecef, _, _ = refl._find_specular_point_ellipse_ecef(Tx_ecef, Rx_ecef)
+        # get_reflection_point_ff is frame-invariant for a sphere, so feeding
+        # ECEF in returns ECEF out.
+        S_sph_ecef, _, _ = refl.get_reflection_point_ff(Tx_ecef, Rx_ecef)
+        if np.any(np.isnan(S_ell_ecef)) or np.any(np.isnan(S_sph_ecef)):
+            raise AssertionError(f"NaN at sep={sep_deg} deg: ellipse={S_ell_ecef}, sphere={S_sph_ecef}")
 
-        lat_e, lon_e, _ = pymap3d.eci2geodetic(*S_ell, t)
-        lat_s, lon_s, _ = pymap3d.eci2geodetic(*S_sph, t)
+        lat_e, lon_e, _ = pymap3d.ecef2geodetic(*S_ell_ecef)
+        lat_s, lon_s, _ = pymap3d.ecef2geodetic(*S_sph_ecef)
 
         # Great-circle separation, mean Earth radius
         dlat = np.deg2rad(lat_e - lat_s)

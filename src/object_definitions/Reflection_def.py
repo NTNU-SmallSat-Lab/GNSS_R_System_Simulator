@@ -289,24 +289,6 @@ class Reflection:
 
         return ReflectionPoint, theta_degrees2, theta_degrees3
 
-    def find_specular_point_ellipse(self, Tx_eci, Rx_eci, time_i):
-        # Check if transmitting and receiving satellites have a clear line of sight (if so there is no LOS => no reflection)
-        if not self._check_los_satellites(Rx_eci, Tx_eci):
-            # No line of sight, return NaN values
-            return np.array([np.nan, np.nan, np.nan]), np.nan, np.nan
-
-        # The WGS84 ellipsoid is body-fixed, so the specular geometry is solved in ECEF.
-        Tx_ecef = np.array(pymap3d.eci2ecef(Tx_eci[0], Tx_eci[1], Tx_eci[2], time_i), dtype=float)
-        Rx_ecef = np.array(pymap3d.eci2ecef(Rx_eci[0], Rx_eci[1], Rx_eci[2], time_i), dtype=float)
-
-        S_ecef, theta_degrees2, theta_degrees3 = self._find_specular_point_ellipse_ecef(Tx_ecef, Rx_ecef)
-        if np.isnan(S_ecef).any():
-            return np.array([np.nan, np.nan, np.nan]), np.nan, np.nan
-
-        S_eci = np.array(pymap3d.ecef2eci(S_ecef[0], S_ecef[1], S_ecef[2], time_i), dtype=float)
-
-        return S_eci, theta_degrees2, theta_degrees3
-
     def _find_specular_point_ellipse_ecef(self, Tx_ecef, Rx_ecef, initial_guess_ecef=None):
         # Radius at the poles for elliptical Earth model
         a = Constants.RADIUS_EARTH_EQUAT
