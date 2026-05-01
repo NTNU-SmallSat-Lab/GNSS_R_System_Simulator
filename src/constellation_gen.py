@@ -11,20 +11,20 @@ def wrapto360(angle):
 
 def delta_pattern_hybrid(Nsat, Nplane, f, incl, a, RAAN_0):
     """
+    =========================================================================================================
     Generate and plot the given Walker delta constellation.
 
-    Parameters:
-    Nsat (int): Number of satellites
-    Nplane (int): Number of orbital planes
-    f (int): Anomaly difference between successive satellites in adjacent orbits
-    incl (float): Orbit inclination (degrees)
-    a (float): Orbit semi-major axis (km)
-    plots (str): 'y' to plot the constellation, 'n' otherwise
-    theta_rel (float): 0 for SAR subset, otherwise Optical subset
-    fig (int): Figure number
+    INPUTS:
+        Nsat:    [int]    Number of satellites
+        Nplane:  [int]    Number of orbital planes
+        f:       [int]    Anomaly difference between successive satellites in adjacent orbits
+        incl:    [float]  Orbit inclination (degrees)
+        a:       [float]  Orbit semi-major axis (km)
+        RAAN_0:  [float]  RAAN of the first orbital plane (degrees)
 
-    Returns:
-    tuple: Satellite and plane constellation matrices (if applicable)
+    OUTPUT:
+        CONSTELLATION_SC: [np.array, shape (Nsat, 6)]   Per-satellite [incl, ecc, RAAN, argPer, TA, a]
+    =========================================================================================================
     """
     if f < 0 or f > (Nplane - 1) or f % 1 != 0 or Nsat % 1 != 0 or Nplane % 1 != 0 or Nsat % Nplane != 0:
         print("Wrong parameter choice")

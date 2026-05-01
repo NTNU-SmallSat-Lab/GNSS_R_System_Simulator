@@ -33,11 +33,11 @@ def ensure_utc_aware(dt_obj):
     =========================================================================================================
     Convert datetime to UTC-aware if it's naive.
 
-    INPUT:
-        dt_obj: datetime object (can be timezone-aware or naive)
+    INPUTS:
+        dt_obj: [datetime]   Datetime object (can be timezone-aware or naive)
 
     OUTPUT:
-        datetime object that is guaranteed to be UTC-aware
+        result: [datetime]   Datetime guaranteed to be UTC-aware
     =========================================================================================================
     """
     if dt_obj is None:
@@ -48,14 +48,23 @@ def ensure_utc_aware(dt_obj):
 
 
 def to_utc_datetime_array(times):
-    """Coerce datetime-like input to an object-dtype ndarray of UTC-aware Python datetimes.
+    """
+    =========================================================================================================
+    Coerce datetime-like input to an object-dtype ndarray of UTC-aware Python datetimes.
 
-    pymap3d (>=3.2) requires its time argument to be Python ``datetime`` instances,
-    not ``numpy.datetime64``, so we keep the array as ``dtype=object``. Timezone-aware
-    inputs are converted to UTC; naive inputs are assumed to already represent UTC and
-    are tagged accordingly. Preserving tzinfo matters because downstream consumers
-    (e.g. MovingTargetDetection's reflection_dict_timeSorted) key by datetime and mix
-    naive/aware datetimes will never match in a dict lookup.
+    pymap3d (>=3.2) requires its time argument to be Python ``datetime`` instances, not
+    ``numpy.datetime64``, so we keep the array as ``dtype=object``. Timezone-aware inputs are
+    converted to UTC; naive inputs are assumed to already represent UTC and are tagged accordingly.
+    Preserving tzinfo matters because downstream consumers (e.g. MovingTargetDetection's
+    reflection_dict_timeSorted) key by datetime, and mixing naive/aware datetimes will never match
+    in a dict lookup.
+
+    INPUTS:
+        times: [datetime | list[datetime] | np.ndarray]   Input times in any datetime-like form
+
+    OUTPUT:
+        result: [np.ndarray, dtype=object]   Array of UTC-aware Python datetimes
+    =========================================================================================================
     """
     if isinstance(times, np.ndarray) and np.issubdtype(times.dtype, np.datetime64):
         times = times.astype("datetime64[us]").tolist()
@@ -121,12 +130,11 @@ def load_gnss_constellation_dict(gnss_costl_configs: dict) -> dict:
     =========================================================================================================
     Load GNSS constellation configurations.
 
-    INPUT:
-        gnss_costl_configs: Dictionary containing GNSS constellation configurations
-                            read from the configuration file.
+    INPUTS:
+        gnss_costl_configs: [dict]   GNSS constellation configurations read from the configuration file
 
     OUTPUT:
-        gnss_constl_dict: Dictionary containing GNSS constellation objects.
+        gnss_constl_dict: [dict]   {name: SatelliteConstellation} for each GNSS constellation
     =========================================================================================================
     """
     gnss_constl_dict = {}
@@ -192,9 +200,12 @@ def color_gnss_const(gnss_const: str) -> str:
     Assign a color to the GNSS constellation based on its name.
 
     INPUTS:
-        gnss_const: Name of the GNSS constellation (e.g., 'GPS', 'GLONASS', etc.).
+        gnss_const: [str]   Name of the GNSS constellation (e.g., 'GPS', 'GLONASS', etc.)
+
+    OUTPUT:
+        color: [str | None]   Matplotlib color name for the constellation, or None if unknown
     =========================================================================================================
-"""
+    """
     if gnss_const == "GPS":
         color = "red"
     elif gnss_const == "GLONASS":
@@ -284,15 +295,16 @@ def delta_lat_from_distance(lat: float, y_dist: float) -> float:
 def geodetic_to_ecef(lat_deg: float, lon_deg: float, h: float = 0) -> tuple:
     """
     =========================================================================================================
-    Convert geodetic coordinates (latitude, longitude, height) to ECEF (Earth-Centered, Earth-Fixed) coordinates.
+    Convert geodetic coordinates (latitude, longitude, height) to ECEF (Earth-Centered, Earth-Fixed)
+    coordinates.
+
     INPUTS:
-        lat_deg: [float] Latitude in degrees
-        lon_deg: [float] Longitude in degrees
-        h:       [float] Height above the ellipsoid in meters (default is 0)
-    OUTPUTS:
-        X:       [float] ECEF X coordinate in meters
-        Y:       [float] ECEF Y coordinate in meters
-        Z:       [float] ECEF Z coordinate in meters
+        lat_deg: [float]   Latitude in degrees
+        lon_deg: [float]   Longitude in degrees
+        h:       [float]   Height above the ellipsoid in meters (default is 0)
+
+    OUTPUT:
+        result: [tuple]   (X, Y, Z) ECEF coordinates in meters
     =========================================================================================================
     """
     # Convert latitude and longitude from degrees to radians
@@ -315,16 +327,25 @@ def rotation_matrix_from_vectors(v1, v2):
     Calculate the rotation matrix that rotates vector v1 to vector v2.
 
     INPUTS:
-        v1: [np.array] First vector
-        v2: [np.array] Second vector
+        v1: [np.array]   First vector
+        v2: [np.array]   Second vector
 
-    OUTPUTS:
-        R: [np.array] 3x3 Rotation matrix that rotates v1 to v2
+    OUTPUT:
+        R: [np.array, shape (3, 3)]   Rotation matrix that rotates v1 to v2
     =========================================================================================================
     """
     def rodrigues_rotation_matrix(axis, angle):
         """
+        =========================================================================================================
         Create rotation matrix using Rodrigues' formula.
+
+        INPUTS:
+            axis:  [np.ndarray, shape (3,)]   Unit rotation axis
+            angle: [float]                    Rotation angle [rad]
+
+        OUTPUT:
+            R: [np.ndarray, shape (3, 3)]   Rotation matrix
+        =========================================================================================================
         """
         K = np.array([[0, -axis[2], axis[1]],
                       [axis[2], 0, -axis[0]],
@@ -368,20 +389,20 @@ def rotation_matrix_from_vectors(v1, v2):
 
 def compute_visible_times_and_resample_ship(moving_target_detection, sat_const, elev_min=40):
     """
-    ==========================================================================
-    Compute times when at least one satellite is visible from the moving ship
-    and resample the ship trajectory at exactly those timestamps.
+    =========================================================================================================
+    Compute times when at least one satellite is visible from the moving ship and resample the ship
+    trajectory at exactly those timestamps.
 
-    = INPUT:                                                                 =
-    =   moving_target_detection : object containing ship trajectory          =
-    =   sat_const              : satellite constellation (Skyfield objects)  =
-    =   elev_min               : minimum elevation angle for visibility [°]  =
-    =                                                                     =
-    = OUTPUT:                                                                =
-    =   all_visible_times        -> list of datetimes with ≥1 visible sat    =
-    =   ship_positions_resampled -> ship (lat,lon) interpolated at those times =
-    =   sat_visible_times        -> dict {satellite_name: visible timestamps} =
-    ==========================================================================
+    INPUTS:
+        moving_target_detection: [MovingTargetDetection]   Object containing the ship trajectory
+        sat_const:               [SatelliteConstellation]  Satellite constellation (Skyfield objects)
+        elev_min:                [float]                   Minimum elevation angle for visibility [deg]
+
+    OUTPUT:
+        result: [tuple]   (resampled_ship_positions, sat_visible_times)
+                          - resampled_ship_positions: list of (lat, lon) at the visible timestamps
+                          - sat_visible_times:         dict {satellite_name: list of visible datetimes}
+    =========================================================================================================
     """
     ts = load.timescale()
 
@@ -429,21 +450,19 @@ def compute_visible_times_and_resample_ship(moving_target_detection, sat_const, 
 
 def propagate_only_visible_satellites(sat_const, sat_visible_times, gnss_constl_dict=None):
     """
-    ==========================================================================
-    Propagate satellites only at timestamps where they were visible from
-    the moving ship (or GNSS satellites at all visible times if provided).
+    =========================================================================================================
+    Propagate satellites only at timestamps where they were visible from the moving ship
+    (or GNSS satellites at all visible times if provided). Much faster and memory-efficient for
+    sparse timestamp sets.
 
-    Much faster and memory-efficient for sparse timestamp sets.
+    INPUTS:
+        sat_const:         [SatelliteConstellation]    Main satellite constellation (LEO or others)
+        sat_visible_times: [dict]                      {satellite_name : list of datetimes}
+        gnss_constl_dict:  [dict | None]               Optional {name : GNSS SatelliteConstellation}
 
-    = INPUT:                                                                =
-    =   sat_const         : main satellite constellation (LEO or others)    =
-    =   sat_visible_times : dict {satellite_name : list of datetimes}       =
-    =   gnss_constl_dict  : optional dict {name : GNSS constellation}       =
-    =                                                                       =
-    = OUTPUT:                                                               =
-    =   visible_sat_objs  : list of satellites propagated only at relevant   =
-    =                       (visible) timestamps                              =
-    ==========================================================================
+    OUTPUT:
+        visible_sat_objs: [list[Satellite]]   Satellites propagated only at relevant (visible) timestamps
+    =========================================================================================================
     """
     ts = load.timescale()
 
@@ -496,26 +515,29 @@ def propagate_only_visible_satellites(sat_const, sat_visible_times, gnss_constl_
 
 def compute_footprint(sat_pos, sat_vel, refl_pos, time_i, antenna, frequency, q_sat=None, earth_model="spherical"):
     """
+    =========================================================================================================
     Compute the antenna footprint on the Earth's surface as a Shapely polygon in lon/lat coordinates,
     given the satellite state and the reflection point at one time step.
 
-    Extracted from Reflection._compute_footprint / BRP._compute_footprint so both classes can
-    share one implementation. Behaviour is identical to those methods.
+    Extracted from Reflection._compute_footprint / BRP._compute_footprint so both classes can share
+    one implementation. Behaviour is identical to those methods.
 
     INPUTS:
-        sat_pos:     [np.array, shape (3,)] Satellite position vector in ECI [m]
-        sat_vel:     [np.array, shape (3,)] Satellite velocity vector in ECI [m/s]
-        refl_pos:    [np.array, shape (3,)] Reflection point in ECI          [m]
-        time_i:                              Time at this step (Skyfield Time)
-        antenna:     [RxAntenna]            Receiver antenna object
-        frequency:   [float]                Carrier frequency [MHz]
-        q_sat:       [np.array, shape (4,)] Satellite attitude quaternion [w, x, y, z]
-                                            (default: identity [1, 0, 0, 0])
-        earth_model: [str]                  "spherical" or "elliptical"
+        sat_pos:     [np.array, shape (3,)]   Satellite position vector in ECI [m]
+        sat_vel:     [np.array, shape (3,)]   Satellite velocity vector in ECI [m/s]
+        refl_pos:    [np.array, shape (3,)]   Reflection point in ECI [m]
+        time_i:      [Skyfield Time]          Time at this step
+        antenna:     [RxAntenna]              Receiver antenna object
+        frequency:   [float]                  Carrier frequency [MHz]
+        q_sat:       [np.array, shape (4,) | None]   Satellite attitude quaternion [w, x, y, z]
+                                                     (default: identity [1, 0, 0, 0])
+        earth_model: [str]                    "spherical" or "elliptical"
 
-    OUTPUTS:
-        polygon_footprint: Shapely Polygon of the footprint (lon, lat)
-        center_point:      np.array([lat, lon]) of the reflection point
+    OUTPUT:
+        result: [tuple]   (polygon_footprint, center_point)
+                          - polygon_footprint: Shapely Polygon of the footprint (lon, lat)
+                          - center_point:      np.array([lat, lon]) of the reflection point
+    =========================================================================================================
     """
     if q_sat is None:
         q_sat = np.array([1.0, 0.0, 0.0, 0.0])

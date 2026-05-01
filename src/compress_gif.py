@@ -5,15 +5,17 @@ from PIL import Image
 
 def compress_gif(input_path, output_path, max_width=400, colors=64, optimize=True, frame_skip=2):
     """
+    =========================================================================================================
     Compress a GIF file while maintaining reasonable quality.
 
-    Parameters:
-    - input_path: Path to input GIF file
-    - output_path: Path for output compressed GIF
-    - max_width: Maximum width in pixels (height scales proportionally)
-    - colors: Number of colors in palette (max 256)
-    - optimize: Enable GIF optimization
-    - frame_skip: Skip every N frames (1=keep all, 2=skip every other frame)
+    INPUTS:
+        input_path:  [str]   Path to input GIF file
+        output_path: [str]   Path for output compressed GIF
+        max_width:   [int]   Maximum width in pixels (height scales proportionally)
+        colors:      [int]   Number of colors in palette (max 256)
+        optimize:    [bool]  Enable GIF optimization
+        frame_skip:  [int]   Skip every N frames (1=keep all, 2=skip every other frame)
+    =========================================================================================================
     """
 
     try:
@@ -91,7 +93,14 @@ def compress_gif(input_path, output_path, max_width=400, colors=64, optimize=Tru
 
 def batch_compress_gifs(input_folder, output_folder, **kwargs):
     """
+    =========================================================================================================
     Compress all GIF files in a folder.
+
+    INPUTS:
+        input_folder:  [str]   Path to folder containing GIF files
+        output_folder: [str]   Path where compressed GIFs are written
+        **kwargs:      [dict]  Forwarded to compress_gif (max_width, colors, optimize, frame_skip)
+    =========================================================================================================
     """
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)

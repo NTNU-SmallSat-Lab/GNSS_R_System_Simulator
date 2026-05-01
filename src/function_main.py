@@ -275,7 +275,19 @@ def run_simulation(
     gnss_tle_file_path,
     orbits_input,
 ):
-    """Run simulation using the given parameters and save results."""
+    """
+    =========================================================================================================
+    Run simulation using the given parameters and save results.
+
+    INPUTS:
+        start_time_dt:        [datetime]  Simulation start time (UTC)
+        step_size:            [int]       Propagation step size in seconds
+        sim_duration:         [float]     Simulation duration in hours
+        bounding_box:         [list]      [min_lon, max_lon, min_lat, max_lat]
+        gnss_tle_file_path:   [str]       Path to the GNSS TLE file
+        orbits_input:         [list]      List of orbital element tuples for the LEO constellation
+    =========================================================================================================
+    """
     # Convert start_time to datetime
     # start_time_dt = datetime.strptime(start_time, '%Y-%m-%d %H:%M:%S')
 

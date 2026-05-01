@@ -16,14 +16,15 @@ from object_definitions.Static_classes_def import Plotting
 #############################################################################################################################
 def run_area_coverage_simulation(sim_settings):
     """
+    =========================================================================================================
     Run satellite simulation to calculate the coverage of GNSS-R satellites over the Norwegian coast.
     This function initializes the simulation, propagates orbits, calculates reflection points,
-    and generates coverage statistics.
-    The simulation is based on the provided simulation settings which are loaded from a configuration file.
-    (Configuration.ini)
+    and generates coverage statistics. The simulation is based on the provided simulation settings
+    which are loaded from a configuration file (Configuration.ini).
 
-    INPUT:
-        sim_settings: Dictionary containing simulation parameters
+    INPUTS:
+        sim_settings: [dict]   Dictionary containing simulation parameters
+    =========================================================================================================
     """
     earth = "elliptical"  #'spherical'
     print("Simulation start Time:", sim_settings["start_time"])

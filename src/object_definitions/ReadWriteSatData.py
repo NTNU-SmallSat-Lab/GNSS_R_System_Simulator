@@ -181,11 +181,19 @@ def _skyfield_state_from_sgp4_mean_elements(elements, epoch, satnum, bstar=0.0, 
 
 def _solve_sgp4_mean_elements_from_osculating(satellite):
     """
+    =========================================================================================================
     Convert the user-specified osculating orbit to SGP4 mean elements.
 
-    A TLE stores SGP4 mean elements, not an instantaneous Keplerian state.
-    This fit chooses mean elements whose Skyfield/SGP4 state at the TLE epoch
-    matches the osculating state implied by the configuration file.
+    A TLE stores SGP4 mean elements, not an instantaneous Keplerian state. This fit chooses mean
+    elements whose Skyfield/SGP4 state at the TLE epoch matches the osculating state implied by
+    the configuration file.
+
+    INPUTS:
+        satellite: [Satellite]   Satellite carrying the osculating Orbit_specification
+
+    OUTPUT:
+        mean_elements: [dict]   {a, e, i, raan, arg_perigee, mean_anomaly} in SI units / radians
+    =========================================================================================================
     """
     osculating_elements = _orbit_to_classical_elements(satellite.orbit_n)
     target_position, target_velocity = _state_from_classical_elements(osculating_elements)
@@ -276,9 +284,15 @@ class ReadWriteSatData:
     @staticmethod
     def generate_tle_data_string(satellite) -> str:
         """
-        =========================================================================
+        =========================================================================================================
         Generate TLE based on satellite orbit_n data.
-        =========================================================================
+
+        INPUTS:
+            satellite: [Satellite]   Satellite with an orbit_n attribute set
+
+        OUTPUT:
+            tle_string: [str | None]   Three-line TLE string, or None if information is missing
+        =========================================================================================================
         """
         if satellite.orbit_n is None:
             warnings.warn("Orbit was not specified when this Satellite was created. Insufficient information to generate a TLE.")
@@ -294,7 +308,15 @@ class ReadWriteSatData:
     @staticmethod
     def read_tle_data(tle_file_path) -> list[namedtuple]:
         """
-        Read TLE data from a file and return a list of Satellite objects
+        =========================================================================================================
+        Read TLE data from a file and return a list of SatStruct namedtuples.
+
+        INPUTS:
+            tle_file_path: [str]   Path to the TLE file
+
+        OUTPUT:
+            satList: [list[namedtuple] | None]   One SatStruct per satellite in the file, or None if missing
+        =========================================================================================================
         """
         # check if the file exists
         if not os.path.exists(tle_file_path):
@@ -473,18 +495,30 @@ class ReadWriteSatData:
     @staticmethod
     def download_and_read_tle(path) -> bool:
         """
-        =========================================================================
+        =========================================================================================================
         Download TLE data from a website and read it.
-        =========================================================================
+
+        INPUTS:
+            path: [str]   Local destination for the downloaded TLE file
+
+        OUTPUT:
+            success: [bool]   True if the download and parse succeeded
+        =========================================================================================================
         """
         # Download TLE data from a website
 
     @staticmethod
     def __tle_to_ballistic_coef(balistic_coeff_str) -> float:
         """
-        =========================================================================
-        Convert the first derivative of mean motion to physical units.
-        =========================================================================
+        =========================================================================================================
+        Convert the first derivative of mean motion (TLE field) to physical units.
+
+        INPUTS:
+            balistic_coeff_str: [str]   TLE first-derivative-of-mean-motion field
+
+        OUTPUT:
+            ndot: [float]   First derivative of mean motion
+        =========================================================================================================
         """
         sign = balistic_coeff_str[0]
         if sign == "-":
@@ -496,9 +530,15 @@ class ReadWriteSatData:
     @staticmethod
     def __tle_to_MeanM_Bstar(secDerMeanM_str) -> float:
         """
-        =========================================================================
-        Convert the second derivative of mean motion to physical units.
-        =========================================================================
+        =========================================================================================================
+        Convert the second derivative of mean motion (TLE B*-style field) to physical units.
+
+        INPUTS:
+            secDerMeanM_str: [str]   TLE field encoded as <sign>XXXXX<sign>X
+
+        OUTPUT:
+            value: [float]   Decoded floating-point value
+        =========================================================================================================
         """
         sign = secDerMeanM_str[0]
         exp_sign = secDerMeanM_str[6]
@@ -520,9 +560,16 @@ class ReadWriteSatData:
     @staticmethod
     def __get_datetime(year, days) -> datetime:
         """
-        =========================================================================
-        Convert year and days to datetime.
-        =========================================================================
+        =========================================================================================================
+        Convert TLE epoch (year and fractional day-of-year) to a UTC-aware datetime.
+
+        INPUTS:
+            year: [int]     4-digit year
+            days: [float]   Fractional day-of-year [DDD.DDDDDDDD]
+
+        OUTPUT:
+            result: [datetime]   UTC-aware datetime corresponding to (year, days)
+        =========================================================================================================
         """
         # Get the start of the year
         start_of_year = datetime(year, 1, 1)
@@ -540,9 +587,15 @@ class ReadWriteSatData:
     @staticmethod
     def _calc_checksum(stringArray) -> int:
         """
-        =========================================================================
-        Calculate TLE checksum.
-        =========================================================================
+        =========================================================================================================
+        Calculate TLE checksum (sum of digits + 1 per "-", mod 10).
+
+        INPUTS:
+            stringArray: [list[str]]   TLE line(s) to checksum (excluding the checksum digit itself)
+
+        OUTPUT:
+            checksum: [int]   Single-digit checksum
+        =========================================================================================================
         """
         total = 0
         for elem in stringArray:
@@ -556,14 +609,16 @@ class ReadWriteSatData:
     @staticmethod
     def _str2tle_format(value) -> str:
         """
-        =========================================================================
-        str2tle_format:
-            - Convert one of the following numbers:
-               "Second derivative of mean motion"
-               "B*, the drag term"
-              from its numeric value to the format:
-              <sign>XXXXX<sign>X e.g. 1.2345e-4 => ' 12345-3
-        =========================================================================
+        =========================================================================================================
+        Convert "Second derivative of mean motion" or "B*, the drag term" from its numeric value
+        to the TLE-encoded format `<sign>XXXXX<sign>X` (e.g. 1.2345e-4 => ' 12345-3).
+
+        INPUTS:
+            value: [float]   Numeric value to encode
+
+        OUTPUT:
+            tle_sub_str: [str]   Encoded TLE substring
+        =========================================================================================================
         """
         # Sign of the value
         value = value * 10  # Multiply value by 10 to get the exponent right

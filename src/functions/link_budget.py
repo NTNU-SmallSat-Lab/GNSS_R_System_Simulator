@@ -10,38 +10,27 @@ from object_definitions.Rx_antenna_def import RxAntenna
 @dataclass(slots=True)
 class BistaticLinkBudgetSettings:
     """
-    Configuration values for a simplified bistatic GNSS-R link budget.
+    =========================================================================================================
+    BistaticLinkBudgetSettings class:
+        - Configuration values for a simplified bistatic GNSS-R link budget.
+        - Single source of truth for the `[LINK BUDGET]` INI section: field names, defaults
+          and units defined here are picked up automatically by the configuration loader.
 
-    This dataclass is the single source of truth for the `[LINK BUDGET]`
-    INI section: field names, defaults and units defined here are picked up
-    automatically by the configuration loader.
+        ATTRIBUTES:
+            tx_eirp_dbw:                  [float]  GNSS transmitter EIRP [dBW]
+            system_losses_db:             [float]  Lumped implementation losses [dB]
+            polarization_losses_db:       [float]  Polarization mismatch losses [dB]
+            ocean_sigma0_db:              [float]  Effective sigma0 at nadir [dB]
+            ocean_sigma_slope_db_per_deg: [float]  Linear incidence-angle slope of sigma0 [dB/deg]
+            ocean_sigma_floor_db:         [float]  Lower bound on effective sigma0 [dB]
+            fresnel_rcs_scale:            [float]  Scalar multiplier on Fresnel-area RCS [-]
 
-    Parameters
-    ----------
-    tx_eirp_dbw : float
-        GNSS transmitter EIRP [dBW].
-    system_losses_db : float
-        Lumped implementation losses [dB].
-    polarization_losses_db : float
-        Polarization mismatch losses [dB].
-    ocean_sigma0_db : float
-        Effective sigma0 at nadir [dB].
-    ocean_sigma_slope_db_per_deg : float
-        Linear incidence-angle slope of sigma0 [dB/deg].
-    ocean_sigma_floor_db : float
-        Lower bound on effective sigma0 [dB].
-    fresnel_rcs_scale : float
-        Scalar multiplier on Fresnel-area RCS [-].
-
-    Notes
-    -----
-    - Ocean RCS is modeled as
-      `sigma = sigma0(theta_i) * A_fresnel * fresnel_rcs_scale`.
-    - `ocean_sigma*` parameters are effective calibration terms in this
-      simplified model, not a strict geophysical NRCS split into coherent
-      and diffuse components.
-    - This is intentionally a first-order engineering model for rapid
-      trade studies.
+        NOTES:
+            - Ocean RCS is modeled as `sigma = sigma0(theta_i) * A_fresnel * fresnel_rcs_scale`.
+            - `ocean_sigma*` parameters are effective calibration terms in this simplified model,
+              not a strict geophysical NRCS split into coherent and diffuse components.
+            - This is intentionally a first-order engineering model for rapid trade studies.
+    =========================================================================================================
     """
 
     tx_eirp_dbw: float = 27.0
@@ -65,12 +54,19 @@ def coerce_link_budget_settings(settings: dict | BistaticLinkBudgetSettings | No
 
 def resolve_single_link_budget_frequency_hz(antenna) -> float:
     """
+    =========================================================================================================
     Resolve the carrier frequency to use for the link budget.
 
-    Multi-band support (one link budget per Rx band, across multiple GNSS
-    constellations) is planned but not yet implemented. Until then, the
-    antenna must be configured with exactly one band; this helper enforces
-    that and falls back to L1 when no antenna is provided.
+    Multi-band support (one link budget per Rx band, across multiple GNSS constellations) is planned
+    but not yet implemented. Until then, the antenna must be configured with exactly one band; this
+    helper enforces that and falls back to L1 when no antenna is provided.
+
+    INPUTS:
+        antenna: [RxAntenna | None]   Receiver antenna, or None for the L1 default
+
+    OUTPUT:
+        frequency_hz: [float]   Carrier frequency [Hz]
+    =========================================================================================================
     """
     if antenna is None or not getattr(antenna, "frequencies", None):
         return Constants.BANDS_CENTER_FREQUENCIES_Hz["L1"]
@@ -95,11 +91,26 @@ def compute_reflection_link_budget(
     q_sat: np.ndarray | None = None,
 ) -> dict:
     """
+    =========================================================================================================
     Compute the common GNSS-R reflection link budget for specular and BRP paths.
 
-    Position and velocity arrays are expected in the simulator's existing
-    convention: satellite state vectors as shape ``(3, n)`` and reflection
-    points as shape ``(n, 3)``.
+    Position and velocity arrays are expected in the simulator's existing convention: satellite state
+    vectors as shape ``(3, n)`` and reflection points as shape ``(n, 3)``.
+
+    INPUTS:
+        tx_positions_eci:         [np.ndarray, shape (3, n)]  Transmitter ECI positions [m]
+        rx_positions_eci:         [np.ndarray, shape (3, n)]  Receiver ECI positions [m]
+        rx_velocities_eci:        [np.ndarray, shape (3, n)]  Receiver ECI velocities [m/s]
+        reflection_positions_eci: [np.ndarray, shape (n, 3)]  Reflection point ECI positions [m]
+        incidence_deg:            [np.ndarray, shape (n,)]    Incidence angle at reflection point [deg]
+        antenna:                  [RxAntenna | None]          Receiver antenna (None => isotropic 0 dBi)
+        frequency_hz:             [float]                     Carrier frequency [Hz]
+        settings:                 [dict | BistaticLinkBudgetSettings | None]  Link budget settings
+        q_sat:                    [np.ndarray, shape (4,) | None]  Satellite attitude quaternion [w, x, y, z]
+
+    OUTPUT:
+        link_budget: [dict]   Link budget components and received power arrays
+    =========================================================================================================
     """
     settings_obj = coerce_link_budget_settings(settings)
     if q_sat is None:
@@ -166,12 +177,20 @@ def compute_rx_look_direction_antenna_frame(
     q_sat: np.ndarray | None = None,
 ) -> np.ndarray:
     """
+    =========================================================================================================
     Compute reflection look direction in the antenna frame.
 
-    Returns
-    -------
-    np.ndarray
-        Unit vector (3,) in antenna frame, or NaNs if geometry is invalid.
+    INPUTS:
+        sat_pos_eci:  [np.ndarray, shape (3,)]   Satellite ECI position [m]
+        sat_vel_eci:  [np.ndarray, shape (3,)]   Satellite ECI velocity [m/s]
+        refl_pos_eci: [np.ndarray, shape (3,)]   Reflection point ECI position [m]
+        antenna:      [RxAntenna]                Receiver antenna
+        q_sat:        [np.ndarray, shape (4,) | None]   Attitude quaternion [w, x, y, z]
+                                                        (default: identity [1, 0, 0, 0])
+
+    OUTPUT:
+        n_ar_a: [np.ndarray, shape (3,)]   Unit vector in antenna frame, or NaNs if geometry is invalid
+    =========================================================================================================
     """
     invalid = np.array([np.nan, np.nan, np.nan], dtype=float)
     if antenna is None:
@@ -234,18 +253,27 @@ def compute_simple_ocean_rcs(
     settings: BistaticLinkBudgetSettings,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
+    =========================================================================================================
     Compute simple ocean RCS model for a bistatic link budget.
 
-    The model is:
-    sigma = sigma0(theta_i) * A_fresnel
-    where A_fresnel is an isotropic first Fresnel-zone area approximation.
+    The model is `sigma = sigma0(theta_i) * A_fresnel` where A_fresnel is an isotropic first
+    Fresnel-zone area approximation.
 
-    Notes
-    -----
-    - `sigma0` here is treated as an effective coefficient in the simplified
-      model above.
-    - The function does not explicitly separate coherent/specular and
-      diffuse/incoherent scattering physics.
+    INPUTS:
+        range_tx_m:    [np.ndarray]                  Tx-to-surface range [m]
+        range_rx_m:    [np.ndarray]                  Surface-to-Rx range [m]
+        incidence_deg: [np.ndarray]                  Incidence angle at the surface [deg]
+        wavelength_m:  [float]                       Carrier wavelength [m]
+        settings:      [BistaticLinkBudgetSettings]  Calibration parameters
+
+    OUTPUT:
+        result: [tuple]   (sigma0_db, fresnel_area_m2, rcs_m2) — each np.ndarray same shape as inputs
+
+    NOTES:
+        - `sigma0` here is treated as an effective coefficient in the simplified model above.
+        - The function does not explicitly separate coherent/specular and diffuse/incoherent
+          scattering physics.
+    =========================================================================================================
     """
     range_tx_m = np.asarray(range_tx_m, dtype=float)
     range_rx_m = np.asarray(range_rx_m, dtype=float)
@@ -279,30 +307,24 @@ def compute_bistatic_link_budget(
     settings: dict | BistaticLinkBudgetSettings | None = None,
 ) -> dict:
     """
+    =========================================================================================================
     Compute simplified bistatic GNSS-R received power.
 
-    Parameters
-    ----------
-    range_tx_m : np.ndarray
-        Distance transmitter to reflection point [m].
-    range_rx_m : np.ndarray
-        Distance reflection point to receiver [m].
-    incidence_deg : np.ndarray
-        Incidence angle at the ocean surface [deg].
-    rx_gain_dbi : np.ndarray
-        Receiver antenna gain along look direction [dBi].
-    frequency_hz : float
-        Carrier frequency [Hz].
+    `fspl_sum_db` is the sum of one-way FSPL terms (Tx->surface plus surface->Rx).
+    `bistatic_spreading_loss_db` is the corresponding spreading term used in the simplified
+    bistatic radar equation implementation.
 
-    Returns
-    -------
-    dict
-        Link budget components and received power arrays.
+    INPUTS:
+        range_tx_m:    [np.ndarray]   Distance transmitter to reflection point [m]
+        range_rx_m:    [np.ndarray]   Distance reflection point to receiver [m]
+        incidence_deg: [np.ndarray]   Incidence angle at the ocean surface [deg]
+        rx_gain_dbi:   [np.ndarray]   Receiver antenna gain along look direction [dBi]
+        frequency_hz:  [float]        Carrier frequency [Hz]
+        settings:      [dict | BistaticLinkBudgetSettings | None]   Link budget settings
 
-        `fspl_sum_db` is the sum of one-way FSPL terms (Tx->surface plus
-        surface->Rx).
-        `bistatic_spreading_loss_db` is the corresponding spreading term used
-        in the simplified bistatic radar equation implementation.
+    OUTPUT:
+        link_budget: [dict]   Link budget components and received power arrays
+    =========================================================================================================
     """
     settings_obj = coerce_link_budget_settings(settings)
 

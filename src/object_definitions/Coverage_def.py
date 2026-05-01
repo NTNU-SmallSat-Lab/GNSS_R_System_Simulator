@@ -36,10 +36,19 @@ class Coverage:
         """
         =========================================================================================================
         Coverage class for storing coverage information over a grid defined by a shapefile.
-          The class initializes the coverage vector and computes the coverage based on the provided bounding
-          box and reflection vectors.
 
-        shapefile: path (str) to the shapefile defining the grid.
+        Initializes the coverage vector and computes the coverage based on the provided bounding box
+        and reflection vectors.
+
+        INPUTS:
+            sat_const:            [SatelliteConstellation]   LEO Rx satellite constellation
+            gnss_const:           [dict]                     {name: SatelliteConstellation} of GNSS Tx constellations
+            shapefile:            [str]                      Path to the shapefile defining the grid
+            grid_size_deg:        [float | None]             Grid cell size in degrees (equiangular grid)
+            grid_size_m:          [float | None]             Grid cell size in meters (equidistant grid)
+            overwrite_shapefile:  [bool]                     Regenerate the gridded shapefile if it exists
+            earth_model:          [str]                      "spherical" or "elliptical"
+            link_budget_settings: [dict | BistaticLinkBudgetSettings | None]   Link budget settings
         =========================================================================================================
         """
         # Path to the input shapefile (outline of the area of interest)
@@ -112,7 +121,12 @@ class Coverage:
 
     def _get_bounding_box(self) -> tuple:
         """
-        Get the bounding box of the coverage area.
+        =========================================================================================================
+        Get the bounding box of the coverage area, padded by 5 degrees on each side.
+
+        OUTPUT:
+            bbox: [tuple | None]   (min_lon, max_lon, min_lat, max_lat) — None if grid is equiangular
+        =========================================================================================================
         """
         delta_lat = 5
         delta_lon = 5
@@ -126,13 +140,13 @@ class Coverage:
 
     def _calculate_coverage(self, times) -> None:
         """
-        Filter points within the bounding box and ignore points outside it:
-            # Check if the point is a valid iterable (tuple or list) with two elements
-            if not (isinstance(point, (tuple, list)) and len(point) == 2):
-                points_in_box.append((np.nan, np.nan))  # Add (NaN, NaN) for invalid entries
-                continue
-            # Safely unpack the point
-            lat, lon = point
+        =========================================================================================================
+        Filter reflection points to those inside the bounding box, then accumulate per-cell coverage
+        (times, satellite IDs, incidence angles, received power) into `self.coverage_dict`.
+
+        INPUTS:
+            times: [list[datetime]]   Time vector of the reflection samples
+        =========================================================================================================
         """
         if self.reflection_dict is None:
             print("Reflection dictionary is empty. Coverage is zero.")
@@ -199,7 +213,14 @@ class Coverage:
 
     def calculate_reflection_points_and_coverage(self, angle=45, verbose=False):
         """
-        Calculate reflection points between satellites.
+        =========================================================================================================
+        Compute reflection points between satellites for every (LEO, GNSS) pair, then accumulate
+        per-cell coverage from the resulting reflection vectors.
+
+        INPUTS:
+            angle:   [float]   Cutoff angle in degrees (default: 45)
+            verbose: [bool]    Print per-constellation progress (default: False)
+        =========================================================================================================
         """
         # Calculate the total number of calculations to be performed
         times = [time.utc_datetime() for time in self.sat_constellation.times_skyfield]
@@ -247,11 +268,13 @@ class Coverage:
 
     def calculate_statistics(self, gnss_constellation=None):
         """
-        Calculate statistics from coverage data.
+        =========================================================================================================
+        Calculate statistics from coverage data and print them.
 
-        INPUT:
-            gnss_constellation: string of the GNSS constellations to calculate statistics for (optional)
-                           [e.g. ['GPS', 'GALILEO']]
+        INPUTS:
+            gnss_constellation: [str | None]   Comma-separated list of GNSS constellations to summarize,
+                                               e.g. "GPS, GALILEO" — defaults to all loaded constellations
+        =========================================================================================================
         """
         # Process the gnss_constellation input
         if gnss_constellation is not None:
@@ -327,13 +350,9 @@ class Coverage:
 
     def plot_reflection_points(self):
         """
-        Plot reflection points for all GNSS constellations.
-
-        INPUTS:
-            None
-
-        OUTPUTS:
-            None
+        =========================================================================================================
+        Plot reflection points for all GNSS constellations and save to OUTPUT/.
+        =========================================================================================================
         """
         for gnss_costl_name, refl_vec in self.reflection_dict.items():
             plot_name = f"Reflection_points_{gnss_costl_name}.png"
@@ -355,12 +374,14 @@ class Coverage:
 
     def plot_coverage_shapefile(self, gnss_constellation=None, file_name="Coverage1.png", title=None):
         """
-        Plot the coverage area of the GNSS constellation and the reflection vectors.
+        =========================================================================================================
+        Plot the coverage area of the GNSS constellation(s) and the reflection vectors.
 
         INPUTS:
-            gnss_constellation: string of the GNSS constellations to plot (optional) [e.g. ['GPS', 'GLONASS']]
-            file_name:          Name of the output file to save the plot (optional).
-            title:              Title of the plot (optional).
+            gnss_constellation: [str | None]   Comma-separated list, e.g. "GPS, GLONASS" (default: all)
+            file_name:          [str]          Output file name (default: "Coverage1.png")
+            title:              [str | None]   Plot title (optional)
+        =========================================================================================================
         """
         [min_lon, max_lon, min_lat, max_lat] = self.bounding_box
 
@@ -407,13 +428,15 @@ class Coverage:
 
     def plot_coverage_gridded_shapefile(self, gnss_constellation=None, file_name="Coverage_grid.png", title=None):
         """
-        Plot the coverage area of the GNSS constellation and the reflection vectors using a gridded shapefile.
-        Matches the original code's visualization style.
+        =========================================================================================================
+        Plot the coverage area of the GNSS constellation(s) and the reflection vectors using the
+        gridded shapefile.
 
         INPUTS:
-            gnss_constellation: string of the GNSS constellations to plot (optional) [e.g. ['GPS', 'GLONASS']]
-            file_name:          Name of the output file to save the plot (optional).
-            title:              Title of the plot (optional).
+            gnss_constellation: [str | None]   Comma-separated list, e.g. "GPS, GLONASS" (default: all)
+            file_name:          [str]          Output file name (default: "Coverage_grid.png")
+            title:              [str | None]   Plot title (optional)
+        =========================================================================================================
         """
 
         def _get_color(count):
@@ -552,7 +575,11 @@ class Coverage:
         plt.close()
 
     def _create_gridded_shapefile(self):
-        """Dispatch to the equidistant or equiangular shapefile generator based on grid_size_m."""
+        """
+        =========================================================================================================
+        Dispatch to the equidistant or equiangular shapefile generator based on `grid_size_m`.
+        =========================================================================================================
+        """
         if self.grid_size_m is None:
             print(f'Creating new gridded shapefile with equal "latitude / longitude" spacing at: {self.gridded_shapefile_path}')
             self._create_coverage_shapefile_deg()
@@ -564,9 +591,11 @@ class Coverage:
 
     def _create_coverage_shapefile_m(self):
         """
-        Function to create gridded shapefile with equal-sized cells in meters.
-        Each cell will have sides of approximately grid_size_m meters,
-        adjusted for the latitude to maintain equal physical dimensions.
+        =========================================================================================================
+        Create a gridded shapefile with equal-sized cells in meters.
+        Each cell has sides of approximately `grid_size_m` meters, adjusted for latitude to maintain
+        equal physical dimensions.
+        =========================================================================================================
         """
         # Check if grid_size_m is None, if so skip this function
         if self.grid_size_m is None:
@@ -608,10 +637,10 @@ class Coverage:
 
     def _create_coverage_shapefile_deg(self):
         """
-        Function to create gridded shapefile
-
-        INPUT:
-            grid_size: Size of the grid cells in degrees (e.g., 0.1 degrees for latitude/longitude)
+        =========================================================================================================
+        Create a gridded shapefile with equiangular cells (constant degrees in latitude/longitude).
+        Cell size is taken from `self.grid_size_deg`.
+        =========================================================================================================
         """
         # Robustness check, if grid_size_deg is None skip this function
         if self.grid_size_deg is None:
@@ -640,7 +669,9 @@ class Coverage:
 
     def save_gridded_shapefile_plot(self):
         """
-        Function to save the gridded shapefile and plot the results.
+        =========================================================================================================
+        Save the gridded shapefile and plot the fishnet overlay on the original shapefile.
+        =========================================================================================================
         """
         print(f"Gridded shapefile saved as: {self.gridded_shapefile_path}")
 
@@ -671,7 +702,9 @@ class Coverage:
 
     def _precompute_grid_kdtree(self):
         """
-        Pre-compute KD-Tree for efficient spatial queries on grid centroids.
+        =========================================================================================================
+        Pre-compute a KD-Tree for efficient spatial queries on grid centroids (cached on `self`).
+        =========================================================================================================
         """
         if not hasattr(self, "_grid_kdtree") or self._grid_kdtree is None:
             centroids = np.array([(centroid.x, centroid.y) for centroid in self.grid_gdf.centroid])
@@ -682,11 +715,18 @@ class Coverage:
     @staticmethod
     def validity_mask(reflection_obj, bounding_box):
         """
+        =========================================================================================================
         Create a validity mask for the reflection points based on the bounding box.
 
-        INPUT:
-            reflection_obj: Reflection object containing the reflection points.
-            bounding_box:   Tuple containing the bounding box coordinates (min_lon, max_lon, min_lat, max_lat).
+        INPUTS:
+            reflection_obj: [Reflection]   Reflection object containing the reflection points
+            bounding_box:   [tuple]        (min_lon, max_lon, min_lat, max_lat)
+
+        OUTPUT:
+            result: [tuple]   (validity_mask, refl_in_bounding_box)
+                              - validity_mask:        Boolean array, True where the point is inside the box
+                              - refl_in_bounding_box: Reflection coordinates with NaNs for outside-box points
+        =========================================================================================================
         """
         refl_LL_vec = np.array(reflection_obj.refl_LL_vec)
 
@@ -713,13 +753,16 @@ class Coverage:
     @staticmethod
     def _get_reflection_clusters(reflection_obj, validity_mask):
         """
+        =========================================================================================================
         Get clusters of valid reflection points based on the validity mask.
 
-        INPUT:
-            reflection_obj: Reflection object containing the reflection points.
-            validity_mask:  Boolean mask indicating valid reflection points.
+        INPUTS:
+            reflection_obj: [Reflection]    Reflection object containing the reflection points
+            validity_mask:  [np.ndarray]    Boolean mask indicating valid reflection points
+
         OUTPUT:
-            List of clusters, where each cluster is a list of indices corresponding to valid reflection points.
+            clusters: [list]   List of arrays of indices corresponding to contiguous valid points
+        =========================================================================================================
         """
         validity_mask_bool = validity_mask.astype(bool)  # Convert to boolean mask
         clusters = np.split(np.arange(len(reflection_obj.refl_LL_vec)), np.where(~validity_mask_bool)[0])  # Split indices by NaN gaps

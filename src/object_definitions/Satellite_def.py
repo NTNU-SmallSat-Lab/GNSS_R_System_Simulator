@@ -96,20 +96,40 @@ class Satellite:
 
     def set_timescale_simulation(self, timeSkyfield) -> None:
         """
-        Set the timescale for the simulation.
+        =========================================================================================================
+        Set the Skyfield timescale for the simulation.
+
+        INPUTS:
+            timeSkyfield: [skyfield.timelib.Time]   Skyfield timescale array
+        =========================================================================================================
         """
         if timeSkyfield is None:
             raise ValueError("Invalid timescale object provided")
         self.times_skyfield = timeSkyfield
 
     def set_classification(self, classification) -> None:
-        """Set the classification of the satellite."""
+        """
+        =========================================================================================================
+        Set the classification of the satellite.
+
+        INPUTS:
+            classification: [str]   One of 'U' (unclassified), 'C' (classified), 'S' (secret)
+        =========================================================================================================
+        """
         if classification not in ["U", "C", "S"]:
             raise ValueError("Invalid classification")
         self.classification = classification
 
     def set_orbit(self, orbit_n) -> None:
-        """Set the orbit_n of the satellite."""
+        """
+        =========================================================================================================
+        Set the Orbit_specification of the satellite.
+
+        INPUTS:
+            orbit_n: [Orbit_specification | list]   Either an Orbit_specification, or a 6-element list
+                                                    [inclination, eccentricity, raan, argPerigee, M, a]
+        =========================================================================================================
+        """
         if isinstance(orbit_n, Orbit_specification):
             self.orbit_n = orbit_n
         elif isinstance(orbit_n, list):
@@ -128,7 +148,14 @@ class Satellite:
             )
 
     def set_epoch(self, epoch) -> None:
-        """Set the epoch of the satellite."""
+        """
+        =========================================================================================================
+        Set the epoch of the satellite. If a TLE has not been generated yet, it is generated here.
+
+        INPUTS:
+            epoch: [datetime]   UTC-aware datetime to use as the orbit epoch
+        =========================================================================================================
+        """
         if self.orbit_n is None:
             warnings.warn("Orbit_specification is not specified for this satellite. Cannot set epoch.")
             return
@@ -146,7 +173,14 @@ class Satellite:
     """
 
     def get_TLE(self) -> str:
-        """Get the TLE path if it exists."""
+        """
+        =========================================================================================================
+        Get the TLE file path if a TLE has been generated.
+
+        OUTPUT:
+            tle_file_path: [str | None]   Path to the satellite's TLE file, or None
+        =========================================================================================================
+        """
         if self.tle_exists():
             return self.tle_file_path
         else:
@@ -158,15 +192,25 @@ class Satellite:
         return self.orbit_n
 
     def tle_exists(self) -> bool:
-        """Check if the TLE file exists."""
+        """
+        =========================================================================================================
+        Check if a TLE file path has been registered for this satellite.
+
+        OUTPUT:
+            exists: [bool]   True if `self.tle_file_path` is set
+        =========================================================================================================
+        """
         return self.tle_file_path is not None
 
     def write_tle_file(self) -> str:
         """
-        =========================================================================
-        Write the TLE object passed in "tle_str" to a file
-            and return the path to the file in path_TLE
-        =========================================================================
+        =========================================================================================================
+        Generate a TLE for this satellite and write it to a file under `Constants.tle_eph_folder_path`.
+        The file path is stored in `self.tle_file_path`.
+
+        OUTPUT:
+            None: TLE path is stored in `self.tle_file_path`. Returns None on failure.
+        =========================================================================================================
         """
         tle_str = ReadWriteSatData.generate_tle_data_string(self)
         if tle_str is None:
@@ -193,18 +237,17 @@ class Satellite:
 
     def propagate_orbit(self, startTime, duration, deltaT) -> np.array:
         """
-        ==========================================================================
-        Propagate the satellite orbit for a given duration and a given time step =
-        =    startTime:  Start time of the propagation   [datetime]              =
-        =    duration:   Duration of the propagation     [seconds]               =
-        =    deltaT:     Time step for the propagation   [seconds]               =
-        =                                                                        =
-        =    OUTPUT:     Position and velocity of the satellite at each time     =
-        =      -> This function used "Skyfield" to propagate the satellite orbit =
-        =                                                                        =
-        =      self.position (propagated position)                               =
-        =      self.velocity (propagated velocity)                               =
-        ==========================================================================
+        =========================================================================================================
+        Propagate the satellite orbit for a given duration and time step using Skyfield.
+
+        Stores the propagated state in `self.time_prop_vec`, `self.positions_eci`,
+        and `self.velocities_eci`.
+
+        INPUTS:
+            startTime: [datetime]   Start time of the propagation
+            duration:  [int]        Duration of the propagation [seconds]
+            deltaT:    [int]        Time step for the propagation [seconds]
+        =========================================================================================================
         """
         times_i = []
         ts = load.timescale()
@@ -220,20 +263,17 @@ class Satellite:
 
     def propagate_orbit_for_times(self, times_skyfield) -> None:
         """
-        ==========================================================================
+        =========================================================================================================
         Propagate the satellite at specific Skyfield times only.
-        Much faster and memory-efficient for sparse timestamp sets
-        (e.g., when GNSS positions are only needed at LEO-visible times).
-        = INPUT:                                                                =
-        =   times_skyfield : list of Skyf. Time object [skyfield.timelib.Time]   =
-        =                                                                        =
-        =    OUTPUT:     Position and velocity of the satellite at each time     =
-        =      -> This function used "Skyfield" to propagate the satellite orbit =
-        =                                                                        =
-        =      self.positions_eci (propagated position)                          =
-        =      self.velocity (propagated velocity)                               =
-        =      self.time_prop_vec (updated time vector)                          =
-        ==========================================================================
+        Much faster and memory-efficient for sparse timestamp sets (e.g., when GNSS positions are
+        only needed at LEO-visible times).
+
+        Stores the propagated state in `self.positions_eci`, `self.velocities_eci`,
+        and `self.time_prop_vec`.
+
+        INPUTS:
+            times_skyfield: [skyfield.timelib.Time]   Time array to propagate at (non-empty)
+        =========================================================================================================
         """
         if times_skyfield is None or len(times_skyfield) == 0:
             raise ValueError("times_skyfield must be a non-empty list of Skyfield times.")
@@ -252,15 +292,10 @@ class Satellite:
 
     def calculate_sunlight_time(self) -> None:
         """
-        =========================================================================
-        Calculate the time when the satellite is in sunlight.
-        =                                                                       =
-        = INPUT:                                                                =
-        =   -                                                                   =
-        =                                                                       =
-        = OUTPUT:                                                               =
-        =   - numpy array with sunlite True or False                            =
-        =========================================================================
+        =========================================================================================================
+        Calculate when the satellite is in sunlight, populating `self.sunlit_count` (boolean array)
+        and `self.sunlit_fraction`.
+        =========================================================================================================
         """
         if self.times_skyfield is None:
             raise ValueError(
@@ -271,9 +306,14 @@ class Satellite:
 
     def _init_with_TLE(self, tle_file_path, satNo_in_tle, satName=None):  # noqa: N802
         """
-        =========================================================================
-        Initialize the satellite object with the TLE data from the file
-        =========================================================================
+        =========================================================================================================
+        Initialize the satellite object with TLE data from a file.
+
+        INPUTS:
+            tle_file_path: [str]         Path to the TLE file
+            satNo_in_tle:  [int]         Index of the satellite in the TLE file
+            satName:       [str | None]  Optional satellite name; if given, the matching entry is used
+        =========================================================================================================
         """
         sat_data_all = ReadWriteSatData.read_tle_data(tle_file_path)
         if sat_data_all is None:

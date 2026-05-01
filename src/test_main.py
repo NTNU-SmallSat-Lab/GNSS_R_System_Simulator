@@ -189,7 +189,11 @@ def testReadWriteData() -> bool:
 
 
 def testFreeFlyerConnection() -> bool:
-    """Testing connection to freeFlyer AGI"""
+    """
+    =========================================================================================================
+    Test connection to FreeFlyer AGI.
+    =========================================================================================================
+    """
     passed = 1
     show_FF_GUI = True
     GNSS_Constellation = "GPS"

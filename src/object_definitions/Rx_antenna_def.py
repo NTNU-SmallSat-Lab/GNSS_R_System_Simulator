@@ -10,14 +10,18 @@ from object_definitions.Constants_def import Constants
 class RxAntenna:
     def __init__(self, settings: dict = None):
         """
-        Initialize the RxAntenna object.
+        =========================================================================================================
+        RxAntenna class:
+            - Receiver antenna object initialized from a settings dictionary parsed from the [ANTENNA]
+              INI section.
 
-        INPUTS:
-            - antenna_beamwidth: [list] Beam angles in degrees for different support angles
-            - antenna_gain: [float] Antenna gain in dB
-            - steering_angle_deg: [float] Steering angle in degrees
-            - polarizations: [list] Antenna polarizations (e.g., ["LHCP", "RHCP"])
-            - bands: [list] Antenna bands
+            INPUTS:
+                settings: [dict]   Antenna configuration with keys:
+                                       antenna_pattern_files: dict {(az, el, freq) -> json filepath}
+                                       polarizations:         list (e.g. ["LHCP", "RHCP"])
+                                       bands:                 list (e.g. ["L1", "L5"])
+                                       footprint_dB:          float, dB contour for the footprint
+        =========================================================================================================
         """
         if settings is None:
             raise ValueError("Settings dictionary must be provided.")
@@ -91,7 +95,12 @@ class RxAntenna:
 
     def _initialize(self, antenna_patterns_temp):
         """
-        Initialize the antenna properties.
+        =========================================================================================================
+        Initialize antenna properties (per-pattern directivity, footprint contour, frequency list).
+
+        INPUTS:
+            antenna_patterns_temp: [dict]   {(az, el, freq) -> {azimuth, elevation, frequency, radiation_pattern_dB}}
+        =========================================================================================================
         """
         # Calculate "footprint" of the antenna at 1m distance using splines
         for antenna_key, antenna_pattern in antenna_patterns_temp.items():
@@ -112,7 +121,14 @@ class RxAntenna:
         self.frequencies = self._get_frequency_from_band()
 
     def _get_frequency_from_band(self):
-        "Get the antenna frequencies from the bands"
+        """
+        =========================================================================================================
+        Get the antenna frequencies (MHz) from the configured bands.
+
+        OUTPUT:
+            frequencies: [list[float]]   Center frequencies in MHz for each configured band
+        =========================================================================================================
+        """
         frequencies = []
 
         for band in self.bands:
@@ -128,7 +144,16 @@ class RxAntenna:
 
     def _calc_antenna_footprint(self, antenna_pattern):
         """
-        Calculate the antenna footprint with vectors radiating from the antenna position outwards in the antenna frame
+        =========================================================================================================
+        Calculate the antenna footprint with vectors radiating from the antenna position outwards
+        in the antenna frame.
+
+        INPUTS:
+            antenna_pattern: [dict]   Pattern entry with radiation_pattern_dB / elevation / azimuth / frequency
+
+        OUTPUT:
+            result: [tuple]   (directivity, directivity_dB, contour_vectors)
+        =========================================================================================================
         """
         rad_pattern_spherical_dB = antenna_pattern["radiation_pattern_dB"]
         # Convert to linear scale
@@ -166,7 +191,15 @@ class RxAntenna:
 
     def _smooth_antenna_footprint(self, contour_vectors):
         """
-        Smooth the antenna footprint using spline interpolation.
+        =========================================================================================================
+        Smooth the antenna footprint by resampling on a 1m projection plane in front of the antenna.
+
+        INPUTS:
+            contour_vectors: [np.ndarray, shape (N, 3)]   Original contour unit vectors in antenna frame
+
+        OUTPUT:
+            resampled_vectors: [np.ndarray, shape (footprint_resolution, 3)]   Resampled contour vectors
+        =========================================================================================================
         """
         # Project the footprint onto a "plane" 1m in front of the antenna
         nadir_n = np.array([0, 0, 1])  # Nadir pointing vector in antenna coordinate system
@@ -242,7 +275,18 @@ class RxAntenna:
 
     def _get_antenna_footprint(self, refl_dir_antenna_frame, frequency, azimuth, elevation):
         """
-        Get the antenna footprint in the antenna coordinate system.
+        =========================================================================================================
+        Get the antenna footprint contour rotated to point at the given reflection direction.
+
+        INPUTS:
+            refl_dir_antenna_frame: [np.ndarray, shape (3,)]   Reflection direction in antenna frame
+            frequency:              [float]                    Frequency [MHz] (used for lookup)
+            azimuth:                [float]                    Steering azimuth [deg] (currently ignored — uses unsteered)
+            elevation:              [float]                    Steering elevation [deg] (currently ignored — uses unsteered)
+
+        OUTPUT:
+            footprint_vectors: [np.ndarray, shape (N, 3)]   Rotated footprint contour vectors
+        =========================================================================================================
         """
         nadir = np.array([0, 0, 1])  # Nadir pointing vector in antenna coordinate system
         refl_dir_antenna_frame = np.asarray(refl_dir_antenna_frame)
@@ -283,12 +327,33 @@ class RxAntenna:
 
     @staticmethod
     def _circular_abs_diff_deg(a: float, b: float) -> float:
-        """Absolute smallest angular difference in degrees on a circle."""
+        """
+        =========================================================================================================
+        Absolute smallest angular difference in degrees on a circle.
+
+        INPUTS:
+            a: [float]   First angle [deg]
+            b: [float]   Second angle [deg]
+
+        OUTPUT:
+            diff: [float]   Smallest absolute circular difference in [0, 180] deg
+        =========================================================================================================
+        """
         return abs((a - b + 180.0) % 360.0 - 180.0)
 
     def _resolve_lookup_key(self, frequency_mhz: float, azimuth_deg: float | None = None, elevation_deg: float | None = None) -> tuple:
         """
-        Resolve closest antenna-pattern key for the requested frequency and steering angles.
+        =========================================================================================================
+        Resolve the closest antenna-pattern key for the requested frequency and steering angles.
+
+        INPUTS:
+            frequency_mhz: [float]         Target frequency [MHz]
+            azimuth_deg:   [float | None]  Steering azimuth [deg] (default: 90.0 — unsteered convention)
+            elevation_deg: [float | None]  Steering elevation [deg] (default: 0.0)
+
+        OUTPUT:
+            key: [tuple]   (azimuth, elevation, frequency) of the closest pattern
+        =========================================================================================================
         """
         if not self.antenna_lookuptable:
             raise ValueError("Antenna lookup table is empty.")
@@ -310,7 +375,17 @@ class RxAntenna:
     @staticmethod
     def _sample_radiation_pattern_db(pattern_db: np.ndarray, theta_deg: float, phi_deg: float) -> float:
         """
-        Nearest-neighbor sample of radiation pattern at (theta, phi).
+        =========================================================================================================
+        Nearest-neighbor sample of a radiation pattern at (theta, phi).
+
+        INPUTS:
+            pattern_db: [np.ndarray, shape (n_theta, n_phi)]   Radiation pattern [dB]
+            theta_deg:  [float]   Polar angle [deg], 0..180
+            phi_deg:    [float]   Azimuth angle [deg], 0..360
+
+        OUTPUT:
+            value: [float]   Pattern value [dB] at the nearest grid point
+        =========================================================================================================
         """
         n_theta, n_phi = pattern_db.shape
         theta_idx = int(np.clip(np.round(theta_deg * (n_theta - 1) / 180.0), 0, n_theta - 1))
@@ -325,7 +400,18 @@ class RxAntenna:
         elevation_deg: float | None = None,
     ) -> float:
         """
+        =========================================================================================================
         Get absolute gain [dBi] for a given look direction in antenna coordinates.
+
+        INPUTS:
+            direction_antenna_frame: [np.ndarray, shape (3,)]   Look direction in antenna frame
+            frequency_mhz:           [float]                    Carrier frequency [MHz]
+            azimuth_deg:             [float | None]             Steering azimuth [deg] (optional)
+            elevation_deg:           [float | None]             Steering elevation [deg] (optional)
+
+        OUTPUT:
+            gain_dbi: [float]   Absolute gain [dBi], or NaN if direction is invalid / behind the antenna
+        =========================================================================================================
         """
         direction = np.asarray(direction_antenna_frame, dtype=float)
         if direction.shape != (3,) or not np.isfinite(direction).all():
@@ -353,8 +439,18 @@ class RxAntenna:
     @staticmethod
     def _calculate_directivity(rad_pattern_lin_spherical, theta_rad, phi_rad, theta_mesh):
         """
-        Calculate the directivity of the antenna from its radiation pattern.
-        (antenna-gain)
+        =========================================================================================================
+        Calculate the directivity of the antenna from its radiation pattern (antenna-gain).
+
+        INPUTS:
+            rad_pattern_lin_spherical: [np.ndarray]   Linear-scale spherical radiation pattern
+            theta_rad:                 [np.ndarray]   Polar angle samples [rad]
+            phi_rad:                   [np.ndarray]   Azimuth angle samples [rad]
+            theta_mesh:                [np.ndarray]   Meshgrid of theta values
+
+        OUTPUT:
+            result: [tuple]   (directivity, directivity_dB)
+        =========================================================================================================
         """
         # Calculate differential solid angle elements
         dtheta = np.gradient(theta_rad)
@@ -373,9 +469,21 @@ class RxAntenna:
 
     def _find_contour_vectors(self, rad_pattern_spherical_dB, theta_rad, phi_rad, theta_mesh, phi_mesh):
         """
-        Find unit vectors pointing from antenna center toward target dB contour with interpolation.
+        =========================================================================================================
+        Find unit vectors pointing from antenna center toward the target dB contour, with interpolation.
 
-        Note: Assumes normalized radiation pattern where peak = 0dB and all other values ≤ 0dB.
+        Assumes normalized radiation pattern where peak = 0 dB and all other values <= 0 dB.
+
+        INPUTS:
+            rad_pattern_spherical_dB: [np.ndarray]   Radiation pattern [dB], shape (n_theta, n_phi)
+            theta_rad:                [np.ndarray]   Polar angle samples [rad]
+            phi_rad:                  [np.ndarray]   Azimuth angle samples [rad]
+            theta_mesh:               [np.ndarray]   Meshgrid of theta values
+            phi_mesh:                 [np.ndarray]   Meshgrid of phi values
+
+        OUTPUT:
+            contour_vectors: [np.ndarray, shape (n_phi, 3)]   Unit vectors at the dB contour
+        =========================================================================================================
         """
         contour_vectors = []
 
@@ -415,9 +523,17 @@ class RxAntenna:
 
 class PlotRadiationPattern:
     def __init__(self, spherical_coordinates, arrow = None):
-        '''
-        Plots radiation pattern in 3D. Must have carthesian coordinates as input.
-        '''
+        """
+        =========================================================================================================
+        PlotRadiationPattern class:
+            - Plot radiation pattern in 3D. Input must be in spherical coordinates; converted to Cartesian
+              internally.
+
+            INPUTS:
+                spherical_coordinates: [tuple]   (rad_pattern_spherical, theta_mesh, phi_mesh)
+                arrow:                 [tuple]   Optional (elevation_deg, azimuth_deg) — draws an arrow
+        =========================================================================================================
+        """
         # Convert linear radiation pattern from spherical coordinates to cartesian coordinates
         rad_pattern_spherical = spherical_coordinates[0]
         theta_mesh = spherical_coordinates[1]
@@ -444,7 +560,14 @@ class PlotRadiationPattern:
         self._set_axis_properties()
 
     def _set_axis_properties(self, title='Antenna Radiation Pattern'):
-        """Set consistent axis properties"""
+        """
+        =========================================================================================================
+        Set consistent axis properties on the 3D plot.
+
+        INPUTS:
+            title: [str]   Plot title (default: 'Antenna Radiation Pattern')
+        =========================================================================================================
+        """
         self.ax.set_xlabel('X')
         self.ax.set_ylabel('Y')
         self.ax.set_zlabel('Z')
@@ -455,13 +578,15 @@ class PlotRadiationPattern:
 
     def add_vector_bundle_to_plot(self, vector_bundle, color='blue', linewidth=1, alpha=0.7):
         """
+        =========================================================================================================
         Add a bundle of vectors to the 3D plot.
 
-        Parameters:
-        - vector_bundle: array of vectors (N x 3)
-        - color: color of the vectors (default: 'blue')
-        - linewidth: width of the vector lines (default: 1)
-        - alpha: transparency of the vectors (default: 0.7)
+        INPUTS:
+            vector_bundle: [np.ndarray, shape (N, 3)]   Array of vectors
+            color:         [str]                        Vector color (default: 'blue')
+            linewidth:     [int]                        Vector line width (default: 1)
+            alpha:         [float]                      Vector transparency (default: 0.7)
+        =========================================================================================================
         """
         for i, vector in enumerate(vector_bundle):
             self.ax.plot([0, vector[0]], [0, vector[1]], [0, vector[2]], 
@@ -471,28 +596,34 @@ class PlotRadiationPattern:
 
     def add_single_vector(self, vector, color='green', linewidth=2, label=None):
         """
+        =========================================================================================================
         Add a single vector to the plot.
 
-        Parameters:
-        - vector: 3D vector [x, y, z]
-        - color: color of the vector (default: 'green')
-        - linewidth: width of the vector line (default: 2)
-        - label: optional label for the vector
+        INPUTS:
+            vector:    [list | np.ndarray, shape (3,)]   3D vector [x, y, z]
+            color:     [str]                             Vector color (default: 'green')
+            linewidth: [int]                             Vector line width (default: 2)
+            label:     [str | None]                      Optional label for the legend
+        =========================================================================================================
         """
         self.ax.quiver(0, 0, 0, vector[0], vector[1], vector[2], 
                       length=1, color=color, linewidth=linewidth, label=label)
 
     def save_plot(self, filename, dpi=300):
         """
+        =========================================================================================================
         Save the plot to file.
 
-        Parameters:
-        - filename: output filename (with extension)
-        - dpi: resolution (default: 300)
+        INPUTS:
+            filename: [str]   Output filename (with extension)
+            dpi:      [int]   Resolution (default: 300)
+        =========================================================================================================
         """
         self.fig.savefig(filename, dpi=dpi, bbox_inches='tight')
     def show(self):
         """
-        Display the plot
+        =========================================================================================================
+        Display the plot.
+        =========================================================================================================
         """
         plt.show(block=True)
