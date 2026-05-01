@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 import datetime as dt
 from datetime import timedelta
 import os
+import warnings
 
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
@@ -143,7 +144,7 @@ class MovingTargetDetection:
                         transform=ccrs.PlateCarree(),
                     )
             else:
-                print(f"Warning: Unexpected geometry type for footprint: {type(footprint_reflection)}")
+                warnings.warn(f"Unexpected geometry type for footprint: {type(footprint_reflection)}")
 
             ax.plot(
                 pos_tgt_i.geometry.x,
@@ -285,9 +286,6 @@ class MovingTargetDetection:
             # Track refl_ids per time point for O(1) duplicate checking
             refl_ids_per_time = defaultdict(set)
 
-            # Batch warning collection (reduce I/O overhead
-            warnings = []
-
             # Iterate through each reflection object for this constellation
             for refl_obj in tqdm(
                 reflection_objects,
@@ -298,12 +296,12 @@ class MovingTargetDetection:
                 try:
                     time_vector_all_refl = refl_obj.time_vec
                 except AttributeError:
-                    warnings.append(f"Reflection object missing time_vec attribute for {gnss_const_name}")
+                    warnings.warn(f"Reflection object missing time_vec attribute for {gnss_const_name}")
                     continue
 
                 # Single check for None or empty (removed duplicate check)
                 if time_vector_all_refl is None or len(time_vector_all_refl) == 0:
-                    warnings.append(f"Empty or None time vector in reflection object for {gnss_const_name}")
+                    warnings.warn(f"Empty or None time vector in reflection object for {gnss_const_name}")
                     continue
 
                 # Cache satellite IDs and generate reflection ID once
@@ -337,14 +335,9 @@ class MovingTargetDetection:
                     # Append the reference to the list for this time
                     time_sorted_dict[time_i].append(lightweight_ref)
 
-                # Report invalid times if any (batch reporting)
+                # Report invalid times if any
                 if invalid_count > 0:
-                    warnings.append(f"{invalid_count} invalid times in reflection object for {gnss_const_name}")
-
-                # Print all warnings at once (much faster than individual prints)
-                if warnings:
-                    for warning in warnings:
-                        print(f"Warning: {warning}")
+                    warnings.warn(f"{invalid_count} invalid times in reflection object for {gnss_const_name}")
 
         #########################################################
         # 3: Calculate if the moving target can be detected     #
@@ -936,7 +929,7 @@ class MovingTargetDetection:
                         fixed_polygon = Polygon(zip(fixed_lons, lats))
                         if fixed_polygon.is_valid:
                             return [fixed_polygon]
-                    except:
+                    except Exception:
                         pass
                 return []  # Couldn't fix wrapping
 
@@ -1004,7 +997,7 @@ class MovingTargetDetection:
                 return False
 
             return True
-        except:  # noqa: E722
+        except Exception:
             return False
 
     def _identify_wrapping_polygons(self, plot_bounds, gnss_constellation=None):

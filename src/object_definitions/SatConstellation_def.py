@@ -1,6 +1,7 @@
 from datetime import datetime
 import math
 import os
+import warnings
 
 from skyfield.api import load
 
@@ -189,7 +190,7 @@ class SatelliteConstellation:
             self.tle_file_path = filePath
             print(f"TLE written to {filePath}")
         except OSError:
-            print(f"Warning: TLE file could not be written for {self.satConfigName}")
+            warnings.warn(f"TLE file could not be written for {self.satConfigName}")
             return ""
 
         return filePath

@@ -93,11 +93,11 @@ class Coverage:
 
         ####################################################################################################################
         # Initialize coverage vector for storing coverage over each grid-cell in the gridded shapefile
-        # Make a list of coverage_struct instanced with the length N
+        # Make a list of CoverageStruct instanced with the length N
         ####################################################################################################################
         for gnss_name, _gnss_value in self.gnss_constellation.items():
             N = len(self.grid_gdf)
-            coverage_vector = [coverage_struct() for _ in range(N)]
+            coverage_vector = [CoverageStruct() for _ in range(N)]
             self.coverage_dict[gnss_name] = coverage_vector
 
         # Initialize coverage vector for storing coverage over each grid-cell in the gridded shapefile
@@ -727,7 +727,7 @@ class Coverage:
 
 
 @dataclass
-class coverage_struct:
+class CoverageStruct:
     position: list = field(default_factory=list)
     tx_satID: list = field(default_factory=list)
     rx_satID: list = field(default_factory=list)

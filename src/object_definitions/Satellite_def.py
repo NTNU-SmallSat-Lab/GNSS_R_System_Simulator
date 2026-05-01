@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from math import pi
 import os
+import warnings
 
 import numpy as np
 from skyfield.api import EarthSatellite, load
@@ -129,7 +130,7 @@ class Satellite:
     def set_epoch(self, epoch) -> None:
         """Set the epoch of the satellite."""
         if self.orbit_n is None:
-            print("Warning: Orbit_specification is not specified for this satellite. Cannot set epoch.")
+            warnings.warn("Orbit_specification is not specified for this satellite. Cannot set epoch.")
             return
         self.orbit_n.set_start_time(epoch)
 
@@ -149,7 +150,7 @@ class Satellite:
         if self.tle_exists():
             return self.tle_file_path
         else:
-            print("Warning: TLE has not yet been generated")
+            warnings.warn("TLE has not yet been generated")
             return None
 
     def get_orbit(self) -> Orbit_specification:

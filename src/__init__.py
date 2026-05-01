@@ -260,7 +260,7 @@ def initialize(config_file_name="Configuration.ini"):
                 const_str = os.path.join(Constants.tle_folderpath, const_str)
                 const_string_updated.append(const_str)
             else:
-                print(f"Warning: Skipping unknown constellation file: {const_str}")
+                warnings.warn(f"Skipping unknown constellation file: {const_str}")
 
         gnss_constellation = {}
         for idx, (const_tle, const_name) in enumerate(zip(const_string_updated, gnss_names, strict=False)):
