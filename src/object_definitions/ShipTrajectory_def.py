@@ -884,7 +884,7 @@ class ShipTrajectory:
         """
         # Ensure valid interval (minimum 100 meters)
         if interval_meters <= 0:
-            print("Warning: interval_meters must be positive. Using default value of 100 meters.")
+            warnings.warn("interval_meters must be positive. Using default value of 100 meters.")
             interval_meters = 100
 
         # Clear existing trajectory data
@@ -980,7 +980,7 @@ class ShipTrajectory:
             self.route_distance = self._calculate_haversine_distance(self.start_position, self.end_position)
 
         if self.interval_minutes == 0:
-            print("Warning: interval_minutes must be positive. Using default value of 10 minutes.")
+            warnings.warn("interval_minutes must be positive. Using default value of 10 minutes.")
             self.interval_minutes = 10
 
         # Normal case with interpolation

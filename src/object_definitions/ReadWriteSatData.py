@@ -3,6 +3,7 @@ import datetime as datetime_module  # Import the module itself first
 from datetime import datetime, timedelta
 import math
 import os
+import warnings
 
 import numpy as np
 from scipy.optimize import least_squares
@@ -212,7 +213,7 @@ def _solve_sgp4_mean_elements_from_osculating(satellite):
     mean_elements = _equinoctial_solver_vars_to_classical(result.x)
 
     if not result.success:
-        print(f"Warning: SGP4 mean-element fit did not report convergence for satellite {satellite.satName}: {result.message}")
+        warnings.warn(f"SGP4 mean-element fit did not report convergence for satellite {satellite.satName}: {result.message}")
 
     return mean_elements
 
@@ -280,10 +281,10 @@ class ReadWriteSatData:
         =========================================================================
         """
         if satellite.orbit_n is None:
-            print("Warning: Orbit was not specified when this Satellite was created.\n-- Insufficient information to generate a TLE --")
+            warnings.warn("Orbit was not specified when this Satellite was created. Insufficient information to generate a TLE.")
             return None
         if satellite.orbit_n.epoch_str is None:
-            print("Warning: Epoch was not specified when this Orbit was created.\n-- Insufficient information to generate a TLE --")
+            warnings.warn("Epoch was not specified when this Orbit was created. Insufficient information to generate a TLE.")
             return None
 
         mean_elements = _solve_sgp4_mean_elements_from_osculating(satellite)

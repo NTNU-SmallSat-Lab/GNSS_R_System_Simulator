@@ -4,7 +4,7 @@ from datetime import timedelta
 
 import functions.functions as fn
 from __init__ import initialize
-from object_definitions.MovingTargetDetection import MovingTargetDetection
+from object_definitions.MovingTargetDetection_def import MovingTargetDetection
 from object_definitions.Rx_antenna_def import RxAntenna as GNSS_R_antenna
 from object_definitions.SatConstellation_def import SatelliteConstellation
 from object_definitions.Satellite_def import Satellite

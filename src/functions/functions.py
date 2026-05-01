@@ -1,5 +1,6 @@
 from collections import defaultdict
 import datetime as dt
+import warnings
 
 import numpy as np
 import pymap3d
@@ -533,10 +534,10 @@ def compute_footprint(sat_pos, sat_vel, refl_pos, time_i, antenna, frequency, q_
     r_s_i = sat_pos
     # Check for valid velocity
     if np.linalg.norm(v_s_i) < 1e-6:
-        print("Warning: Invalid satellite velocity")
+        warnings.warn("Invalid satellite velocity")
         return Polygon(), np.array([])
     if np.linalg.norm(r_s_i) < 1e-6:
-        print("Warning: Invalid satellite position")
+        warnings.warn("Invalid satellite position")
         return Polygon(), np.array([])
 
     # 1. V-axis (satellite travel direction)
@@ -545,7 +546,7 @@ def compute_footprint(sat_pos, sat_vel, refl_pos, time_i, antenna, frequency, q_
     # 2. N-axis (Orbit Normal direction, perpendicular to the orbit plane)
     h_vec = np.cross(r_s_i, v_hat)
     if np.linalg.norm(h_vec) < 1e-12:
-        print("Warning: Satellite position and velocity are collinear")
+        warnings.warn("Satellite position and velocity are collinear")
         return Polygon(), np.array([])
     n_hat = h_vec / np.linalg.norm(h_vec)
 
@@ -578,7 +579,7 @@ def compute_footprint(sat_pos, sat_vel, refl_pos, time_i, antenna, frequency, q_
     R_vnc_to_body = R_attitude @ Constants.R_body_to_vnc_normal.T
     n_ar_a = antenna.R_antenna_to_body.T @ R_vnc_to_body @ R_eci_to_vnc @ n_ar_eci
     if n_ar_a[2] < 0:
-        print("Warning: Reflection behind antenna!")
+        warnings.warn("Reflection behind antenna!")
         return Polygon(), np.array([])
     epsilon = np.arctan2(n_ar_a[0], n_ar_a[2])
     psi = np.arctan2(n_ar_a[1], n_ar_a[2])
@@ -630,7 +631,7 @@ def compute_footprint(sat_pos, sat_vel, refl_pos, time_i, antenna, frequency, q_
             )
             lat_lon_points[valid_mask] = np.column_stack((lat, lon))
         except Exception as e:
-            print(f"Warning: Failed to convert some points to geodetic coordinates: {e}")
+            warnings.warn(f"Failed to convert some points to geodetic coordinates: {e}")
             lat_lon_points[valid_mask] = np.nan
 
     # ========== OUTPUTS ==========
