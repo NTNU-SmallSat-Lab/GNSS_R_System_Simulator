@@ -16,8 +16,12 @@ matplotlib.use("Agg", force=True)
 
 def run_moving_target_detection(settings: dict):
     """
-    Calculates the probability of detecting a ship traveling from point A to B
-    using GNSS-R LEO satellites.
+    =========================================================================================================
+    Calculate the probability of detecting a ship traveling from point A to B using GNSS-R LEO satellites.
+
+    INPUTS:
+        settings: [dict]   Simulation settings dictionary loaded from Configuration_ship.ini
+    =========================================================================================================
     """
     
     # --- 1. Environment & Ship Setup ---

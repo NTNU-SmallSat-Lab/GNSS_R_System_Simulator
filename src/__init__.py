@@ -75,20 +75,17 @@ def parse_antenna_angles(filename):
 def initialize(config_file_name="Configuration.ini"):
     """
     =========================================================================================================
-    This function reads the configuration file (default: 'Configuration.ini') and initializes the simulation settings.
-    The configuration file acts as as the main input for the simulation.
+    Read the configuration file (default: 'Configuration.ini') and initialize the simulation settings.
+    The configuration file acts as the main input for the simulation.
 
-    INPUT:
-    - config_file_name: str, optional
-        The name of the configuration file to read. Default is 'Configuration.ini'.
+    INPUTS:
+        config_file_name: [str, optional]   The name of the configuration file to read. Default is 'Configuration.ini'.
 
     OUTPUT:
-    - config: ConfigParser object
-        The configuration settings read from the file.
-    - simulation_settings: dict
-        A dictionary containing the simulation settings, including:
+        result: [tuple]   (config: ConfigParser, simulation_settings: dict) — the configuration settings read from the file
+                          and a dictionary containing the simulation settings.
 
-      Configuration File Structure:
+    Configuration File Structure:
         [SIMULATION SETTINGS]
         startTime          = dd.MM.YYYY HH:mm:ss
         stepSize           = step_size_in_seconds

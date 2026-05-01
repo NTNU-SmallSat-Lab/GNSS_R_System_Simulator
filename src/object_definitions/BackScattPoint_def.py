@@ -134,7 +134,21 @@ class BRP:
         self.power = power
 
     def _compute_footprint(self, index: int, antenna: RxAntenna, frequency: float, q_sat=None, earth_model="spherical") -> tuple:
-        """Thin wrapper around :func:`functions.functions.compute_footprint`."""
+        """
+        =========================================================================================================
+        Thin wrapper around :func:`functions.functions.compute_footprint`.
+
+        INPUTS:
+            index:       [int]                 Sample index along the propagated time vector
+            antenna:     [RxAntenna]           Receiver antenna
+            frequency:   [float]               Carrier frequency [MHz]
+            q_sat:       [np.ndarray | None]   Attitude quaternion [w, x, y, z] (default: identity)
+            earth_model: [str]                 "spherical" or "elliptical"
+
+        OUTPUT:
+            result: [tuple]   (polygon_footprint, center_point) — Shapely Polygon and [lat, lon] center
+        =========================================================================================================
+        """
         return fn.compute_footprint(
             self.sat_pos_vec[:, index],
             self.sat_vel_vec[:, index],

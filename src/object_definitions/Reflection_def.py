@@ -243,9 +243,20 @@ class Reflection:
 
     def get_reflection_point_ff(self, gnssPos, satPos):
         """
-        Calculate the reflection point between a satellite and a GNSS satellite position
-        for a spherical Earth, using the same method as in FreeFlyer (the `_ff` suffix
-        denotes FreeFlyer).
+        =========================================================================================================
+        Calculate the reflection point between a satellite and a GNSS satellite position for a
+        spherical Earth, using the same method as in FreeFlyer (the `_ff` suffix denotes FreeFlyer).
+
+        INPUTS:
+            gnssPos: [np.array, shape (3,)]   GNSS satellite position
+            satPos:  [np.array, shape (3,)]   Receiver (LEO) satellite position
+
+        OUTPUT:
+            result: [tuple]   (ReflectionPoint, theta_degrees2, theta_degrees3)
+                              - ReflectionPoint: 3D reflection point (NaNs if no LOS)
+                              - theta_degrees2:  Angle between reflection-to-Sat and reflection-from-origin
+                              - theta_degrees3:  Angle between reflection-to-GNSS and reflection-from-origin
+        =========================================================================================================
         """
         # Convert positions to column vectors
         satCoord = np.array(satPos).reshape(-1, 1)
@@ -315,9 +326,16 @@ class Reflection:
         # Reflection constraint
         def reflection_residual(S):
             """
-            For specular reflection, mirror the incoming propagation direction
-            about the local ellipsoid normal and compare it to the outgoing
-            propagation direction.
+            =========================================================================================================
+            For specular reflection, mirror the incoming propagation direction about the local
+            ellipsoid normal and compare it to the outgoing propagation direction.
+
+            INPUTS:
+                S: [np.array, shape (3,)]   Candidate reflection point on the ellipsoid (ECEF)
+
+            OUTPUT:
+                result: [tuple]   (residual_vector, cos_incident, cos_reflected)
+            =========================================================================================================
             """
             S = np.array(S, dtype=float)
             v_in = unit_vector(S - Tx_solve)  # Incoming propagation direction, Tx -> S
@@ -406,7 +424,21 @@ class Reflection:
         return Rot
 
     def _compute_footprint(self, index: int, antenna: RxAntenna, frequency: float, q_sat=None, earth_model="spherical") -> tuple:
-        """Thin wrapper around :func:`functions.functions.compute_footprint`."""
+        """
+        =========================================================================================================
+        Thin wrapper around :func:`functions.functions.compute_footprint`.
+
+        INPUTS:
+            index:       [int]                 Sample index along the propagated time vector
+            antenna:     [RxAntenna]           Receiver antenna
+            frequency:   [float]               Carrier frequency [MHz]
+            q_sat:       [np.ndarray | None]   Attitude quaternion [w, x, y, z] (default: identity)
+            earth_model: [str]                 "spherical" or "elliptical"
+
+        OUTPUT:
+            result: [tuple]   (polygon_footprint, center_point) — Shapely Polygon and [lat, lon] center
+        =========================================================================================================
+        """
         return fn.compute_footprint(
             self.sat_pos_vec[:, index],
             self.sat_vel_vec[:, index],
@@ -421,12 +453,19 @@ class Reflection:
     @staticmethod
     def get_reflection_point2d(satCoord1, GPSCoord1):
         """
-        This function calculates the reflection point in 2D coordinates.
+        =========================================================================================================
+        Calculate the reflection point in 2D coordinates (after rotation into the orbital plane).
+
         INPUTS:
-            satCoord1:  Satellite coordinates in 2D (x, y) [m]
-            GPSCoord1:  GPS coordinates in 2D (x, y) [m]
-        OUTPUTS:
-            N:          Reflection point in 2D (x, y) [m]
+            satCoord1: [np.array]   Satellite coordinates in 2D (x, y) [m]
+            GPSCoord1: [np.array]   GPS coordinates in 2D (x, y) [m]
+
+        OUTPUT:
+            result: [tuple]   (N, A, B)
+                              - N: Reflection point in 2D (x, y) [m] (or None if no real positive root)
+                              - A: Normalized satellite vector
+                              - B: Normalized GPS vector
+        =========================================================================================================
         """
         # Calculates the reflection point in 2D
         A = satCoord1[:2] / Constants.RADIUS_EARTH_EQUAT
@@ -467,8 +506,17 @@ class Reflection:
     @staticmethod
     def _check_los_satellites(r1, r2) -> bool:
         """
-        Checks if there is a clear Line Of Sight (LOS) between two points r1 and r2,
-        given the Earth's radius in kilometers (spherical earth).
+        =========================================================================================================
+        Check whether there is a clear Line Of Sight (LOS) between two points r1 and r2,
+        given the Earth's equatorial radius (spherical Earth).
+
+        INPUTS:
+            r1: [np.array, shape (3,)]   First point [m]
+            r2: [np.array, shape (3,)]   Second point [m]
+
+        OUTPUT:
+            has_los: [bool]   True if no sample along the segment intersects the Earth
+        =========================================================================================================
         """
         d = r2 - r1
 

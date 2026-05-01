@@ -14,19 +14,16 @@ from object_definitions.Satellite_def import Satellite
 class SatelliteConstellation:
     """
     =========================================================================================================
-    SatelliteConfiguration class:
-        - Initialized with an array of Satellite objects
-          or
-        - a TLE file containing the satellite configuration
-        !!!! --- NOTE: This class should be initialized with either a list of Satellite objects
-        or a TLE file but not both --- !!!!
+    SatelliteConstellation class:
+        - Initialized with either an array of Satellite objects OR a TLE file containing the
+          satellite configuration (not both).
 
         INPUTS:
-            satArray:         [list]         List of Satellite objects
-            tle_file:         [str]          Path to the TLE file containing satellite data
-            satConfigName:    [str]          Name of the satellite configuration
-            rx_antenna:       [RxAntenna]    Receiver antenna object (optional)
-            verbose:          [bool]         Verbose output (default: False)
+            satArray:      [list]        List of Satellite objects
+            tle_file:      [str]         Path to the TLE file containing satellite data
+            satConfigName: [str]         Name of the satellite configuration
+            rx_antenna:    [RxAntenna]   Receiver antenna object (optional)
+            verbose:       [bool]        Verbose output (default: False)
     =========================================================================================================
     """
 
@@ -91,15 +88,14 @@ class SatelliteConstellation:
 
     def set_simulation_duration(self, startTime, duration, stepSize) -> None:
         """
+        =========================================================================================================
         Set the simulation duration for the constellation.
 
-        INPUT:
-            startTime: Start time as datetime object
-            duration: Simulation duration in hours
-            stepSize: Step size in seconds
-
-        OUTPUT:
-            True if the simulation duration is set successfully, False otherwise
+        INPUTS:
+            startTime: [datetime]   Start time as datetime object
+            duration:  [int|float]  Simulation duration in hours
+            stepSize:  [int]        Step size in seconds
+        =========================================================================================================
         """
         # Robustness checks for the inputs
         if isinstance(startTime, datetime) and isinstance(duration, int | float) and isinstance(stepSize, int):

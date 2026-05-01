@@ -22,14 +22,16 @@ class Plotting:
         title=None,
     ) -> None:
         """
+        =========================================================================================================
         Plot the reflection traces for a given GNSS constellation.
 
         INPUTS:
-            rx_SatConst:     Satellite constellation object for the receiver (LEO) satellites.
-            tx_SatConst:     Satellite constellation object for the transmitter (GNSS) satellites.
-            reflection_vec:  List of reflection vectors for the GNSS and GNSS-R (LEO) constellation.
-            file_name:       Name of the output file to save the plot (optional).
-            title:           Title of the plot (optional).
+            rx_SatConst:    [SatelliteConstellation]  Receiver (LEO) satellite constellation
+            tx_SatConst:    [SatelliteConstellation]  Transmitter (GNSS) satellite constellation
+            reflection_vec: [list]                    List of reflection vectors (LEO x GNSS pairs)
+            file_name:      [str]                     Output file name (optional)
+            title:          [str]                     Plot title (optional)
+        =========================================================================================================
         """
         plt.figure(figsize=(12, 6))
         ax = plt.axes(projection=ccrs.PlateCarree())
@@ -72,14 +74,16 @@ class Plotting:
         title=None,
     ):
         """
+        =========================================================================================================
         Plot the reflection traces for all GNSS constellations.
 
         INPUTS:
-            rx_SatConst:     Satellite constellation object for the receiver (LEO) satellites.
-            tx_SatConstDict: Dictionary of satellite constellation objects for the transmitter (GNSS) satellites.
-            reflection_dict: Dictionary of reflection vectors for the GNSS and GNSS-R (LEO) constellation.
-            file_name:       Name of the output file to save the plot (optional).
-            title:           Title of the plot (optional).
+            rx_SatConst:     [SatelliteConstellation]   Receiver (LEO) satellite constellation
+            tx_SatConstDict: [dict]                     Dict {name: SatelliteConstellation} of GNSS Tx constellations
+            reflection_dict: [dict]                     Dict {name: list of Reflection objects}
+            file_name:       [str]                      Output file name (optional)
+            title:           [str]                      Plot title (optional)
+        =========================================================================================================
         """
         plt.figure(figsize=(12, 6))
         ax = plt.axes(projection=ccrs.PlateCarree())
@@ -139,12 +143,14 @@ class Plotting:
     @staticmethod
     def plot_orbits(sat_const):
         """
+        =========================================================================================================
         Plot the satellite orbits in 3D space with Earth as a sphere.
-        Works with any number of satellites in the constellation.
-        Includes equator line and polar axis for orientation.
+        Works with any number of satellites in the constellation. Includes equator line and polar axis
+        for orientation.
 
-        INPUT:
-            sat_const: Satellite constellation object
+        INPUTS:
+            sat_const: [SatelliteConstellation]   Satellite constellation to plot
+        =========================================================================================================
         """
         # Get number of satellites
         num_satellites = len(sat_const.satellites)
