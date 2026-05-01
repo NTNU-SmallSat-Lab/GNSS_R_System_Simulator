@@ -258,21 +258,12 @@ class Reflection:
                               - theta_degrees3:  Angle between reflection-to-GNSS and reflection-from-origin
         =========================================================================================================
         """
+        if not self._check_los_satellites(np.asarray(satPos).flatten(), np.asarray(gnssPos).flatten()):
+            return np.array([np.nan, np.nan, np.nan]), np.nan, np.nan
+
         # Convert positions to column vectors
         satCoord = np.array(satPos).reshape(-1, 1)
         GPSCoord = np.array(gnssPos).reshape(-1, 1)
-
-        # Check for line of sight (LOS)
-        d = satCoord - GPSCoord
-        t_values = np.linspace(0, 1, 200)  # Sample points along the line
-
-        # Verify LOS by checking if any point along the line passes through Earth
-        for t in t_values:
-            r_t = GPSCoord + t * d
-            distance_to_earth_center = np.linalg.norm(r_t)
-            if distance_to_earth_center < Constants.RADIUS_EARTH_EQUAT:
-                # No line of sight, obstructed by Earth
-                return np.array([np.nan, np.nan, np.nan]), np.nan, np.nan
 
         # Get rotation matrix
         Rot = self.get_rotation_3D_to_plane_coords(satCoord, GPSCoord)
@@ -295,8 +286,8 @@ class Reflection:
         vec_2 = satPos - ReflectionPoint
         vec_3 = gnssPos - ReflectionPoint
 
-        theta_degrees2 = self._angle_between_vectors(vec_1, vec_2)
-        theta_degrees3 = self._angle_between_vectors(vec_1, vec_3)
+        theta_degrees2 = fn.angle_between_vectors(vec_1, vec_2)
+        theta_degrees3 = fn.angle_between_vectors(vec_1, vec_3)
 
         return ReflectionPoint, theta_degrees2, theta_degrees3
 
@@ -419,7 +410,7 @@ class Reflection:
         c2 = np.cos(theta)
         s2 = np.sin(theta)
 
-        Sv = self._skew_matrix(vec2)
+        Sv = fn.skew_matrix(vec2)
         Rot = np.eye(3) + s2 * Sv + Sv @ Sv * (1 - c2)
         return Rot
 
@@ -494,16 +485,6 @@ class Reflection:
         return None, None, None
 
     @staticmethod
-    def _angle_between_vectors(v1, v2):
-        # Calculate the angle between two vectors in degrees
-        dot_product = np.dot(v1, v2)
-        magnitude_a = np.linalg.norm(v1)
-        magnitude_b = np.linalg.norm(v2)
-        cos_theta = dot_product / (magnitude_a * magnitude_b)
-        theta_radians = np.arccos(cos_theta)
-        return np.degrees(theta_radians)
-
-    @staticmethod
     def _check_los_satellites(r1, r2) -> bool:
         """
         =========================================================================================================
@@ -531,11 +512,6 @@ class Reflection:
         # Check if earth_model is either 'spherical' or 'elliptical'
         valid_models = ["spherical", "elliptical"]
         return earth_model in valid_models
-
-    @staticmethod
-    def _skew_matrix(v):
-        # Returns the skew symmetric matrix of the vector v
-        return np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
 
     @staticmethod
     def _prevent_longitude_wraparound(lons, lats):
