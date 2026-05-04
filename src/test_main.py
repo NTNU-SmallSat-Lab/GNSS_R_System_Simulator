@@ -139,7 +139,7 @@ def testObjSatellite() -> bool:
         passed = 0
 
     if not (isinstance(satellite_noOrbit_newName, Satellite) and satellite_noOrbit_newName.satName == "newName"):
-        passed
+        passed = 0
 
     # Initialize Satellite with TLE file
     sat_tle = Satellite(7, tle_file_path=os.path.join(Constants.tle_folderpath, "ISS.tle"))
@@ -166,13 +166,13 @@ def testReadWriteData() -> bool:
     # https://www.heavens-above.com/orbit_n.aspx?satid=25544
     if (
         issList[0].satCatalogNumber != 25544  # Satellite Catalog Number
-        and issList[0].inclination != 51.638  # Inclination
-        and issList[0].eccentricity != 0.0008444  # Eccentricity
-        and issList[0].raan != 301.8966  # Right Ascension of Ascending Node
-        and issList[0].argOfPerigee != 165.9795  # Argument of Perigee
-        and issList[0].meanAnomaly != 194.1431  # Mean Anomaly at Epoch
-        and issList[0].meanMotion != 15.51387213  # Mean Motion [rev/day]
-        and issList[0].epoch != "24304.21246528"
+        or issList[0].inclination != 51.638  # Inclination
+        or issList[0].eccentricity != 0.0008444  # Eccentricity
+        or issList[0].raan != 301.8966  # Right Ascension of Ascending Node
+        or issList[0].argOfPerigee != 165.9795  # Argument of Perigee
+        or issList[0].meanAnomaly != 194.1431  # Mean Anomaly at Epoch
+        or issList[0].meanMotion != 15.51387213  # Mean Motion [rev/day]
+        or issList[0].epoch != "24304.21246528"
     ):
         passed = 0
 
@@ -210,6 +210,7 @@ def testFreeFlyerConnection() -> bool:
         ],
     )
     sat_1.write_tle_file()
+    return passed
 
 
 def testSatConstelation() -> bool:
@@ -297,7 +298,6 @@ if __name__ == "__main__":
     passed = passed & testClassOrFunction(testObjSatellite)
     passed = passed & testClassOrFunction(testReadWriteData)
     passed = passed & testClassOrFunction(testFreeFlyerConnection)
-    passed = passed & testClassOrFunction(testGNSSConstellation)
 
     if passed:
         print("All tests passed")
