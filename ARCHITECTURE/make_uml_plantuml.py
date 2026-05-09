@@ -17,6 +17,11 @@ from pathlib import Path
 
 
 PUML = r"""@startuml
+' Displayed identifiers use hyphens instead of underscores so the rendered SVG
+' is LaTeX-safe: when the SVG is included via inkscape --export-latex or the
+' `svg` package, text is passed through LaTeX and bare `_` triggers math-mode
+' subscript. Class identifiers used in relationships keep their underscores
+' (they are never rendered) via "Display name" as InternalName aliases.
 !pragma layout smetana
 title GNSS-R System Simulator -- Software Architecture
 
@@ -35,81 +40,81 @@ hide empty members
 
 package "Analysis" <<Rectangle>> #F4FFF4 {
     class Coverage {
-        sat_constellation
-        gnss_constellation
-        shp_input_file_path
-        gridded_shapefile_path
-        grid_size_deg / grid_size_m
-        bounding_box
-        reflection_dict
-        coverage_dict
-        earth_model
+        sat-constellation
+        gnss-constellation
+        shp-input-file-path
+        gridded-shapefile-path
+        grid-size-deg / grid-size-m
+        bounding-box
+        reflection-dict
+        coverage-dict
+        earth-model
         --
-        calculate_reflection_points_and_coverage()
-        calculate_statistics()
-        plot_coverage_shapefile()
-        plot_coverage_gridded_shapefile()
+        calculate-reflection-points-and-coverage()
+        calculate-statistics()
+        plot-coverage-shapefile()
+        plot-coverage-gridded-shapefile()
     }
 
     class MovingTargetDetection {
-        moving_target_object
-        sat_constellation
-        gnss_constellation
-        sat_antenna
-        reflection_dict_timeSorted
-        target_detect_dict
-        earth_model
-        reflection_mode
-        deltaT_sec
+        moving-target-object
+        sat-constellation
+        gnss-constellation
+        sat-antenna
+        reflection-dict-timeSorted
+        target-detect-dict
+        earth-model
+        reflection-mode
+        deltaT-sec
         --
-        calculate_moving_target_reflection_intersection()
-        show_track_and_detection_points()
-        create_reflection_animation()
+        calculate-moving-target-reflection-intersection()
+        show-track-and-detection-points()
+        create-reflection-animation()
     }
 
     class ShipTrajectory {
-        ship_id
-        ship_speed
-        start_position / time
-        end_position / time
+        ship-id
+        ship-speed
+        start-position / time
+        end-position / time
         waypoints
-        trajectory_points
-        shapefile_path
-        ocean_polygons
+        trajectory-points
+        shapefile-path
+        ocean-polygons
         --
-        plan_route()
-        generate_trajectory_equal_time()
-        get_position_at_time(t)
-        get_travel_duration_hours()
+        plan-route()
+        generate-trajectory-equal-time()
+        get-position-at-time(t)
+        get-travel-duration-hours()
     }
 }
 
 package "Geometry" <<Rectangle>> #FFF4F4 {
     class Reflection {
-        tx_satID, rx_satID
-        earth_model
-        cutoff_angle
-        gnss_const
-        time_vec
-        refl_ECI_vec / refl_LL_vec
-        refl_ang_vec
-        link_budget
+        tx-satID, rx-satID
+        earth-model
+        cutoff-angle
+        gnss-const
+        time-vec
+        refl-ECI-vec / refl-LL-vec
+        refl-ang-vec
+        link-budget
         --
-        compute_reflection_coordinates()
-        get_reflection_point_ff() <i>spherical, initial guess</i>
+        compute-reflection-coordinates()
+        get-reflection-point-ff() <i>spherical, initial guess</i>
     }
 
     class BRP <<backscatter>> {
-        tx_satID, rx_satID
-        earth_model
-        cutoff_angle
-        gnss_const
-        time_vec
-        refl_ECI_vec / refl_LL_vec
-        refl_ang_vec
-        link_budget
+        tx-satID, rx-satID
+        earth-model
+        cutoff-angle
+        gnss-const
+        time-vec
+        refl-ECI-vec / refl-LL-vec
+        refl-ang-vec
+        link-budget
         --
-        compute_brp_coordinates()
+        compute-brp-coordinates()
     }
 }
 
@@ -117,64 +122,64 @@ package "Domain" <<Rectangle>> #F4F4FF {
     class SatelliteConstellation {
         satConfigName
         satellites
-        no_satellites
-        orbits_array
-        times_skyfield
-        duration_sec
-        propagation_step_size
+        no-satellites
+        orbits-array
+        times-skyfield
+        duration-sec
+        propagation-step-size
         --
-        set_simulation_duration()
-        propagate_constellation()
-        generate_constellation_tle()
-        add_satellite() / remove_satellite()
+        set-simulation-duration()
+        propagate-constellation()
+        generate-constellation-tle()
+        add-satellite() / remove-satellite()
     }
 
     class Satellite {
         satID, satName
         classification
-        orbit_n
+        orbit-n
         skf
-        tle_file_path
-        gnss_r_antenna
+        tle-file-path
+        gnss-r-antenna
         battery, solarArray
-        positions_eci, velocities_eci
-        times_skyfield, time_prop_vec
-        sunlit_count, sunlit_fraction
+        positions-eci, velocities-eci
+        times-skyfield, time-prop-vec
+        sunlit-count, sunlit-fraction
         --
-        propagate_orbit()
-        propagate_orbit_for_times()
-        calculate_sunlight_time()
-        set_orbit() / set_epoch()
-        write_tle_file()
+        propagate-orbit()
+        propagate-orbit-for-times()
+        calculate-sunlight-time()
+        set-orbit() / set-epoch()
+        write-tle-file()
     }
 
     class Orbit {
         i, e, a
         RAAN, p, M
         n  <i>(mean motion)</i>
-        epoch_str
-        dt_start
+        epoch-str
+        dt-start
         --
-        set_start_time(dt)
-        conv_DateTime_to_Epoch()
+        set-start-time(dt)
+        conv-DateTime-to-Epoch()
     }
 
-    class GNSS_R_antenna {
-        antenna_lookuptable
-        steering_azimuth / elevation
+    class "GNSS-R-antenna" as GNSS_R_antenna {
+        antenna-lookuptable
+        steering-azimuth / elevation
         frequencies, bands
         polarizations
-        footprint_dB_contour
-        R_antenna_to_body
+        footprint-dB-contour
+        R-antenna-to-body
         --
-        get_gain_dbi_for_direction()
+        get-gain-dbi-for-direction()
     }
 
     class "Skyfield satellite" as Skyfield <<external>> {
         TLE-derived state propagator
         --
         at(time)
-        is_sunlit(planets)
+        is-sunlit(planets)
     }
 }
 
@@ -187,27 +192,27 @@ package "Foundation" <<Rectangle>> #F5F5F5 {
     }
 
     class BistaticLinkBudgetSettings <<dataclass>> {
-        tx_eirp_dbw
-        system_losses_db
-        polarization_losses_db
-        ocean_sigma0_db
-        ocean_sigma_slope_db_per_deg
-        ocean_sigma_floor_db
-        fresnel_rcs_scale
+        tx-eirp-dbw
+        system-losses-db
+        polarization-losses-db
+        ocean-sigma0-db
+        ocean-sigma-slope-db-per-deg
+        ocean-sigma-floor-db
+        fresnel-rcs-scale
     }
 
     class ReadWriteData <<utility>> {
         --
-        generate_tle_data_string(sat)
-        read_tle_data(path)
-        download_and_read_tle(path)
+        generate-tle-data-string(sat)
+        read-tle-data(path)
+        download-and-read-tle(path)
     }
 
     class Plotting <<static>> {
         --
-        plot_reflection_traces_gnss_const()
-        plot_reflection_traces_total()
-        plot_orbits()
+        plot-reflection-traces-gnss-const()
+        plot-reflection-traces-total()
+        plot-orbits()
     }
 }
 
@@ -301,8 +306,9 @@ def _fetch(url: str, timeout: int = 60) -> bytes:
 #  Main
 # --------------------------------------------------------------------------
 def main() -> None:
-    Path("architecture.puml").write_text(PUML, encoding="utf-8")
-    print("Wrote architecture.puml")
+    out_dir = Path(__file__).resolve().parent
+    (out_dir / "architecture.puml").write_text(PUML, encoding="utf-8")
+    print(f"Wrote {out_dir / 'architecture.puml'}")
 
     encoded = encode_plantuml(PUML)
     print(f"Encoded source ({len(encoded)} chars)")
@@ -320,8 +326,9 @@ def main() -> None:
             print(f"  Render manually by pasting architecture.puml into")
             print(f"  https://www.plantuml.com/plantuml or https://kroki.io")
             continue
-        Path(fname).write_bytes(data)
-        print(f"Wrote {fname} ({len(data):,} bytes)")
+        out_path = out_dir / fname
+        out_path.write_bytes(data)
+        print(f"Wrote {out_path} ({len(data):,} bytes)")
 
 
 if __name__ == "__main__":

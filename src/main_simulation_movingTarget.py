@@ -23,10 +23,10 @@ def run_moving_target_detection(settings: dict):
         settings: [dict]   Simulation settings dictionary loaded from Configuration_ship.ini
     =========================================================================================================
     """
-    
+
     # --- 1. Environment & Ship Setup ---
     earth_model = "elliptical"
-    
+
     ship_trajectory = ShipTrajectory(
         ship_id="DarkShip_001",
         ship_speed_knot=settings["moving_target_speed"],
@@ -61,7 +61,7 @@ def run_moving_target_detection(settings: dict):
 
     # Apply timing to all constellations
     sat_const.set_simulation_duration(start_time, travel_duration_h, step_size)
-    
+
     for name, gnss_const in gnss_constl_dict.items():
         gnss_const.set_simulation_duration(start_time, travel_duration_h, step_size)
         print(f"[{name}] Duration set to {gnss_const.duration_sec / 3600:.2f} hours.")
@@ -92,7 +92,7 @@ def run_moving_target_detection(settings: dict):
 
     # --- 5. Output & Visualization ---
     mtd.calculate_moving_target_reflection_intersection()
-    
+
     # Save detection plot
     output_plot = f"Detection_points_{mtd.reflection_mode}.png"
     mtd.show_track_and_detection_points(file_name=output_plot, show_figure=False)
