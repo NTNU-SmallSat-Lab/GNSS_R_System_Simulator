@@ -596,18 +596,16 @@ def compute_footprint(sat_pos, sat_vel, refl_pos, time_i, antenna, frequency, q_
     # (kept as local variables for parity with the pre-refactor bodies; not currently used downstream)
     _R_eci_to_reflection = np.vstack([x_r_eci, y_r_eci, z_r_eci])
 
-    # ========== BEAM / RAY ELEVATION (epsilon) AND AZIMUTH (psi) ==========
+    # ========== REFLECTION DIRECTION IN ANTENNA FRAME ==========
     R_attitude = quat_to_rotation_matrix(q_sat)
     R_vnc_to_body = R_attitude @ Constants.R_body_to_vnc_normal.T
     n_ar_a = antenna.R_antenna_to_body.T @ R_vnc_to_body @ R_eci_to_vnc @ n_ar_eci
     if n_ar_a[2] < 0:
         warnings.warn("Reflection behind antenna!")
         return Polygon(), np.array([])
-    epsilon = np.arctan2(n_ar_a[0], n_ar_a[2])
-    psi = np.arctan2(n_ar_a[1], n_ar_a[2])
 
     # ========== ROTATE NADIR-POINTING FOOTPRINT TO REFLECTION-BEAM POINTING ==========
-    beam_dir_a = antenna._get_antenna_footprint(n_ar_a, frequency, psi, epsilon)
+    beam_dir_a = antenna._get_antenna_footprint(n_ar_a, frequency)
 
     # ========== VECTORIZED BEAM DIRECTIONS ==========
     beam_dirs_i = (R_eci_to_vnc.T @ R_vnc_to_body.T @ antenna.R_antenna_to_body @ beam_dir_a.T)

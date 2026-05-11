@@ -145,7 +145,16 @@ def compute_reflection_link_budget(
                 antenna,
                 q_sat=q_sat,
             )
-            rx_gain_dbi[i] = antenna.get_gain_dbi_for_direction(look_dir_a, freq_mhz)
+            steering_angles = antenna.resolve_steering_angles_for_direction(look_dir_a)
+            if steering_angles is None:
+                continue
+            steering_azimuth_deg, steering_elevation_deg = steering_angles
+            rx_gain_dbi[i] = antenna.get_gain_dbi_for_direction(
+                look_dir_a,
+                freq_mhz,
+                azimuth_deg=steering_azimuth_deg,
+                elevation_deg=steering_elevation_deg,
+            )
 
     return compute_bistatic_link_budget(
         range_tx_m=range_tx_m,

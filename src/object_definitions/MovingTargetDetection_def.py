@@ -14,7 +14,6 @@ matplotlib.use("Agg")  # Use Agg backend for off-screen rendering
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from pyproj import Geod
 from shapely.errors import GEOSException
 from shapely.geometry import MultiPolygon, Polygon, box
 from shapely.ops import unary_union
@@ -773,7 +772,7 @@ class MovingTargetDetection:
         # Create a bounding box tuple (min_lon, max_lon, min_lat, max_lat)
         return (min_lon, max_lon, min_lat, max_lat)
 
-    def _reflection_point_footprint(self, refl_obj: Reflection | Backscatter, i: int, frequency: float, verbose: bool = False) -> Polygon:
+    def _reflection_point_footprint(self, refl_obj: Reflection | Backscatter, i: int, frequency: float, verbose: bool = False) -> tuple[Polygon, np.ndarray]:
         """
         =========================================================================================================
         Compute the antenna footprint polygon at sample `i` of a reflection object, with cleanup
@@ -896,57 +895,13 @@ class MovingTargetDetection:
         if check_nan_coords(footprint_points):
             if verbose:
                 print(f"WARNING: Ellipse points contain NaN values for reflection index {i} in {refl_obj.gnss_const}. Skipping footprint creation. \n    The satellite might be too far away or the footprint size is too large.")
-            return Polygon()
+            return Polygon(), spec_refl_point
 
             ## DEBUG plot footprint_poly
             # show_footprint(footprint_points)
 
         # Create a shapely polygon from the points
         return footprint_points, spec_refl_point
-
-    def _reflection_point_footprint_plotting(self, point_geom, gnss_constellation_name, band) -> Polygon:
-        """
-        =========================================================================================================
-        Create a circle around a given point with a specified radius in meters (for plotting).
-
-        INPUTS:
-            point_geom:              [shapely.geometry]   Point geometry whose centroid is the circle center
-            gnss_constellation_name: [str]                GNSS constellation name (currently unused)
-            band:                    [str]                Frequency band (currently unused)
-
-        OUTPUT:
-            circle_poly: [Polygon]   Circle polygon (radius = `self.footprint_size_m / 2`)
-        =========================================================================================================
-        """
-        # Get the center of the point
-        center_lon = point_geom.centroid.x
-        center_lat = point_geom.centroid.y
-
-        # Create a circle on the ellipsoid by calculating points along azimuths
-        circle_points = []
-        num_points = 64
-
-        # WGS84 ellipsoid for geodesic calculations
-        geod = Geod(ellps="WGS84")
-
-        for i in range(num_points):
-            # Calculate the azimuth (direction) for this point
-            azimuth = i * (360.0 / num_points)
-
-            # Calculate the point at the given distance and azimuth from the center
-            lon, lat, _ = geod.fwd(center_lon, center_lat, azimuth, self.footprint_size_m / 2)
-
-            # Add the point to our circle points
-            circle_points.append((lon, lat))
-
-        # Close the polygon by adding the first point again
-        circle_points.append(circle_points[0])
-
-        # Create a shapely polygon from the points
-        circle_poly = Polygon(circle_points)
-
-        # Create a shapely polygon from the points
-        return circle_poly
 
     def _fix_longitude_wrapping(self, polygon):
         """

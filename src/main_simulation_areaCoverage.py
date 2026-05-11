@@ -6,6 +6,7 @@ import functions.functions as fn
 matplotlib.use("TkAgg", force=True)
 from __init__ import initialize
 from object_definitions.Coverage_def import Coverage
+from object_definitions.Rx_antenna_def import RxAntenna
 from object_definitions.SatConstellation_def import SatelliteConstellation
 from object_definitions.Satellite_def import Satellite
 from object_definitions.Static_classes_def import Plotting
@@ -37,7 +38,8 @@ def run_area_coverage_simulation(sim_settings):
     ####################################
     # 2. Create satellite constellation
     ####################################
-    sat_array = [Satellite(i, orbit_n=sim_settings["orbits"][i]) for i in range(sim_settings["No_satellites"])]
+    gnss_r_antenna = RxAntenna(sim_settings) if sim_settings.get("antenna_pattern_folder") is not None else None
+    sat_array = [Satellite(i, orbit_n=sim_settings["orbits"][i], rx_antenna=gnss_r_antenna) for i in range(sim_settings["No_satellites"])]
     sat_const = SatelliteConstellation(satConfigName="LEO GNSS-R constellation", satArray=sat_array)
     sat_const.generate_constellation_tle()
     sat_const.set_simulation_duration(

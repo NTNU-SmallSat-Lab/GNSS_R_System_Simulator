@@ -14,6 +14,19 @@ from object_definitions.Static_classes_def import Plotting
 # Force non-interactive backend for server/headless environments
 matplotlib.use("Agg", force=True)
 
+
+def _format_footprint_db_label(footprint_db: float | None) -> str:
+    if footprint_db is None:
+        return "unknown_dB"
+
+    footprint_db = float(footprint_db)
+    if footprint_db.is_integer():
+        value = str(int(footprint_db))
+    else:
+        value = f"{footprint_db:g}"
+    return f"{value}dB"
+
+
 def run_moving_target_detection(settings: dict):
     """
     =========================================================================================================
@@ -94,7 +107,8 @@ def run_moving_target_detection(settings: dict):
     mtd.calculate_moving_target_reflection_intersection()
     
     # Save detection plot
-    output_plot = f"Detection_points_{mtd.reflection_mode}.png"
+    footprint_db_label = _format_footprint_db_label(settings.get("footprint_dB"))
+    output_plot = f"Detection_points_{mtd.reflection_mode}_footprint_{footprint_db_label}.png"
     mtd.show_track_and_detection_points(file_name=output_plot, show_figure=False)
     print(f"Detection plot saved as: {output_plot}")
 

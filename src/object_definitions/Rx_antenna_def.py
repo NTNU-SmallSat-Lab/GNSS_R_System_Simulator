@@ -1,3 +1,4 @@
+import ast
 import json
 import math
 
@@ -32,6 +33,11 @@ class RxAntenna:
         self.frequencies_radi_pattern = []
         self.bands = []
         self.footprint_dB_contour = settings.get("footprint_dB")
+        if self.footprint_dB_contour is None:
+            self.footprint_dB_contour = -3.0
+        if self.footprint_dB_contour >= 0.0:
+            raise ValueError("footprint_dB must be below 0 dB because antenna patterns are normalized to a 0 dB peak.")
+        self.max_steering_off_boresight_deg = self._parse_max_steering_off_boresight(settings.get("max_steering_angle_deg"))
 
         antenna_patterns_temp = {}
         for antenna_az_el_fr in settings.get("antenna_pattern_files"):
@@ -64,9 +70,9 @@ class RxAntenna:
             if freq != frequency:
                 raise ValueError(f"Frequency mismatch for file and file-content {antenna_az_el_fr}. Expected {frequency}, got {freq}.")
             if not math.isclose(beta_n, elevation, abs_tol=0.01):
-                raise ValueError(f"Azimuth pointing mismatch for file and file-content {antenna_az_el_fr}. Expected {elevation}, got {beta_m}.")
+                raise ValueError(f"Elevation pointing mismatch for file and file-content {antenna_az_el_fr}. Expected {elevation}, got {beta_n}.")
             if not math.isclose(beta_m, azimuth, abs_tol=0.01):
-                raise ValueError(f"Elevation pointing mismatch for file and file-content {antenna_az_el_fr}. Expected {azimuth}, got {beta_n}.")
+                raise ValueError(f"Azimuth pointing mismatch for file and file-content {antenna_az_el_fr}. Expected {azimuth}, got {beta_m}.")
 
             # Dictionary with antenna properties read in
             antenna_patterns_temp[antenna_az_el_fr] = {
@@ -119,6 +125,7 @@ class RxAntenna:
 
         # Initialize antenna frequecies
         self.frequencies = self._get_frequency_from_band()
+        self._validate_unsteered_footprint_patterns()
 
     def _get_frequency_from_band(self):
         """
@@ -141,6 +148,32 @@ class RxAntenna:
                     raise ValueError(f"No radiation pattern available for frequency {freq_Mz} MHz (band {band}).")
 
         return frequencies
+
+    def _validate_unsteered_footprint_patterns(self) -> None:
+        """
+        =========================================================================================================
+        Validate that every configured antenna frequency has an unsteered footprint source pattern.
+
+        Footprint projection starts from an elevation=0 pattern and rotates that contour toward the reflection
+        direction. Without an elevation=0 pattern, the footprint would be based on an already-steered pattern and
+        steering could be applied twice.
+        =========================================================================================================
+        """
+        missing = []
+        for frequency_mhz in self.frequencies:
+            has_unsteered_pattern = any(
+                math.isclose(key[2], frequency_mhz, abs_tol=1e-6) and math.isclose(key[1], 0.0, abs_tol=1e-6)
+                for key in self.antenna_lookuptable
+            )
+            if not has_unsteered_pattern:
+                missing.append(frequency_mhz)
+
+        if missing:
+            missing_str = ", ".join(f"{frequency:.2f} MHz" for frequency in missing)
+            raise ValueError(
+                "Missing unsteered antenna pattern for footprint calculation "
+                f"at {missing_str}. Include 0 deg in [ANTENNA PATTERN].elevation_directivity."
+            )
 
     def _calc_antenna_footprint(self, antenna_pattern):
         """
@@ -273,7 +306,7 @@ class RxAntenna:
         #plt.tight_layout()
         #plt.show(block=True)
 
-    def _get_antenna_footprint(self, refl_dir_antenna_frame, frequency, azimuth, elevation):
+    def _get_antenna_footprint(self, refl_dir_antenna_frame, frequency):
         """
         =========================================================================================================
         Get the antenna footprint contour rotated to point at the given reflection direction.
@@ -281,38 +314,43 @@ class RxAntenna:
         INPUTS:
             refl_dir_antenna_frame: [np.ndarray, shape (3,)]   Reflection direction in antenna frame
             frequency:              [float]                    Frequency [MHz] (used for lookup)
-            azimuth:                [float]                    Steering azimuth [deg] (currently ignored — uses unsteered)
-            elevation:              [float]                    Steering elevation [deg] (currently ignored — uses unsteered)
 
         OUTPUT:
             footprint_vectors: [np.ndarray, shape (N, 3)]   Rotated footprint contour vectors
         =========================================================================================================
         """
-        nadir = np.array([0, 0, 1])  # Nadir pointing vector in antenna coordinate system
-        refl_dir_antenna_frame = np.asarray(refl_dir_antenna_frame)
+        boresight = np.array([0.0, 0.0, 1.0])  # Nadir-pointing boresight in antenna coordinates
+        refl_dir_antenna_frame = np.asarray(refl_dir_antenna_frame, dtype=float)
         if refl_dir_antenna_frame.shape != (3,):
             raise ValueError("Input 'refl_dir_antenna_frame' must be a 3-element vector.")
+        if not np.isfinite(refl_dir_antenna_frame).all():
+            raise ValueError("Input 'refl_dir_antenna_frame' must contain finite values.")
+
+        direction_norm = np.linalg.norm(refl_dir_antenna_frame)
+        if direction_norm <= 0.0:
+            raise ValueError("Input 'refl_dir_antenna_frame' must be non-zero.")
+        refl_dir_antenna_frame = refl_dir_antenna_frame / direction_norm
 
         # Footprint projection starts from the unsteered contour and rotates it
         # to the requested reflection direction. Steered patterns remain valid
         # for gain lookup, but using them here would apply steering twice.
-        footprint_lookup_key = self._resolve_lookup_key(frequency, azimuth_deg=90.0, elevation_deg=0.0)
+        footprint_lookup_key = self._resolve_unsteered_footprint_lookup_key(frequency)
 
-        # Check if the direction is the same as nadir (no rotation needed)
-        if np.allclose(refl_dir_antenna_frame, nadir):
+        # Check if the direction is the same as boresight (no rotation needed)
+        if np.allclose(refl_dir_antenna_frame, boresight):
             return self.antenna_lookuptable[footprint_lookup_key]["vector_bundle"]
 
         # Compute rotation axis and angle
-        axis = np.cross(nadir, refl_dir_antenna_frame)
+        axis = np.cross(boresight, refl_dir_antenna_frame)
         axis_norm = np.linalg.norm(axis)
 
         if axis_norm < 1e-8:
-            # refl_dir_antenna_frame is opposite to nadir, rotate 180 degrees around any perpendicular axis
-            axis = np.array([1, 0, 0])  # Arbitrary perpendicular axis
+            # refl_dir_antenna_frame is opposite to boresight, rotate 180 degrees around any perpendicular axis
+            axis = np.array([1.0, 0.0, 0.0])  # Arbitrary perpendicular axis
             angle = np.pi
         else:
             axis = axis / axis_norm
-            angle = np.arccos(np.clip(np.dot(nadir, refl_dir_antenna_frame), -1.0, 1.0))
+            angle = np.arccos(np.clip(np.dot(boresight, refl_dir_antenna_frame), -1.0, 1.0))
 
         # Compute rotation matrix using Rodrigues' rotation formula
         K = np.array([
@@ -322,7 +360,7 @@ class RxAntenna:
         ])
         R = np.eye(3) + np.sin(angle) * K + (1 - np.cos(angle)) * np.dot(K, K)
 
-        rotated_footprint_vectors = self.antenna_lookuptable[footprint_lookup_key]["vector_bundle"] @ R.T  # Rotate the footprint vectors to the reflection beam coordinate system
+        rotated_footprint_vectors = self.antenna_lookuptable[footprint_lookup_key]["vector_bundle"] @ R.T
         return rotated_footprint_vectors
 
     @staticmethod
@@ -371,6 +409,123 @@ class RxAntenna:
                 abs(key[1] - el_target),
             ),
         )
+
+    def _resolve_unsteered_footprint_lookup_key(self, frequency_mhz: float) -> tuple:
+        """
+        =========================================================================================================
+        Resolve the unsteered pattern key used as the base footprint contour.
+
+        At zero off-boresight, steering azimuth is physically arbitrary. We therefore require elevation=0 for the
+        requested frequency and then choose the available azimuth closest to 90 deg to keep the existing convention.
+
+        INPUTS:
+            frequency_mhz: [float]   Target frequency [MHz]
+
+        OUTPUT:
+            key: [tuple]   (azimuth, 0.0, frequency) footprint source pattern
+        =========================================================================================================
+        """
+        if not self.antenna_lookuptable:
+            raise ValueError("Antenna lookup table is empty.")
+
+        closest_frequency = min({key[2] for key in self.antenna_lookuptable}, key=lambda available_freq: abs(available_freq - float(frequency_mhz)))
+        unsteered_keys = [
+            key
+            for key in self.antenna_lookuptable
+            if math.isclose(key[2], closest_frequency, abs_tol=1e-6) and math.isclose(key[1], 0.0, abs_tol=1e-6)
+        ]
+        if not unsteered_keys:
+            raise ValueError(
+                "Missing unsteered antenna pattern for footprint calculation "
+                f"at {closest_frequency:.2f} MHz. Include 0 deg in [ANTENNA PATTERN].elevation_directivity."
+            )
+
+        return min(unsteered_keys, key=lambda key: self._circular_abs_diff_deg(key[0], 90.0))
+
+    @staticmethod
+    def _parse_max_steering_off_boresight(value) -> float | None:
+        """
+        =========================================================================================================
+        Parse the configured max steering angle into an off-boresight limit.
+
+        The INI uses ``max_steering_angle_deg = [azimuth, elevation]``. Azimuth is circular, so the
+        elevation/off-boresight component is the useful field for rejecting impossible steering requests.
+
+        INPUTS:
+            value: [float | list | tuple | str | None]   Configured steering limit
+
+        OUTPUT:
+            limit: [float | None]   Maximum off-boresight steering angle in degrees, or None if unlimited
+        =========================================================================================================
+        """
+        if value is None:
+            return None
+        if isinstance(value, str):
+            if value.strip() == "":
+                return None
+            try:
+                value = ast.literal_eval(value)
+            except (ValueError, SyntaxError) as exc:
+                raise ValueError(f"Invalid max_steering_angle_deg value: {value}") from exc
+
+        values = np.asarray(value, dtype=float).reshape(-1)
+        if values.size == 0:
+            return None
+        limit = values[1] if values.size >= 2 else values[0]
+        if limit < 0:
+            raise ValueError("max_steering_angle_deg must not contain a negative off-boresight limit.")
+        return float(limit)
+
+    @staticmethod
+    def _direction_to_spherical_angles_deg(direction: np.ndarray) -> tuple[float, float] | None:
+        """
+        =========================================================================================================
+        Convert a unit look direction in antenna coordinates to pattern angles.
+
+        INPUTS:
+            direction: [np.ndarray, shape (3,)]   Look direction in antenna frame
+
+        OUTPUT:
+            angles: [tuple | None]   (azimuth_deg, elevation_deg/off-boresight) or None if invalid/behind antenna
+        =========================================================================================================
+        """
+        direction = np.asarray(direction, dtype=float)
+        if direction.shape != (3,) or not np.isfinite(direction).all():
+            return None
+
+        direction_norm = np.linalg.norm(direction)
+        if direction_norm <= 0.0:
+            return None
+        direction = direction / direction_norm
+
+        if direction[2] <= 0.0:
+            return None
+
+        elevation_deg = float(np.degrees(np.arccos(np.clip(direction[2], -1.0, 1.0))))
+        azimuth_deg = float((np.degrees(np.arctan2(direction[1], direction[0])) + 360.0) % 360.0)
+        return azimuth_deg, elevation_deg
+
+    def resolve_steering_angles_for_direction(self, direction_antenna_frame: np.ndarray) -> tuple[float, float] | None:
+        """
+        =========================================================================================================
+        Resolve the automatic steering command for a look direction in antenna coordinates.
+
+        INPUTS:
+            direction_antenna_frame: [np.ndarray, shape (3,)]   Look direction in antenna frame
+
+        OUTPUT:
+            angles: [tuple | None]   (azimuth_deg, elevation_deg) used to select the closest generated pattern,
+                                     or None if the direction is invalid or outside the steering limit
+        =========================================================================================================
+        """
+        angles = self._direction_to_spherical_angles_deg(direction_antenna_frame)
+        if angles is None:
+            return None
+
+        azimuth_deg, elevation_deg = angles
+        if self.max_steering_off_boresight_deg is not None and elevation_deg > self.max_steering_off_boresight_deg:
+            return None
+        return azimuth_deg, elevation_deg
 
     @staticmethod
     def _sample_radiation_pattern_db(pattern_db: np.ndarray, theta_deg: float, phi_deg: float) -> float:
@@ -426,10 +581,26 @@ class RxAntenna:
         if direction[2] <= 0.0:
             return np.nan
 
-        theta_deg = float(np.degrees(np.arccos(np.clip(direction[2], -1.0, 1.0))))
-        phi_deg = float((np.degrees(np.arctan2(direction[1], direction[0])) + 360.0) % 360.0)
+        angles = self._direction_to_spherical_angles_deg(direction)
+        if angles is None:
+            return np.nan
+        phi_deg, theta_deg = angles
 
-        lookup_key = self._resolve_lookup_key(frequency_mhz, azimuth_deg=azimuth_deg, elevation_deg=elevation_deg)
+        if azimuth_deg is None or elevation_deg is None:
+            steering_angles = self.resolve_steering_angles_for_direction(direction)
+            if steering_angles is None:
+                return np.nan
+            auto_azimuth_deg, auto_elevation_deg = steering_angles
+            steering_azimuth_deg = auto_azimuth_deg if azimuth_deg is None else float(azimuth_deg)
+            steering_elevation_deg = auto_elevation_deg if elevation_deg is None else float(elevation_deg)
+        else:
+            steering_azimuth_deg = float(azimuth_deg)
+            steering_elevation_deg = float(elevation_deg)
+
+        if self.max_steering_off_boresight_deg is not None and steering_elevation_deg > self.max_steering_off_boresight_deg:
+            return np.nan
+
+        lookup_key = self._resolve_lookup_key(frequency_mhz, azimuth_deg=steering_azimuth_deg, elevation_deg=steering_elevation_deg)
         lookup = self.antenna_lookuptable[lookup_key]
         relative_gain_db = self._sample_radiation_pattern_db(lookup["radiation_pattern_dB"], theta_deg, phi_deg)
 
