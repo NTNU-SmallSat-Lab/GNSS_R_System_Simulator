@@ -33,6 +33,7 @@ warnings.filterwarnings(
 # import numpy              as np
 # import xmltodict          as xd
 from functions.link_budget import BistaticLinkBudgetSettings
+from object_definitions.AntennaPatternGenerator_def import AntennaPatternGenerator
 from object_definitions.Constants_def import Constants
 
 ## UPDATE THE SIMULATIOR VERSION HERE ##
@@ -72,6 +73,54 @@ def parse_antenna_angles(filename):
     else:
         raise ValueError(f"Could not parse azimuth/elevation from filename: {filename}")
 
+
+def _normalize_path_for_compare(path):
+    return os.path.normcase(os.path.abspath(os.path.normpath(path)))
+
+
+def _get_antenna_pattern_folder(config, pattern_section=None):
+    """
+    Resolve the antenna-pattern folder from configuration.
+
+    [ANTENNA].pattern_folder is the canonical setting. The older
+    [ANTENNA].antenna_filepaths and [ANTENNA PATTERN].output_folder keys are
+    still accepted for compatibility.
+    """
+    antenna_folder = None
+    if "ANTENNA" in config:
+        antenna_section = config["ANTENNA"]
+        if "pattern_folder" in antenna_section:
+            antenna_folder = antenna_section["pattern_folder"].strip()
+        elif "antenna_pattern_folder" in antenna_section:
+            antenna_folder = antenna_section["antenna_pattern_folder"].strip()
+            warnings.warn(
+                "[ANTENNA].antenna_pattern_folder is deprecated; use [ANTENNA].pattern_folder instead.",
+                stacklevel=2,
+            )
+        elif "antenna_filepaths" in antenna_section:
+            antenna_folder = antenna_section["antenna_filepaths"].strip()
+            warnings.warn(
+                "[ANTENNA].antenna_filepaths is deprecated; use [ANTENNA].pattern_folder instead.",
+                stacklevel=2,
+            )
+
+    pattern_folder = None
+    if pattern_section is not None and "output_folder" in pattern_section:
+        pattern_folder = pattern_section["output_folder"].strip()
+        warnings.warn(
+            "[ANTENNA PATTERN].output_folder is deprecated; use [ANTENNA].pattern_folder instead.",
+            stacklevel=2,
+        )
+
+    if antenna_folder and pattern_folder and _normalize_path_for_compare(antenna_folder) != _normalize_path_for_compare(pattern_folder):
+        raise ValueError(
+            "Antenna pattern folder is configured in two places with different values. "
+            "Use only [ANTENNA].pattern_folder."
+        )
+
+    return antenna_folder or pattern_folder
+
+
 def initialize(config_file_name="Configuration.ini"):
     """
     =========================================================================================================
@@ -97,6 +146,7 @@ def initialize(config_file_name="Configuration.ini"):
         speed     = Speed_in_knots                                                      (only needed for moving target analysis)
 
         [ANTENNA]
+        pattern_folder         = path/to/generated_or_precomputed_patterns                       (only needed for moving target analysis)
         antenna_beamwidth_3dB  = [x1, y1, x2, y2, ...] (from 0 to 90 degrees rotationally) (only needed for moving target analysis)
         max_steering_angle_deg = [azimuth, elevation] (in degrees)                         (only needed for moving target analysis)
         polarizations          = ["LHCP", "RHCP", "VP", "HP"]                              (only needed for moving target analysis)
@@ -158,56 +208,102 @@ def initialize(config_file_name="Configuration.ini"):
     except KeyError:
         raise KeyError("The 'grid_size_meters' or 'shapefile_path' key is missing in the 'COVERAGE' section of the configuration file.")  # noqa: B904
 
+    pattern_section = config["ANTENNA PATTERN"] if "ANTENNA PATTERN" in config else None
+    antenna_pattern_folder = _get_antenna_pattern_folder(config, pattern_section)
+
+    #[ANTENNA PATTERN]
+    # Parameters for AntennaPatternGenerator. Parsed up-front so the generator
+    # can run (and rebuild stale JSONs) before [ANTENNA] is consumed below.
+    antenna_pattern_settings = None
+    if "ANTENNA PATTERN" in config:
+        section = config["ANTENNA PATTERN"]
+        required_keys = ("elements_along_x", "elements_along_y", "d_x", "d_y", "freqs", "elevation_directivity", "azimuth_directivity")
+        missing = [k for k in required_keys if k not in section]
+        if missing:
+            raise KeyError(f"Missing required key(s) in [ANTENNA PATTERN] section: {missing}")
+        if antenna_pattern_folder is None:
+            raise KeyError("Missing antenna pattern folder. Add [ANTENNA] pattern_folder = <path>.")
+        try:
+            antenna_pattern_settings = {
+                "elements_along_x": int(section["elements_along_x"]),
+                "elements_along_y": int(section["elements_along_y"]),
+                "d_x": float(section["d_x"]),
+                "d_y": float(section["d_y"]),
+                "freqs": [float(f) for f in ast.literal_eval(section["freqs"])],
+                "elevation_directivity": ast.literal_eval(section["elevation_directivity"]),
+                "azimuth_directivity": ast.literal_eval(section["azimuth_directivity"]),
+                "elevation_resolution": int(section.get("elevation_resolution", "180")),
+                "azimuth_resolution": int(section.get("azimuth_resolution", "360")),
+                "output_folder": antenna_pattern_folder,
+            }
+        except (ValueError, SyntaxError) as e:
+            raise ValueError(f"Invalid value in [ANTENNA PATTERN] section: {e}") from None
+
+        # Generate (or reuse cached) antenna-pattern JSONs before the [ANTENNA]
+        # block reads them. AntennaPatternGenerator decides whether to skip
+        # generation based on a metadata signature stored in the pattern folder.
+        AntennaPatternGenerator(**antenna_pattern_settings).generate()
+
     #[ANTENNA]
     try:
         antenna_patterns = {}  # Initialize the dictionary here
-        antenna_pattern_folder = config["ANTENNA"]["antenna_filepaths"] if ("ANTENNA" in config and "antenna_filepaths" in config["ANTENNA"]) else None  # Antenna beamwidth -3dB in degrees
+        max_steering_angle_deg = (
+            ast.literal_eval(config["ANTENNA"]["max_steering_angle_deg"])
+            if ("ANTENNA" in config and "max_steering_angle_deg" in config["ANTENNA"])
+            else None
+        )
         bands = config["ANTENNA"]["bands"] if ("ANTENNA" in config and "bands" in config["ANTENNA"]) else None  # Antenna bands
         if bands is None:
             bands = []
+            antenna_bands = []
         else:
             # Remove square brackets, quotes and split
             antenna_bands = [band.strip().strip('"') for band in bands[1:-1].split(",")]
 
         # If antenna is initialzied in the ini-file:
         if "ANTENNA" in config:
-            # Make sure the folder has a slash on the end
-            if not antenna_pattern_folder.endswith("/"):
-                antenna_pattern_folder += "/"
+            if antenna_pattern_folder is None:
+                raise KeyError("Missing [ANTENNA] pattern_folder.")
             if antenna_pattern_folder is not None and not os.path.isdir(antenna_pattern_folder):
                 raise NotADirectoryError(f"The specified antenna pattern folder '{antenna_pattern_folder}' does not exist or is not a directory. Please check the folder path in the configuration file.")
             filepaths_antenna_pattern = []
-            for file in os.listdir(antenna_pattern_folder):
-                # Write all files ending with *.json in that folder into a list
-                if file.endswith(".json"):
+            for file in sorted(os.listdir(antenna_pattern_folder)):
+                # Pick up only the pattern JSONs; the AntennaPatternGenerator metadata file
+                # (antenna_pattern_metadata.json) is a sibling and must be ignored here.
+                if file.startswith("array_factor_") and file.endswith(".json"):
                     filepaths_antenna_pattern.append(os.path.join(antenna_pattern_folder, file))
 
-            if filepaths_antenna_pattern not in [None, ""]:
-                for file in filepaths_antenna_pattern:
-                    if not os.path.isfile(file):
-                        # Additional robustness checks
-                        raise FileNotFoundError(f"The specified antenna pattern file '{file}' does not exist. Please check the file path in the configuration file.")
-                    else:
-                        # Get the azimuth and elevation of that file (through the filename)
-                        filename = os.path.basename(file)
-                        azimuth, elevation, freq = parse_antenna_angles(filename)
+            if not filepaths_antenna_pattern:
+                raise FileNotFoundError(
+                    f"No antenna pattern files found in '{antenna_pattern_folder}'. "
+                    "Expected files named 'array_factor_*.json'."
+                )
 
-                        # Create a dictionary, linking azimuth and elevation angle to the file
-                        antenna_patterns[(azimuth, elevation, freq)] = file
-                # Sort the antenna_patterns files
-                antenna_patterns = dict(sorted(antenna_patterns.items()))
-            else:
-                pass
+            for file in filepaths_antenna_pattern:
+                if not os.path.isfile(file):
+                    # Additional robustness checks
+                    raise FileNotFoundError(f"The specified antenna pattern file '{file}' does not exist. Please check the file path in the configuration file.")
+
+                # Get the azimuth and elevation of that file (through the filename)
+                filename = os.path.basename(file)
+                azimuth, elevation, freq = parse_antenna_angles(filename)
+
+                # Create a dictionary, linking azimuth and elevation angle to the file
+                antenna_patterns[(azimuth, elevation, freq)] = file
+            # Sort the antenna_patterns files
+            antenna_patterns = dict(sorted(antenna_patterns.items()))
             antenna_polarizations = ast.literal_eval(config["ANTENNA"]["polarizations"]) if "ANTENNA" in config else None  # Antenna polarizations (e.g., ["LHCP", "RHCP"])
         else:
             antenna_polarizations = None
             antenna_bands = None
 
-        footprint_dB = config["ANTENNA"]["footprint_dB"] if ("ANTENNA" in config and "footprint_dB" in config["ANTENNA"]) else None
+        footprint_dB = config["ANTENNA"].get("footprint_dB", "-3.0") if "ANTENNA" in config else None
         try:
             footprint_dB = float(footprint_dB) if footprint_dB is not None else None
         except ValueError:
             raise ValueError(f"Invalid value for 'footprint_dB': {footprint_dB}. It must be a float.") from None
+        if footprint_dB is not None and footprint_dB >= 0.0:
+            raise ValueError("'footprint_dB' must be below 0 dB because antenna patterns are normalized to a 0 dB peak.")
     except KeyError:
         raise KeyError("The 'antenna_filepath_0deg', 'max_steering_angle_deg', 'polarizations', 'bands' or 'antenna_gain' key is missing in the 'ANTENNA' section of the configuration file.") # noqa: B904
 
@@ -304,8 +400,12 @@ def initialize(config_file_name="Configuration.ini"):
         "moving_target_speed": moving_tgt_speed,
         "start_coord_ll": start_coord_ll,
         "end_coord_ll": end_coord_ll,
+        #[ANTENNA PATTERN]
+        "antenna_pattern_settings": antenna_pattern_settings,
         #[ANTENNA]
+        "antenna_pattern_folder": antenna_pattern_folder,
         "antenna_pattern_files": antenna_patterns,
+        "max_steering_angle_deg": max_steering_angle_deg,
         "polarizations": antenna_polarizations,
         "bands": antenna_bands,
         "footprint_dB": float(footprint_dB) if footprint_dB is not None else None,
