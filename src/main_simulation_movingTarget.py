@@ -62,10 +62,9 @@ def run_moving_target_detection(settings: dict):
         for i in range(settings["No_satellites"])
     ]
     sat_const = SatelliteConstellation(
-        satConfigName="LEO GNSS-R constellation", 
+        satConfigName="LEO GNSS-R constellation",
         satArray=sat_array
     )
-    sat_const.generate_constellation_tle()
 
     # --- 3. Simulation Timing ---
     travel_duration_h = ship_trajectory.get_travel_duration_hours()

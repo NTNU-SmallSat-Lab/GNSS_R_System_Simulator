@@ -4,6 +4,17 @@ import numpy as np
 
 # from object_definitions.Constants_def import Constants
 
+# TODO: This module is dormant — only consumed by run_simulator_parallel.py, which is currently
+# disabled (raises NotImplementedError). When run_simulator_parallel.py is re-enabled, this module
+# will need to be updated to match the new SatelliteConstellation class structure and expected input format.:
+#   - delta_pattern_hybrid `return None, None` (l.~32) — caller checks `is not None`, so the
+#     (None, None) tuple passes silently and breaks downstream iteration. Should be `return None`.
+#   - define_orbit_vector `random.randint(6878 * 1e3, 7078 * 1e3)` (l.~68) — float bounds, raises
+#     TypeError on every call. Use int(6878e3), int(7078e3) (or random.uniform).
+#   - Dead `if Nplane <= Nsat:` branch in define_orbit_vector (Nplane is already constrained).
+#   - `TAo` is named "true anomaly" but the Walker formula and downstream usage treat it as
+#     mean anomaly — fine while eccentricity ≈ 0, misleading otherwise.
+
 
 def wrapto360(angle):
     return angle % 360
