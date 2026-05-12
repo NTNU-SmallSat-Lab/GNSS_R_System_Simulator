@@ -344,7 +344,7 @@ def initialize(config_file_name="Configuration.ini"):
         for const_str in const_string:
             # Extract GNSS constellation name ["GPS", "GLONASS", "GALILEO", "BEIDOU"]
             # Find if the name contains one of the following GPS GLONASS GALILEO BEIDOU using regular expression
-            match = re.search(r"(GPS|GLONASS|GALILEO|BEIDOU)", const_str, re.IGNORECASE)
+            match = re.search(r"(GPS|GLONASS|GALILEO|BEIDOU|CELESTE_TEST|CELESTE|CELESTE_IOD)", const_str, re.IGNORECASE)
             if match:
                 const_name = match.group(0)
                 gnss_names.append(const_name)
