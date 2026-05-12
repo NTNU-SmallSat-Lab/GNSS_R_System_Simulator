@@ -226,6 +226,7 @@ class MovingTargetDetection:
         # Reflection times are identical to the satellite constellation times
         times_reflections = [t.utc_datetime() for t in self.sat_constellation.satellites[0].time_prop_vec]
         times_refl_array = np.array(times_reflections)
+        times_reflections_sec = np.array([t.timestamp() for t in times_reflections])
 
         # Calculate the total number of reflection points for all GNSS constellations (for the progress bar)
         total_comp_refl = sum(
@@ -381,7 +382,7 @@ class MovingTargetDetection:
                 # Iterate through the satellite-constellation times | Make sure times_reflections is not empty [ROBUSTNESS]
                 if times_reflections:
                     # Get the closest time
-                    matching_idx, min_diff = self._find_closest_time(time_tgt_i, times_reflections)
+                    matching_idx, min_diff = self._find_closest_time(time_tgt_i, times_reflections_sec)
                     time_refl_i = times_reflections[matching_idx]
                     if min_diff <= self.deltaT_sec:
                         matching_time_found = True
@@ -726,25 +727,22 @@ class MovingTargetDetection:
 
         print(f"Animation created at: {output_path}")
 
-    def _find_closest_time(self, target_time, times_reflections) -> tuple:
+    def _find_closest_time(self, target_time, times_reflections_sec) -> tuple:
         """
         =========================================================================================================
         Find the closest time using vectorized operations.
 
         INPUTS:
-            target_time:        [datetime]    Reference timestamp (UTC)
-            times_reflections:  [list[datetime]]   Timestamps to search
+            target_time:            [datetime]     Reference timestamp (UTC-aware or naive UTC)
+            times_reflections_sec:  [np.ndarray]   Reference timestamps as float Unix seconds
 
         OUTPUT:
             result: [tuple]   (matching_idx, time_diff_seconds)
         =========================================================================================================
         """
-        target_time_utc = fn.ensure_utc_aware(target_time)
-        times_utc = [fn.ensure_utc_aware(t) for t in times_reflections]
-
-        # Vectorized time difference calculation
-        time_diffs = np.array([abs((target_time_utc - t).total_seconds()) for t in times_utc])
-        matching_idx = np.argmin(time_diffs)
+        target_sec = fn.ensure_utc_aware(target_time).timestamp()
+        time_diffs = np.abs(times_reflections_sec - target_sec)
+        matching_idx = int(np.argmin(time_diffs))
 
         return matching_idx, time_diffs[matching_idx]
 

@@ -66,6 +66,7 @@ class BRP:
 
         num_positions = len(times)
 
+        brp_ECEF_vec = np.full((num_positions, 3), np.nan)
         brp_ECI_vec = np.full((num_positions, 3), np.nan)
         brp_LL_vec  = np.full((num_positions, 2), np.nan)
         incidence_angles = np.full(num_positions, np.nan)
@@ -75,7 +76,7 @@ class BRP:
                     np.isfinite(R_ecef_all).all(axis=1))
         valid_idx = np.where(valid_mask)[0]
 
-        # --- Compute BRP for each GLOBAL index
+        # --- Compute BRP for each GLOBAL index (geometry only; defer ECI conversion to batch below)
         for k in valid_idx:
             T_ecef = T_ecef_all[k]
             R_ecef = R_ecef_all[k]
@@ -92,18 +93,29 @@ class BRP:
                 theta_deg = np.degrees(np.arccos(cos_theta))
 
                 if theta_deg < self.cutoff_angle:
-                    brp_ECI_vec[k] = np.array(pymap3d.ecef2eci(brp[0], brp[1], brp[2], times[k]), dtype=float)
+                    brp_ECEF_vec[k] = brp
                     incidence_angles[k] = theta_deg
 
-        # --- Compute lat/lon only for valid BRPs
-        valid_brp_idx = np.where(~np.isnan(brp_ECI_vec[:,0]))[0]
+        # --- Batch ECEF → ECI and ECI → geodetic conversions for valid BRPs
+        valid_brp_idx = np.where(~np.isnan(brp_ECEF_vec[:, 0]))[0]
 
         if len(valid_brp_idx) > 0:
+            valid_times_list = list(times[valid_brp_idx])
+            brp_eci_x, brp_eci_y, brp_eci_z = pymap3d.ecef2eci(
+                brp_ECEF_vec[valid_brp_idx, 0],
+                brp_ECEF_vec[valid_brp_idx, 1],
+                brp_ECEF_vec[valid_brp_idx, 2],
+                valid_times_list,
+            )
+            brp_ECI_vec[valid_brp_idx, 0] = brp_eci_x
+            brp_ECI_vec[valid_brp_idx, 1] = brp_eci_y
+            brp_ECI_vec[valid_brp_idx, 2] = brp_eci_z
+
             lat, lon, _ = pymap3d.eci2geodetic(
                 brp_ECI_vec[valid_brp_idx, 0],
                 brp_ECI_vec[valid_brp_idx, 1],
                 brp_ECI_vec[valid_brp_idx, 2],
-                list(times[valid_brp_idx]),
+                valid_times_list,
             )
             brp_LL_vec[valid_brp_idx] = np.column_stack((lat, lon))
 

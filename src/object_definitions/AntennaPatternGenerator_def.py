@@ -199,7 +199,7 @@ class AntennaPatternGenerator:
 
         # Pattern grid (theta = elevation 0..180 deg, phi = azimuth 0..360 deg)
         elevation = np.linspace(0, 180, self.elevation_resolution).reshape(-1, 1) * np.pi / 180
-        azimuth = np.linspace(0, 360, self.azimuth_resolution).reshape(1, -1) * np.pi / 180
+        azimuth = np.linspace(0, 360, self.azimuth_resolution, endpoint=False).reshape(1, -1) * np.pi / 180
 
         # Steering sweep, in radians
         elevation_sweep = np.linspace(self.elevation_directivity[0], self.elevation_directivity[1], self.elevation_directivity[2]) * np.pi / 180

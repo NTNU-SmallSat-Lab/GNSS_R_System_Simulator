@@ -104,7 +104,7 @@ def run_moving_target_detection(settings: dict):
 
     # --- 5. Output & Visualization ---
     mtd.calculate_moving_target_reflection_intersection()
-    
+
     # Save detection plot
     footprint_db_label = _format_footprint_db_label(settings.get("footprint_dB"))
     output_plot = f"Detection_points_{mtd.reflection_mode}_footprint_{footprint_db_label}.png"

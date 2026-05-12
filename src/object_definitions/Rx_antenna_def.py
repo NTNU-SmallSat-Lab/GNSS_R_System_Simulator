@@ -158,7 +158,7 @@ class RxAntenna:
             if band in Constants.BANDS_CENTER_FREQUENCIES_Hz:
                 freq_Mz = Constants.BANDS_CENTER_FREQUENCIES_Hz[band] / 1e6  # Convert Hz to MHz
                 # Check if a radiation pattern for this frequency is available:
-                if any(key[2] == freq_Mz for key in self.antenna_lookuptable.keys()):
+                if any(math.isclose(key[2], freq_Mz, abs_tol=1e-6) for key in self.antenna_lookuptable.keys()):
                     frequencies.append(freq_Mz)
                 else:
                     raise ValueError(f"No radiation pattern available for frequency {freq_Mz} MHz (band {band}).")
@@ -647,6 +647,9 @@ class RxAntenna:
         # Integrate: ∫∫ F(θ,φ) sin(θ) dθ dφ
         integrand = rad_pattern_lin_spherical * np.sin(theta_mesh) * dtheta_mesh * dphi_mesh
         total_power = np.sum(integrand)
+
+        if total_power <= 0:
+            raise ValueError("Antenna pattern integrates to non-positive total power; cannot compute directivity.")
 
         # Directivity = 4π / integral
         directivity = 4 * np.pi / total_power

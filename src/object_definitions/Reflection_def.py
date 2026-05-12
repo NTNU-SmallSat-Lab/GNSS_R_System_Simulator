@@ -505,6 +505,8 @@ class Reflection:
         points_along_line = r1[np.newaxis, :] + t_values[:, np.newaxis] * d[np.newaxis, :]
         distances_to_center = np.linalg.norm(points_along_line, axis=1)
 
+        # RADIUS_EARTH_EQUAT (not R_EARTH_MEAN) is intentional: it's the largest Earth dimension,
+        # so any LOS reported as blocked here is also blocked under the elliptical model.
         return not np.any(distances_to_center < Constants.RADIUS_EARTH_EQUAT)
 
     @staticmethod

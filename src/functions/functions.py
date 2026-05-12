@@ -446,7 +446,8 @@ def compute_visible_times_and_resample_ship(moving_target_detection, sat_const, 
 
     # Collect all timestamps where at least one satellite is visible
     all_visible_times = sorted({t for times in sat_visible_times.values() for t in times})
-    indices = [sat_times_dt.index(t) for t in all_visible_times]
+    sat_time_to_idx = {t: i for i, t in enumerate(sat_times_dt)}
+    indices = [sat_time_to_idx[t] for t in all_visible_times]
     resampled_ship_positions = [ship_positions_all[i] for i in indices]
 
     # Save resampled ship positions in the object
@@ -498,10 +499,11 @@ def propagate_only_visible_satellites(sat_const, sat_visible_times, gnss_constl_
         # Synchronize to all_visible_times, filling missing with NaN
         sat_positions_sync = []
         sat_velocities_sync = []
+        sat_time_to_idx = {t: i for i, t in enumerate(sat_times_dt)}
 
         for t in all_visible_times:
-            if t in sat_times_dt:
-                idx = sat_times_dt.index(t)
+            idx = sat_time_to_idx.get(t)
+            if idx is not None:
                 sat_positions_sync.append(sat.positions_eci[:, idx])
                 sat_velocities_sync.append(sat.velocities_eci[:, idx])
             else:
