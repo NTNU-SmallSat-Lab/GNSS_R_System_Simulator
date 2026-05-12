@@ -614,7 +614,8 @@ def compute_footprint(sat_pos, sat_vel, refl_pos, time_i, antenna, frequency, q_
     R_vnc_to_body = R_attitude @ Constants.R_body_to_vnc_normal.T
     n_ar_a = antenna.R_antenna_to_body.T @ R_vnc_to_body @ R_eci_to_vnc @ n_ar_eci
     if n_ar_a[2] < 0:
-        warnings.warn("Reflection behind antenna!")
+        # Normal geometry (reflection in antenna back hemisphere); empty polygon propagates downstream
+        # and is counted via MovingTargetDetection.footprint_stats.
         return Polygon(), np.array([])
 
     # ========== ROTATE NADIR-POINTING FOOTPRINT TO REFLECTION-BEAM POINTING ==========

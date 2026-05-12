@@ -92,6 +92,7 @@ class MovingTargetDetection:
         self.reflection_mode = reflection_mode  # Either Specular reflection, or backscattering calculation
         self.link_budget_settings = link_budget_settings
         self.link_budget_frequency_hz = lb.resolve_single_link_budget_frequency_hz(self.sat_antenna)
+        self.footprint_stats = {"total": 0, "rejected_empty": 0}  # populated by _reflection_point_footprint, summarised at the end of calculate_moving_target_reflection_intersection
         self.initialization()
 
     def initialization(self) -> None:
@@ -442,6 +443,12 @@ class MovingTargetDetection:
                     tqdm.write(
                         f"WARNING: No reflection times available for the {gnss_name} constellation at target time {time_tgt_i.strftime('%Y-%m-%d %H:%M:%S')}."
                     )
+
+        total = self.footprint_stats["total"]
+        rejected = self.footprint_stats["rejected_empty"]
+        if total > 0:
+            pct = rejected / total * 100.0
+            print(f"Footprint computations: {rejected}/{total} rejected as empty ({pct:.1f}%)")
 
     def show_reflections_and_target_position_at_time_i(
         self,
@@ -878,7 +885,10 @@ class MovingTargetDetection:
                     print(f"WARNING: Unsupported geometry type {type(polygon)} for NaN check.")
                 return True # Assume NaN if unsupported type
 
+        self.footprint_stats["total"] += 1
+
         if not np.isfinite(refl_obj.power[i]):
+            self.footprint_stats["rejected_empty"] += 1
             return Polygon(), np.array([])
 
         footprint_points, spec_refl_point = refl_obj._compute_footprint(i, self.sat_antenna, frequency, earth_model=self.earth_model)
@@ -904,12 +914,15 @@ class MovingTargetDetection:
         if check_nan_coords(footprint_points):
             if verbose:
                 print(f"WARNING: Ellipse points contain NaN values for reflection index {i} in {refl_obj.gnss_const}. Skipping footprint creation. \n    The satellite might be too far away or the footprint size is too large.")
+            self.footprint_stats["rejected_empty"] += 1
             return Polygon(), spec_refl_point
 
             ## DEBUG plot footprint_poly
             # show_footprint(footprint_points)
 
         # Create a shapely polygon from the points
+        if footprint_points.is_empty:
+            self.footprint_stats["rejected_empty"] += 1
         return footprint_points, spec_refl_point
 
     def _fix_longitude_wrapping(self, polygon):
