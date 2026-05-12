@@ -48,7 +48,7 @@ class Constants:
         [1, 0, 0],
         [0, -1, 0],
         [0, 0, -1]
-    ])  # Rotation matrix from VNC to body-fixed coordinate system (normal)
+    ])  # Rotation matrix from body-fixed to VNC coordinate system (normal)
 
     ###########################
     # GNSS-constants

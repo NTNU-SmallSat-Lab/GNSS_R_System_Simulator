@@ -129,8 +129,10 @@ class MovingTargetDetection:
             """
             fig, ax = plt.subplots(figsize=(10, 6), subplot_kw={"projection": ccrs.PlateCarree()})
 
-            west, east, south, north = -10, 35, 35, 82
-            ax.set_extent([west, east, south, north], crs=ccrs.PlateCarree())
+            # TODO: buffer_deg is hardcoded here and in the other plot helpers — promote to an INI/[PLOT] setting when needed.
+            buffer_deg = 2.0
+            min_lon, max_lon, min_lat, max_lat = self.bounding_box
+            ax.set_extent([min_lon - buffer_deg, max_lon + buffer_deg, min_lat - buffer_deg, max_lat + buffer_deg], crs=ccrs.PlateCarree())
 
             ax.set_title("GNSS-R Reflection and Target Position")
             ax.set_xlabel("Longitude")
@@ -375,13 +377,14 @@ class MovingTargetDetection:
                 # Find the closest time in the reflection trajectory matching the current time at the moving target position  #
                 ###############################################################################################################
                 matching_time_found = False
+                time_refl_i = None
                 # Iterate through the satellite-constellation times | Make sure times_reflections is not empty [ROBUSTNESS]
                 if times_reflections:
                     # Get the closest time
                     matching_idx, min_diff = self._find_closest_time(time_tgt_i, times_reflections)
+                    time_refl_i = times_reflections[matching_idx]
                     if min_diff <= self.deltaT_sec:
                         matching_time_found = True
-                        time_refl_i = times_reflections[matching_idx]
 
                 # Check if the time is in the reflection dictionary (tolerance of 1 second)
                 if matching_time_found:
@@ -429,10 +432,14 @@ class MovingTargetDetection:
 
                                     # Append the possible target detection to the target detection list
                                     self.target_detect_dict[gnss_name].append(possible_target_detection)
-                else:
+                elif time_refl_i is not None:
                     time_diff_sec = (time_refl_i - time_tgt_i).total_seconds()
                     tqdm.write(
                         f"WARNING: No matching time found for target time {time_tgt_i.strftime('%Y-%m-%d %H:%M:%S')} for the {gnss_name} constellation\n     Closest time is {time_refl_i.strftime('%Y-%m-%d %H:%M:%S')} [deltaT = {time_diff_sec} seconds]\n     -> Make sure skyfield times and moving target times are overlapping."
+                    )
+                else:
+                    tqdm.write(
+                        f"WARNING: No reflection times available for the {gnss_name} constellation at target time {time_tgt_i.strftime('%Y-%m-%d %H:%M:%S')}."
                     )
 
     def show_reflections_and_target_position_at_time_i(
@@ -506,8 +513,9 @@ class MovingTargetDetection:
         # Set the map extent to your bounding box (order: west, east, south, north)
         
         #ax.set_global()
-        west, east, south, north = -10, 35, 35, 82
-        ax.set_extent([west, east, south, north], crs=ccrs.PlateCarree())
+        buffer_deg = 2.0
+        min_lon, max_lon, min_lat, max_lat = self.bounding_box
+        ax.set_extent([min_lon - buffer_deg, max_lon + buffer_deg, min_lat - buffer_deg, max_lat + buffer_deg], crs=ccrs.PlateCarree())
 
         ax.set_title(f"Reflections and Target Position at {time_i}")
         ax.set_xlabel("Longitude")
@@ -872,6 +880,9 @@ class MovingTargetDetection:
                     print(f"WARNING: Unsupported geometry type {type(polygon)} for NaN check.")
                 return True # Assume NaN if unsupported type
 
+        if not np.isfinite(refl_obj.power[i]):
+            return Polygon(), np.array([])
+
         footprint_points, spec_refl_point = refl_obj._compute_footprint(i, self.sat_antenna, frequency, earth_model=self.earth_model)
         if not footprint_points.is_valid:
             if verbose:
@@ -1066,11 +1077,7 @@ class MovingTargetDetection:
         """
         min_lon, max_lon, min_lat, max_lat = plot_bounds
 
-        if gnss_constellation is not None:
-            cleaned_string = gnss_constellation.strip("[]")
-            gnss_const = [item.strip() for item in cleaned_string.split(",")]
-        else:
-            gnss_const = list(self.gnss_constellation.keys())
+        gnss_const = fn.normalize_gnss_constellation_arg(gnss_constellation, self.gnss_constellation.keys())
 
         problem_indices = set()
 
@@ -1192,7 +1199,7 @@ class MovingTargetDetection:
             return Polygon()
 
     def show_track_and_detection_points(self, gnss_constellation=None, file_name=None, show_figure=False,
-                                       delta_lon=0.5, delta_lat=0.5, verbose=False, label_detections=False) -> None:
+                                       delta_lon=2.0, delta_lat=2.0, verbose=False, label_detections=False) -> None:
         """
         =========================================================================================================
         Plot the detection points for each GNSS constellation. Filters out problematic polygons that
@@ -1219,11 +1226,7 @@ class MovingTargetDetection:
         # Silently identify problem polygons using the calculated bounds
         problem_indices = self._identify_wrapping_polygons(plot_bounds, gnss_constellation)
 
-        if gnss_constellation is not None:
-            cleaned_string = gnss_constellation.strip("[]")
-            gnss_const = [item.strip() for item in cleaned_string.split(",")]
-        else:
-            gnss_const = list(self.gnss_constellation.keys())
+        gnss_const = fn.normalize_gnss_constellation_arg(gnss_constellation, self.gnss_constellation.keys())
 
         # Create figure
         fig, ax = plt.subplots(figsize=(10, 6), subplot_kw={"projection": ccrs.PlateCarree()})
@@ -1331,8 +1334,6 @@ class MovingTargetDetection:
         handles, labels = plt.gca().get_legend_handles_labels()
         by_label = dict(zip(labels, handles, strict=False))
         ax.legend(by_label.values(), by_label.keys(), loc="upper right")
-        west, east, south, north = -10, 35, 35, 82
-        ax.set_extent([west, east, south, north], crs=ccrs.PlateCarree())
 
         if file_name is not None:
             file_path = os.path.join(Constants.output_folder_path, file_name)

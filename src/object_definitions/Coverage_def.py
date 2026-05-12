@@ -204,6 +204,8 @@ class Coverage:
                             power_at_nearest_points,
                             strict=False,
                         ):
+                            if not np.isfinite(power):
+                                continue
                             # Assign time to coverage_vec
                             self.coverage_dict[gnss_name][rect_idx].times.append(time)
                             self.coverage_dict[gnss_name][rect_idx].tx_satID.append(refl_vector[i].tx_satID)
@@ -277,14 +279,7 @@ class Coverage:
         =========================================================================================================
         """
         # Process the gnss_constellation input
-        if gnss_constellation is not None:
-            if isinstance(gnss_constellation, str):
-                cleaned_string = gnss_constellation.strip("[]")
-                gnss_const = [item.strip() for item in cleaned_string.split(",")]
-            else:
-                gnss_const = [gnss_constellation]
-        else:
-            gnss_const = list(self.gnss_constellation.keys())
+        gnss_const = fn.normalize_gnss_constellation_arg(gnss_constellation, self.gnss_constellation.keys())
 
         print(f"\nStatistics for GNSS constellations: {', '.join(gnss_const)}")
         print("=" * 50)
@@ -386,11 +381,7 @@ class Coverage:
         [min_lon, max_lon, min_lat, max_lat] = self.bounding_box
 
         # If a GNSS constellation is provided, plot only the coverage area of that constellation, otherwise plot all constellations
-        if gnss_constellation is not None:
-            cleaned_string = gnss_constellation.strip("[]")
-            gnss_const = [item.strip() for item in cleaned_string.split(",")]
-        else:
-            gnss_const = list(self.gnss_constellation.keys())
+        gnss_const = fn.normalize_gnss_constellation_arg(gnss_constellation, self.gnss_constellation.keys())
 
         plt.figure(figsize=(12, 6))
         ax = plt.axes(projection=ccrs.PlateCarree())
@@ -420,7 +411,8 @@ class Coverage:
 
         file_path = os.path.join(Constants.output_folder_path, file_name)
         if title is None:
-            title_string = f"Coverage Area with Reflection Vectors for {gnss_constel} constellation"
+            plural = "s" if len(gnss_const) > 1 else ""
+            title_string = f"Coverage Area with Reflection Vectors for {', '.join(gnss_const)} constellation{plural}"
         else:
             title_string = title
         plt.title(title_string)
@@ -450,12 +442,7 @@ class Coverage:
                 return "none", 0  # If the cell isn't intersected at all
 
         # If a GNSS constellation is provided, plot only the coverage area of that constellation, otherwise plot all constellations
-        if gnss_constellation is not None:
-            if isinstance(gnss_constellation, str):
-                cleaned_string = gnss_constellation.strip("[]")
-                gnss_const = [item.strip() for item in cleaned_string.split(",")]
-        else:
-            gnss_const = list(self.gnss_constellation.keys())
+        gnss_const = fn.normalize_gnss_constellation_arg(gnss_constellation, self.gnss_constellation.keys())
 
         # Create intersection count dictionary for each grid cell
         intersection_count = dict.fromkeys(self.grid_gdf.index, 0)

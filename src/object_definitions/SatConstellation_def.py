@@ -1,7 +1,6 @@
 from datetime import datetime
 import math
 import os
-import warnings
 
 from skyfield.api import load
 
@@ -129,67 +128,18 @@ class SatelliteConstellation:
         # Add a satellite to the constellation
         self.satellites.append(satellite)
         self.no_satellites += 1
-        self.orbits_array.append(satellite.orbit)
+        self.orbits_array.append(satellite.get_orbit())
         return True
 
     def remove_satellite(self, satellite_id) -> bool:
         # Remove a satellite from the constellation
         for sat in self.satellites:
-            if sat.sat_id == satellite_id:
+            if sat.satID == satellite_id:
                 self.satellites.remove(sat)
                 self.no_satellites -= 1
-                self.orbits_array.remove(sat.orbit)
+                self.orbits_array.remove(sat.get_orbit())
                 return True
         return False
-
-    def generate_constellation_tle(self) -> str:
-        tle_str = ""
-        for sat in self.satellites:
-            tle_str += ReadWriteSatData.generate_tle_data_string(sat)
-            tle_str += "\n"
-
-        filePath = os.path.join(Constants.tle_eph_folder_path, f"{self.satConfigName}.tle")
-        if tle_str is None:
-            print(
-                "TLE DATA CANNOT BE GENERATED FOR SATELLITE CONSTELLATION: ",
-                self.satConfigName,
-            )
-            return None
-
-        # Make sure the directory exists
-        if not os.path.exists(Constants.tle_eph_folder_path):
-            print(f"Creating directory: {Constants.tle_eph_folder_path}")
-            os.makedirs(Constants.tle_eph_folder_path)
-
-        base_name = "Constellation"  # Keep the original name
-        filePath = os.path.join(Constants.tle_eph_folder_path, f"{base_name}.tle")
-        incrementing_number = 0
-
-        # Check for existing files and generate a unique name
-        while os.path.exists(filePath):
-            incrementing_number += 1
-            filePath = os.path.join(Constants.tle_eph_folder_path, f"{base_name}_{incrementing_number}.tle")
-
-        """
-        incrementing_number = 0
-        while os.path.exists(filePath):
-            # HACK - Append a number to the file name
-            self.satConfigName += f"_{incrementing_number}"
-            incrementing_number += 1
-            filePath = os.path.join(Constants.tle_eph_folder_path, f"{self.satConfigName}.tle")
-        """
-
-        # Write the TLE to the file
-        try:
-            with open(filePath, "w") as file:
-                file.write(tle_str)
-            self.tle_file_path = filePath
-            print(f"TLE written to {filePath}")
-        except OSError:
-            warnings.warn(f"TLE file could not be written for {self.satConfigName}")
-            return ""
-
-        return filePath
 
     def get_constellation_name(self) -> str:
         return self.satConfigName
@@ -199,9 +149,6 @@ class SatelliteConstellation:
 
     def get_constellation_orbits(self) -> list:
         return self.orbits_array
-
-    def get_constellation_tle(self) -> str:
-        return self.tle_file_path
 
     def propagate_constellation(self, start_time, duration, step_size) -> dict:
         # Propagate the entire constellation

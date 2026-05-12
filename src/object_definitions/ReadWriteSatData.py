@@ -380,7 +380,7 @@ class ReadWriteSatData:
                             checksum_str1 = line_1[68:69]
                             calc_checksum1 = ReadWriteSatData._calc_checksum([line_1[:68]])
                             if not (calc_checksum1 == int(checksum_str1)):
-                                Warning("Checksum error in TLE data line 1")
+                                warnings.warn("Checksum error in TLE data line 1")
                     else:
                         ValueError("Invalid TLE data format in line 1")
 
@@ -401,9 +401,9 @@ class ReadWriteSatData:
                         calc_checksum2 = ReadWriteSatData._calc_checksum([line_2[:68]])
 
                         if not (calc_checksum2 == int(checksum_str2)):
-                            Warning("Checksum error in TLE data line 2")
+                            warnings.warn("Checksum error in TLE data line 2")
                         if not (satID_1_str == satID_2_str):
-                            Warning("Satellite ID mismatch in line 1 and line 2")
+                            warnings.warn("Satellite ID mismatch in line 1 and line 2")
                     else:
                         ValueError("Invalid TLE data format in line 2")
 

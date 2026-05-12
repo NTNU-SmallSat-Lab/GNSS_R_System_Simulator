@@ -223,6 +223,17 @@ def color_gnss_const(gnss_const: str) -> str:
     return color
 
 
+def normalize_gnss_constellation_arg(arg, available_names) -> list:
+    """Coerce a constellation filter (str/list/tuple/None) to list[str]; None → all available."""
+    if arg is None:
+        return list(available_names)
+    if isinstance(arg, str):
+        return [item.strip() for item in arg.strip("[]").split(",")]
+    if isinstance(arg, (list, tuple)):
+        return [str(item).strip() for item in arg]
+    raise TypeError(f"gnss_constellation must be str, list, tuple, or None; got {type(arg).__name__}")
+
+
 def delta_lon_from_distance(lat: float, x_dist: float) -> float:
     """
     =========================================================================================================

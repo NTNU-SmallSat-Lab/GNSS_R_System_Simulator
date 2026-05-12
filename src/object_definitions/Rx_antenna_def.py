@@ -1,6 +1,7 @@
 import ast
 import json
 import math
+import warnings
 
 from matplotlib import pyplot as plt
 import numpy as np
@@ -125,6 +126,21 @@ class RxAntenna:
 
         # Initialize antenna frequecies
         self.frequencies = self._get_frequency_from_band()
+        if self.max_steering_off_boresight_deg is not None:
+            configured_pattern_elevations = [
+                key[1]
+                for key in self.antenna_lookuptable
+                if any(math.isclose(key[2], frequency, abs_tol=1e-6) for frequency in self.frequencies)
+            ]
+            if configured_pattern_elevations:
+                max_pattern_elevation = max(configured_pattern_elevations)
+                if self.max_steering_off_boresight_deg > max_pattern_elevation + 1e-6:
+                    warnings.warn(
+                        "max_steering_angle_deg exceeds the generated antenna-pattern elevation range "
+                        f"({self.max_steering_off_boresight_deg:.2f} deg > {max_pattern_elevation:.2f} deg). "
+                        "Directions beyond the available pattern range will use the nearest pattern.",
+                        stacklevel=2,
+                    )
         self._validate_unsteered_footprint_patterns()
 
     def _get_frequency_from_band(self):

@@ -1122,8 +1122,8 @@ class ShipTrajectory:
                 "ship_id": [self.ship_id],
                 "start_time": [self.start_time],
                 "end_time": [self.end_time],
-                "speed_knots": [self.ship_speed],
-                "distance_nm": [self.route_distance if self.route_distance else None],
+                "speed_m_s": [self.ship_speed],
+                "distance_m": [self.route_distance if self.route_distance else None],
                 "geometry": [line],
             }
             gdf = gpd.GeoDataFrame(data, crs=crs)
