@@ -420,7 +420,7 @@ class Coverage:
 
         file_path = os.path.join(Constants.output_folder_path, file_name)
         if title is None:
-            title_string = f"Coverage Area with Reflection Vectors for {gnss_constel} constellation"
+            title_string = f"Coverage Area with Reflection Vectors for ({gnss_constel}) constellation"
         else:
             title_string = title
         plt.title(title_string)

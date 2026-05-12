@@ -218,3 +218,12 @@ class SatelliteConstellation:
 # - get_satellite_by_name
 
 # - get_satellite_positions
+
+if __name__ == "__main__":
+    # Example usage
+    sat1 = Satellite(25544, "ISS (ZARYA)", tle_file_path="data/TLE/ISS.tle", verbose=True)
+    sat2 = Satellite(33591, "STARLINK-1500", tle_file_path="data/TLE/STARLINK-1500.tle", verbose=True)
+    constellation = SatelliteConstellation(satArray=[sat1, sat2], satConfigName="Test_Constellation", verbose=True)
+    constellation.set_simulation_duration(datetime(2024, 1, 1, 0, 0, 0), duration=24, stepSize=60)
+    tle_path = constellation.generate_constellation_tle()
+    print(f"Generated TLE file at: {tle_path}")
