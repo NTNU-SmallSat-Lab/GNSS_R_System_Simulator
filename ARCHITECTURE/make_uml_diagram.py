@@ -229,7 +229,6 @@ CLASSES: list[UClass] = [
         methods=[
             "set_simulation_duration()",
             "propagate_constellation()",
-            "generate_constellation_tle()",
             "add_satellite() / remove_satellite()",
         ],
     ),

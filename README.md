@@ -37,7 +37,6 @@ The similator can also be used to estimate if a moving or stationary target (see
 │   ├── __init__.py
 │   ├── compress_gif.py
 │   ├── constellation_gen.py
-│   ├── function_main.py
 │   ├── main_simulation_areaCoverage.py
 │   ├── main_simulation_movingTarget.py
 │   ├── run_simulator_parallel.py

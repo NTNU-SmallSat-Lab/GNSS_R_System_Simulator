@@ -107,7 +107,6 @@ package "Domain" <<Rectangle>> #F4F4FF {
         --
         set_simulation_duration()
         propagate_constellation()
-        generate_constellation_tle()
         add_satellite() / remove_satellite()
     }
 
