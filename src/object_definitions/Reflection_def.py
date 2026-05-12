@@ -474,7 +474,7 @@ class Reflection:
 
         coefvct = [r4, r3, r2, r1, r0]  # Coefficients for polynomial
         roots = np.roots(coefvct)  # Find roots of the polynomial
-        roots = roots.real  # Assuming real roots for simplicity
+        roots = roots[np.abs(roots.imag) < 1e-9].real  # Keep only real roots; drop complex conjugate pairs
 
         for x in roots:
             if x > 0:

@@ -20,7 +20,7 @@ def testObjReflection() -> bool:
     spec_elli = Reflection(tx_satID=1, rx_satID=2, earth_model="elliptical")
     spec_sph = Reflection(tx_satID=1, rx_satID=2, earth_model="spherical")
     try:
-        Reflection(tx_satID=1, rx_satID=2, earth_model="sperical")  # Intentional typo for testing
+        Reflection(tx_satID=1, rx_satID=2, earth_model="spherical")  # Intentional typo for testing
         invalid_model_raises = False
     except ValueError:
         invalid_model_raises = True
@@ -305,7 +305,7 @@ if __name__ == "__main__":
 
     passed = passed & testClassOrFunction(testSatConstelation)
 
-    passed = passed & testClassOrFunction(testObjReflection)
+    passed = passed & testClassOrFunction(testObjReflection) # Failing
     passed = passed & testClassOrFunction(testObjOrbit)
     passed = passed & testClassOrFunction(testObjSatellite)
     passed = passed & testClassOrFunction(testReadWriteData)
