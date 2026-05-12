@@ -85,9 +85,18 @@ class AntennaPatternGenerator:
         self.elevation_resolution = int(elevation_resolution)
         self.azimuth_resolution = int(azimuth_resolution)
 
+    # Bump this whenever the generator's output convention changes in a way that affects how the
+    # consumer (Rx_antenna_def.py) must sample the patterns. Each bump invalidates every cached
+    # antenna_pattern_metadata.json on disk and forces a full regenerate.
+    #   v1: initial release.
+    #   v2: azimuth grid switched from endpoint-inclusive [0..360] to endpoint-exclusive [0..360),
+    #       matching the bilinear sampler convention in _bilinear_pattern_sample_linear.
+    _GENERATOR_FORMAT_VERSION = 2
+
     def _signature(self):
         """Dict of every parameter that affects the generated JSONs; used as a cache key."""
         return {
+            "generator_format_version": self._GENERATOR_FORMAT_VERSION,
             "elements_along_x": self.elements_x,
             "elements_along_y": self.elements_y,
             "d_x": self.d_x,

@@ -141,6 +141,7 @@ class RxAntenna:
                         "Directions beyond the available pattern range will use the nearest pattern.",
                         stacklevel=2,
                     )
+        self._build_steering_grid()
         self._validate_unsteered_footprint_patterns()
 
     def _get_frequency_from_band(self):
@@ -190,6 +191,25 @@ class RxAntenna:
                 "Missing unsteered antenna pattern for footprint calculation "
                 f"at {missing_str}. Include 0 deg in [ANTENNA PATTERN].elevation_directivity."
             )
+
+    def _build_steering_grid(self) -> None:
+        """
+        =========================================================================================================
+        Pre-compute, per available frequency in the lookup table, sorted azimuth/elevation steering grids and
+        a (az, el) → pattern_key map. Consumed by _steering_bracket_keys_and_weights to bracket a target
+        steering direction in O(log N) instead of scanning the full key list.
+
+        Stored on self._steering_grids: dict {freq_mhz: {"az_sorted", "el_sorted", "key_map"}}.
+        =========================================================================================================
+        """
+        self._steering_grids = {}
+        for freq in sorted({key[2] for key in self.antenna_lookuptable}):
+            freq_keys = [k for k in self.antenna_lookuptable if math.isclose(k[2], freq, abs_tol=1e-6)]
+            self._steering_grids[freq] = {
+                "az_sorted": np.array(sorted({k[0] for k in freq_keys})),
+                "el_sorted": np.array(sorted({k[1] for k in freq_keys})),
+                "key_map": {(k[0], k[1]): k for k in freq_keys},
+            }
 
     def _calc_antenna_footprint(self, antenna_pattern):
         """
@@ -395,36 +415,73 @@ class RxAntenna:
         """
         return abs((a - b + 180.0) % 360.0 - 180.0)
 
-    def _resolve_lookup_key(self, frequency_mhz: float, azimuth_deg: float | None = None, elevation_deg: float | None = None) -> tuple:
+    def _steering_bracket_keys_and_weights(self, frequency_mhz: float, az_target: float, el_target: float) -> list:
         """
         =========================================================================================================
-        Resolve the closest antenna-pattern key for the requested frequency and steering angles.
+        Return the four steering pattern keys + bilinear weights bracketing (az_target, el_target) for the
+        closest available frequency. Azimuth is treated as circular (wraps at 360°); elevation is clamped to
+        the configured pattern range. Some weights may be 0 when the target sits on a grid line or outside
+        the grid; in that case the corresponding corner contributes nothing.
 
         INPUTS:
-            frequency_mhz: [float]         Target frequency [MHz]
-            azimuth_deg:   [float | None]  Steering azimuth [deg] (default: 90.0 — unsteered convention)
-            elevation_deg: [float | None]  Steering elevation [deg] (default: 0.0)
+            frequency_mhz: [float]   Target frequency [MHz] (snapped to closest available)
+            az_target:     [float]   Target steering azimuth [deg]
+            el_target:     [float]   Target steering elevation / off-boresight [deg]
 
         OUTPUT:
-            key: [tuple]   (azimuth, elevation, frequency) of the closest pattern
+            corners: [list[tuple]]   [(pattern_key, weight), ...] of length 4; weights sum to 1.
         =========================================================================================================
         """
-        if not self.antenna_lookuptable:
-            raise ValueError("Antenna lookup table is empty.")
+        if not self._steering_grids:
+            raise ValueError("Antenna steering grid is empty.")
 
-        freq_target = float(frequency_mhz)
-        az_target = 90.0 if azimuth_deg is None else float(azimuth_deg)
-        el_target = 0.0 if elevation_deg is None else float(elevation_deg)
+        closest_freq = min(self._steering_grids.keys(), key=lambda f: abs(f - float(frequency_mhz)))
+        grid = self._steering_grids[closest_freq]
+        az_sorted = grid["az_sorted"]
+        el_sorted = grid["el_sorted"]
+        key_map = grid["key_map"]
 
-        keys = list(self.antenna_lookuptable.keys())
-        return min(
-            keys,
-            key=lambda key: (
-                abs(key[2] - freq_target),
-                self._circular_abs_diff_deg(key[0], az_target),
-                abs(key[1] - el_target),
-            ),
-        )
+        # Elevation: linear axis with edge clamping
+        el_clamped = float(np.clip(el_target, el_sorted[0], el_sorted[-1]))
+        if el_sorted.size == 1 or el_clamped <= el_sorted[0]:
+            el_lo_idx = el_hi_idx = 0
+            w_el = 0.0
+        elif el_clamped >= el_sorted[-1]:
+            el_lo_idx = el_hi_idx = el_sorted.size - 1
+            w_el = 0.0
+        else:
+            el_hi_idx = int(np.searchsorted(el_sorted, el_clamped, side="right"))
+            el_lo_idx = el_hi_idx - 1
+            w_el = (el_clamped - el_sorted[el_lo_idx]) / (el_sorted[el_hi_idx] - el_sorted[el_lo_idx])
+
+        # Azimuth: circular axis (wraparound across the 0°/360° seam)
+        az_wrapped = float(az_target) % 360.0
+        if az_sorted.size == 1:
+            az_lo_idx = az_hi_idx = 0
+            w_az = 0.0
+        else:
+            az_hi_raw = int(np.searchsorted(az_sorted, az_wrapped, side="right"))
+            if az_hi_raw == 0 or az_hi_raw == az_sorted.size:
+                az_lo_idx = az_sorted.size - 1
+                az_hi_idx = 0
+                az_lo_val = az_sorted[az_lo_idx]
+                az_hi_val = az_sorted[az_hi_idx] + 360.0
+                az_eff = az_wrapped if az_wrapped >= az_lo_val else az_wrapped + 360.0
+                w_az = (az_eff - az_lo_val) / (az_hi_val - az_lo_val)
+            else:
+                az_hi_idx = az_hi_raw
+                az_lo_idx = az_hi_idx - 1
+                w_az = (az_wrapped - az_sorted[az_lo_idx]) / (az_sorted[az_hi_idx] - az_sorted[az_lo_idx])
+
+        az_lo, az_hi = az_sorted[az_lo_idx], az_sorted[az_hi_idx]
+        el_lo, el_hi = el_sorted[el_lo_idx], el_sorted[el_hi_idx]
+
+        return [
+            (key_map[(az_lo, el_lo)], (1.0 - w_az) * (1.0 - w_el)),
+            (key_map[(az_hi, el_lo)], w_az * (1.0 - w_el)),
+            (key_map[(az_lo, el_hi)], (1.0 - w_az) * w_el),
+            (key_map[(az_hi, el_hi)], w_az * w_el),
+        ]
 
     def _resolve_unsteered_footprint_lookup_key(self, frequency_mhz: float) -> tuple:
         """
@@ -544,24 +601,46 @@ class RxAntenna:
         return azimuth_deg, elevation_deg
 
     @staticmethod
-    def _sample_radiation_pattern_db(pattern_db: np.ndarray, theta_deg: float, phi_deg: float) -> float:
+    def _bilinear_pattern_sample_linear(pattern_db: np.ndarray, theta_deg: float, phi_deg: float) -> float:
         """
         =========================================================================================================
-        Nearest-neighbor sample of a radiation pattern at (theta, phi).
+        Bilinear-interpolated pattern sample at (theta, phi), returned in linear (not dB) units.
+
+        Theta grid: endpoint-inclusive [0, 180], step = 180 / (n_theta - 1).
+        Phi grid: endpoint-exclusive [0, 360), step = 360 / n_phi, with wraparound across the seam (matches
+        the post-C6 AntennaPatternGenerator convention).
+
+        Interpolation is in linear power so values near pattern nulls are not biased upward by log-space
+        averaging.
 
         INPUTS:
             pattern_db: [np.ndarray, shape (n_theta, n_phi)]   Radiation pattern [dB]
-            theta_deg:  [float]   Polar angle [deg], 0..180
-            phi_deg:    [float]   Azimuth angle [deg], 0..360
+            theta_deg:  [float]                                Polar angle [deg], 0..180
+            phi_deg:    [float]                                Azimuth angle [deg], any (wraps mod 360)
 
         OUTPUT:
-            value: [float]   Pattern value [dB] at the nearest grid point
+            value: [float]   Bilinear-interpolated pattern value in linear units (peak == 1.0)
         =========================================================================================================
         """
         n_theta, n_phi = pattern_db.shape
-        theta_idx = int(np.clip(np.round(theta_deg * (n_theta - 1) / 180.0), 0, n_theta - 1))
-        phi_idx = int(np.clip(np.round((phi_deg % 360.0) * (n_phi - 1) / 360.0), 0, n_phi - 1))
-        return float(pattern_db[theta_idx, phi_idx])
+
+        theta_clamped = float(np.clip(theta_deg, 0.0, 180.0))
+        theta_pos = theta_clamped * (n_theta - 1) / 180.0
+        t_lo = int(np.floor(theta_pos))
+        t_hi = min(t_lo + 1, n_theta - 1)
+        wt = theta_pos - t_lo
+
+        phi_pos = (float(phi_deg) % 360.0) * n_phi / 360.0
+        phi_floor = np.floor(phi_pos)
+        p_lo = int(phi_floor) % n_phi
+        p_hi = (p_lo + 1) % n_phi
+        wp = phi_pos - phi_floor
+
+        # Vectorised dB → linear at the 4 corner cells, then weighted sum.
+        corners_db = pattern_db[[t_lo, t_lo, t_hi, t_hi], [p_lo, p_hi, p_lo, p_hi]]
+        corners_lin = np.power(10.0, corners_db / 10.0)
+        weights = np.array([(1.0 - wt) * (1.0 - wp), (1.0 - wt) * wp, wt * (1.0 - wp), wt * wp])
+        return float(np.dot(corners_lin, weights))
 
     def get_gain_dbi_for_direction(
         self,
@@ -616,12 +695,23 @@ class RxAntenna:
         if self.max_steering_off_boresight_deg is not None and steering_elevation_deg > self.max_steering_off_boresight_deg:
             return np.nan
 
-        lookup_key = self._resolve_lookup_key(frequency_mhz, azimuth_deg=steering_azimuth_deg, elevation_deg=steering_elevation_deg)
-        lookup = self.antenna_lookuptable[lookup_key]
-        relative_gain_db = self._sample_radiation_pattern_db(lookup["radiation_pattern_dB"], theta_deg, phi_deg)
+        # Bilinear interpolation of absolute gain across the 4 steering patterns bracketing (steering_azimuth_deg,
+        # steering_elevation_deg), evaluated in linear power so that pattern nulls are preserved.
+        corners = self._steering_bracket_keys_and_weights(frequency_mhz, steering_azimuth_deg, steering_elevation_deg)
+        total_linear = 0.0
+        for key, weight in corners:
+            if weight <= 0.0:
+                continue
+            lookup = self.antenna_lookuptable[key]
+            pattern_linear = self._bilinear_pattern_sample_linear(
+                lookup["radiation_pattern_dB"], theta_deg, phi_deg
+            )
+            directivity_linear = 10.0 ** (lookup["directivity_dB"] / 10.0)
+            total_linear += weight * directivity_linear * pattern_linear
 
-        # Pattern is relative to peak (0 dB), so add directivity offset for absolute gain.
-        return float(lookup["directivity_dB"] + relative_gain_db)
+        if total_linear <= 0.0:
+            return np.nan
+        return float(10.0 * np.log10(total_linear))
 
     @staticmethod
     def _calculate_directivity(rad_pattern_lin_spherical, theta_rad, phi_rad, theta_mesh):
