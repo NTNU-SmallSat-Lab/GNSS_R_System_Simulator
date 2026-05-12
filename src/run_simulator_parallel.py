@@ -5,10 +5,20 @@ import traceback
 import warnings
 
 from constellation_gen import define_orbit_vector
-from function_main import main, save_results_to_file
 
 # Suppress all UserWarnings
 warnings.filterwarnings("ignore", category=UserWarning)
+
+# This parameter-sweep harness is awaiting a rewrite. It used to call the now-deleted
+# function_main.main(); migrating it requires:
+#   1. Bootstrapping a settings dict via __init__.initialize("Configuration_area.ini").
+#   2. Overriding "orbits" / "No_satellites" per worker with the swept configuration.
+#   3. Having main_simulation_areaCoverage.run_area_coverage_simulation return the
+#      Coverage object so per-run stats (avg power, coverage %, sunlit %) can be extracted.
+raise NotImplementedError(
+    "run_simulator_parallel.py is pending a rewrite to use main_simulation_areaCoverage. "
+    "See the comment above this raise for what needs to change."
+)
 
 
 # Define input parameters

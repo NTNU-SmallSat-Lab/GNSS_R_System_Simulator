@@ -187,13 +187,13 @@ def initialize(config_file_name="Configuration.ini"):
 
     #[MOVING TARGET]
     try:
-        moving_tgt_speed = float(config["MOVING TARGET"]["speed"]) if "MOVING TARGET" in config else None  # Speed of the moving target in km/h
+        moving_tgt_speed = float(config["MOVING TARGET"]["speed"]) if "MOVING TARGET" in config else None  # Speed of the moving target in knots
         start_coord_ll = (
             ast.literal_eval(config["MOVING TARGET"]["start_pos"]) if "MOVING TARGET" in config else None
-        )  # Start coordinates of the moving target in (longitude, latitude) format
+        )  # Start coordinates of the moving target in (latitude, longitude) format
         end_coord_ll = (
             ast.literal_eval(config["MOVING TARGET"]["end_pos"]) if "MOVING TARGET" in config else None
-        )  # End coordinates of the moving target in (longitude, latitude) format
+        )  # End coordinates of the moving target in (latitude, longitude) format
     except KeyError:
         raise KeyError("The 'speed', 'start_pos', or 'end_pos' key is missing in the 'MOVING TARGET' section of the configuration file.")  # noqa: B904
 
@@ -215,6 +215,7 @@ def initialize(config_file_name="Configuration.ini"):
     # Parameters for AntennaPatternGenerator. Parsed up-front so the generator
     # can run (and rebuild stale JSONs) before [ANTENNA] is consumed below.
     antenna_pattern_settings = None
+    expected_antenna_pattern_files = None
     if "ANTENNA PATTERN" in config:
         section = config["ANTENNA PATTERN"]
         required_keys = ("elements_along_x", "elements_along_y", "d_x", "d_y", "freqs", "elevation_directivity", "azimuth_directivity")
@@ -242,7 +243,9 @@ def initialize(config_file_name="Configuration.ini"):
         # Generate (or reuse cached) antenna-pattern JSONs before the [ANTENNA]
         # block reads them. AntennaPatternGenerator decides whether to skip
         # generation based on a metadata signature stored in the pattern folder.
-        AntennaPatternGenerator(**antenna_pattern_settings).generate()
+        antenna_pattern_generator = AntennaPatternGenerator(**antenna_pattern_settings)
+        antenna_pattern_generator.generate()
+        expected_antenna_pattern_files = set(antenna_pattern_generator._expected_filenames())
 
     #[ANTENNA]
     try:
@@ -271,6 +274,8 @@ def initialize(config_file_name="Configuration.ini"):
                 # Pick up only the pattern JSONs; the AntennaPatternGenerator metadata file
                 # (antenna_pattern_metadata.json) is a sibling and must be ignored here.
                 if file.startswith("array_factor_") and file.endswith(".json"):
+                    if expected_antenna_pattern_files is not None and file not in expected_antenna_pattern_files:
+                        continue
                     filepaths_antenna_pattern.append(os.path.join(antenna_pattern_folder, file))
 
             if not filepaths_antenna_pattern:
@@ -336,30 +341,36 @@ def initialize(config_file_name="Configuration.ini"):
         raise KeyError("The 'GNSS CONSTELLATIONS' section is missing in the configuration file.")
     try:
         const_string = config["GNSS CONSTELLATIONS"]["gnss_tle_files"]
-        const_string = const_string.replace("[", "").replace("]", "")
-        const_string = const_string.split(",")
-        const_string = [s.strip() for s in const_string]  # Remove leading/trailing whitespace
-        const_string_updated = []
-        gnss_names = []
-        for const_str in const_string:
-            # Extract GNSS constellation name ["GPS", "GLONASS", "GALILEO", "BEIDOU"]
-            # Find if the name contains one of the following GPS GLONASS GALILEO BEIDOU using regular expression
-            match = re.search(r"(GPS|GLONASS|GALILEO|BEIDOU)", const_str, re.IGNORECASE)
-            if match:
-                const_name = match.group(0)
-                gnss_names.append(const_name)
-
-                # Add TLE folder path
-                const_str = os.path.join(Constants.tle_folderpath, const_str)
-                const_string_updated.append(const_str)
-            else:
-                warnings.warn(f"Skipping unknown constellation file: {const_str}")
-
-        gnss_constellation = {}
-        for idx, (const_tle, const_name) in enumerate(zip(const_string_updated, gnss_names, strict=False)):
-            gnss_constellation[const_name] = {"tle_file": const_tle, "index": idx}
     except KeyError:
-        raise KeyError("The 'gnss_tle_files' key is missing in the 'GNSS CONSTELLATIONS' section of the configuration file.") # noqa: B904
+        raise KeyError("The 'gnss_tle_files' key is missing in the 'GNSS CONSTELLATIONS' section of the configuration file.") from None
+
+    tle_filenames = [s.strip() for s in const_string.strip("[]").split(",") if s.strip()]
+    const_string_updated = []
+    gnss_names = []
+    unknown_files = []
+    for filename in tle_filenames:
+        match = re.search(r"(GPS|GLONASS|GALILEO|BEIDOU)", filename, re.IGNORECASE)
+        if match:
+            gnss_names.append(match.group(0))
+            const_string_updated.append(os.path.join(Constants.tle_folderpath, filename))
+        else:
+            unknown_files.append(filename)
+
+    if unknown_files:
+        raise ValueError(
+            f"Cannot identify GNSS constellation for TLE file(s) {unknown_files} in [GNSS CONSTELLATIONS].gnss_tle_files. "
+            "Filename must contain one of: GPS, GLONASS, GALILEO, BEIDOU."
+        )
+
+    gnss_constellation = {
+        const_name: {"tle_file": const_tle, "index": idx}
+        for idx, (const_tle, const_name) in enumerate(zip(const_string_updated, gnss_names, strict=False))
+    }
+
+    if not gnss_constellation:
+        raise ValueError(
+            "[GNSS CONSTELLATIONS].gnss_tle_files is empty — the simulation needs at least one GNSS constellation."
+        )
 
 
 

@@ -1,6 +1,10 @@
-from datetime import UTC, datetime
+import contextlib
+import io
 import math
 import os
+import sys
+import warnings
+from datetime import UTC, datetime
 
 from object_definitions.Constants_def import Constants
 from object_definitions.Orbit_def import Orbit_specification
@@ -12,10 +16,14 @@ from object_definitions.Satellite_def import Satellite
 
 def testObjReflection() -> bool:
     passed = 1
-    spec_non = Reflection()
-    spec_elli = Reflection("elliptical")
-    spec_sph = Reflection("spherical")
-    spec_typo = Reflection("sperical")  # Intentional typo for testing
+    spec_non = Reflection(tx_satID=1, rx_satID=2)
+    spec_elli = Reflection(tx_satID=1, rx_satID=2, earth_model="elliptical")
+    spec_sph = Reflection(tx_satID=1, rx_satID=2, earth_model="spherical")
+    try:
+        Reflection(tx_satID=1, rx_satID=2, earth_model="sperical")  # Intentional typo for testing
+        invalid_model_raises = False
+    except ValueError:
+        invalid_model_raises = True
 
     if not (isinstance(spec_non, Reflection) and spec_non.earth_model == "spherical"):
         passed = 0
@@ -23,7 +31,7 @@ def testObjReflection() -> bool:
         passed = 0
     if not (isinstance(spec_sph, Reflection) and spec_sph.earth_model == "spherical"):
         passed = 0
-    if not (isinstance(spec_typo, Reflection) and not hasattr(spec_typo, "earth_model")):
+    if not invalid_model_raises:
         passed = 0
     return passed
 
@@ -134,7 +142,11 @@ def testObjSatellite() -> bool:
         passed = 0
 
     # Calculate the TLE for the satellite | This should not work as the epoch is not set
-    satellite_newOrbit2.write_tle_file()
+    with warnings.catch_warnings(record=True) as caught_warnings, contextlib.redirect_stdout(io.StringIO()):
+        warnings.simplefilter("always")
+        satellite_newOrbit2.write_tle_file()
+    if not any("Epoch was not specified when this Orbit was created" in str(warning.message) for warning in caught_warnings):
+        passed = 0
     if not (satellite_newOrbit2.tle_exists() == False):
         passed = 0
 
@@ -172,7 +184,7 @@ def testReadWriteData() -> bool:
         or issList[0].argOfPerigee != 165.9795  # Argument of Perigee
         or issList[0].meanAnomaly != 194.1431  # Mean Anomaly at Epoch
         or issList[0].meanMotion != 15.51387213  # Mean Motion [rev/day]
-        or issList[0].epoch != "24304.21246528"
+        or issList[0].epoch != datetime(2024, 11, 12, 5, 47, 25, 801440, tzinfo=UTC)
     ):
         passed = 0
 
@@ -301,3 +313,5 @@ if __name__ == "__main__":
 
     if passed:
         print("All tests passed")
+
+    sys.exit(0 if passed else 1)
