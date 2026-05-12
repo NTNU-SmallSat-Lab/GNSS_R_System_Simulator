@@ -1,9 +1,16 @@
+import logging
+
 import matplotlib
 import numpy as np
 
 import functions.functions as fn
 
 matplotlib.use("TkAgg", force=True)
+
+# Application-level logging setup. Library modules use logging.getLogger(__name__) and do not
+# configure handlers themselves; this is the single place where the user-visible default is set.
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
 from __init__ import initialize
 from object_definitions.Coverage_def import Coverage
 from object_definitions.Rx_antenna_def import RxAntenna

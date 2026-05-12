@@ -1,3 +1,5 @@
+import logging
+
 import matplotlib
 import numpy as np
 from datetime import timedelta
@@ -13,6 +15,10 @@ from object_definitions.Static_classes_def import Plotting
 
 # Force non-interactive backend for server/headless environments
 matplotlib.use("Agg", force=True)
+
+# Application-level logging setup. Library modules use logging.getLogger(__name__) and do not
+# configure handlers themselves; this is the single place where the user-visible default is set.
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 
 def _format_footprint_db_label(footprint_db: float | None) -> str:

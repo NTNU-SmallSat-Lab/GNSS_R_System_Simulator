@@ -2,8 +2,8 @@ from collections import defaultdict, namedtuple
 from dataclasses import dataclass, field
 import datetime as dt
 from datetime import timedelta
+import logging
 import os
-import warnings
 
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
@@ -26,6 +26,8 @@ from object_definitions.Constants_def import Constants
 from object_definitions.Reflection_def import Reflection
 from object_definitions.BackScattPoint_def import BRP as Backscatter
 from object_definitions.ShipTrajectory_def import ShipTrajectory
+
+logger = logging.getLogger(__name__)
 
 
 class MovingTargetDetection:
@@ -164,7 +166,7 @@ class MovingTargetDetection:
                         transform=ccrs.PlateCarree(),
                     )
             else:
-                warnings.warn(f"Unexpected geometry type for footprint: {type(footprint_reflection)}")
+                logger.warning(f"Unexpected geometry type for footprint: {type(footprint_reflection)}")
 
             ax.plot(
                 pos_tgt_i.geometry.x,
@@ -190,21 +192,21 @@ class MovingTargetDetection:
             if isinstance(footprint_reflection, Polygon):
                 lon_coords = footprint_reflection.exterior.xy[0]
                 lat_coords = footprint_reflection.exterior.xy[1]
-                print(
+                logger.debug(
                     f"Circle coords range: Lon [{min(lon_coords)}-{max(lon_coords)}], "
                     f"Lat [{min(lat_coords)}-{max(lat_coords)}]"
                 )
             elif isinstance(footprint_reflection, MultiPolygon):
                 # For MultiPolygon, get bounds of the entire geometry
                 bounds = footprint_reflection.bounds  # (min_lon, min_lat, max_lon, max_lat)
-                print(
+                logger.debug(
                     f"MultiPolygon coords range: Lon [{bounds[0]}-{bounds[2]}], "
                     f"Lat [{bounds[1]}-{bounds[3]}]"
                 )
             else:
-                print(f"Geometry bounds: {footprint_reflection.bounds}")
-            print(f"Bounding box: {self.bounding_box}")
-            print(f"Reflection point: Lon {spec_refl_point[0]:.6f}, Lat {spec_refl_point[1]:.6f}")
+                logger.debug(f"Geometry bounds: {footprint_reflection.bounds}")
+            logger.debug(f"Bounding box: {self.bounding_box}")
+            logger.debug(f"Reflection point: Lon {spec_refl_point[0]:.6f}, Lat {spec_refl_point[1]:.6f}")
 
             # Add grid lines for better reference
             gl = ax.gridlines(draw_labels=True, linewidth=0.5, alpha=0.7, linestyle="--")
@@ -241,8 +243,8 @@ class MovingTargetDetection:
             # Loop through each GNSS constellations
             for gnss_name, gnss_const in self.gnss_constellation.items():
                 if verbose:
-                    print("-----------------------------------------------------------------")
-                    print(f'\nCalculating reflections for GNSS constellation "{gnss_name}"')
+                    logger.info("-----------------------------------------------------------------")
+                    logger.info(f'Calculating reflections for GNSS constellation "{gnss_name}"')
                 reflections_vec = []
 
                 # Loop through the GNSS-R satellites in the GNSS-R LEO constellation / Rx
@@ -317,12 +319,12 @@ class MovingTargetDetection:
                 try:
                     time_vector_all_refl = refl_obj.time_vec
                 except AttributeError:
-                    warnings.warn(f"Reflection object missing time_vec attribute for {gnss_const_name}")
+                    logger.warning(f"Reflection object missing time_vec attribute for {gnss_const_name}")
                     continue
 
                 # Single check for None or empty (removed duplicate check)
                 if time_vector_all_refl is None or len(time_vector_all_refl) == 0:
-                    warnings.warn(f"Empty or None time vector in reflection object for {gnss_const_name}")
+                    logger.warning(f"Empty or None time vector in reflection object for {gnss_const_name}")
                     continue
 
                 # Cache satellite IDs and generate reflection ID once
@@ -358,7 +360,7 @@ class MovingTargetDetection:
 
                 # Report invalid times if any
                 if invalid_count > 0:
-                    warnings.warn(f"{invalid_count} invalid times in reflection object for {gnss_const_name}")
+                    logger.warning(f"{invalid_count} invalid times in reflection object for {gnss_const_name}")
 
         #########################################################
         # 3: Calculate if the moving target can be detected     #
@@ -448,7 +450,7 @@ class MovingTargetDetection:
         rejected = self.footprint_stats["rejected_empty"]
         if total > 0:
             pct = rejected / total * 100.0
-            print(f"Footprint computations: {rejected}/{total} rejected as empty ({pct:.1f}%)")
+            logger.info(f"Footprint computations: {rejected}/{total} rejected as empty ({pct:.1f}%)")
 
     def show_reflections_and_target_position_at_time_i(
         self,
@@ -497,7 +499,7 @@ class MovingTargetDetection:
             reflections_time_i[gnss_const] = self.reflection_dict_timeSorted[gnss_const].get(time_i_, None)
             if reflections_time_i[gnss_const] is None:
                 if verbose:
-                    print(f"WARNING: No reflections found for time {time_i} in constellation {gnss_const}")
+                    logger.warning(f"No reflections found for time {time_i} in constellation {gnss_const}")
                 return
 
         # Get the target position at time_i
@@ -579,7 +581,7 @@ class MovingTargetDetection:
             )
         else:
             if verbose:
-                print(f"WARNING: No target position found for time {time_i} in the trajectory data.")
+                logger.warning(f"No target position found for time {time_i} in the trajectory data.")
             return
         # Plot the reflection points and their footprints
         for gnss_const, reflections in reflections_time_i.items():
@@ -599,8 +601,8 @@ class MovingTargetDetection:
                         if np.isnan(lon) or np.isnan(lat):
                             # If the coordinates are NaN, skip this reflection point
                             if verbose:
-                                print(
-                                    f"WARNING: Reflection coordinates are NaN for {gnss_const}, satellites ID-GNSS {refl_obj.tx_satID}, and ID-GNSS-R {refl_obj.rx_satID} at time {time_i}"
+                                logger.warning(
+                                    f"Reflection coordinates are NaN for {gnss_const}, satellites ID-GNSS {refl_obj.tx_satID}, and ID-GNSS-R {refl_obj.rx_satID} at time {time_i}"
                                 )
                             continue
 
@@ -637,7 +639,7 @@ class MovingTargetDetection:
                                 transform=ccrs.PlateCarree()
                             )
                             if not success and verbose:
-                                print(f"Skipped invalid footprint for {gnss_const} at ({lon:.2f}, {lat:.2f})")
+                                logger.warning(f"Skipped invalid footprint for {gnss_const} at ({lon:.2f}, {lat:.2f})")
 
         # Add a legend (handle duplicates properly)
         if label_reflections:
@@ -683,7 +685,7 @@ class MovingTargetDetection:
             fps:             [int]          Frames per second (default: 3)
         =========================================================================================================
         """
-        print("Creating an animation of the moving target and the reflections")
+        logger.info("Creating an animation of the moving target and the reflections")
 
         # Generate time points
         time_points = []
@@ -693,7 +695,7 @@ class MovingTargetDetection:
             time_points.append(current_time)
             current_time += timedelta(minutes=time_step_min)
 
-        print(f"Creating {len(time_points)} frames...")
+        logger.info(f"Creating {len(time_points)} frames...")
 
         # Generate frames in memory
         frames = []
@@ -708,7 +710,7 @@ class MovingTargetDetection:
                 if img_array is not None:
                     frames.append(img_array)
             except Exception as e:
-                print(f"Skipping frame at {time_point} due to error: {e}")
+                logger.warning(f"Skipping frame at {time_point} due to error: {e}")
                 continue
 
         # Create output filename
@@ -719,7 +721,7 @@ class MovingTargetDetection:
         output_path = os.path.join(Constants.output_folder_path, output_filename)
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-        print(f"Creating {output_format} at {output_path}...")
+        logger.info(f"Creating {output_format} at {output_path}...")
 
         # Save as MP4 or GIF
         if output_format.lower() in ["mp4", "avi"]:
@@ -732,7 +734,7 @@ class MovingTargetDetection:
             # GIF
             imageio.mimsave(output_path, frames, fps=fps)
 
-        print(f"Animation created at: {output_path}")
+        logger.info(f"Animation created at: {output_path}")
 
     def _find_closest_time(self, target_time, times_reflections_sec) -> tuple:
         """
@@ -851,12 +853,12 @@ class MovingTargetDetection:
                 transform=ccrs.PlateCarree(),
             )
 
-            # Print the coordinates to check if they're inside the bounding box
-            print(
+            # Log the coordinates to check if they're inside the bounding box
+            logger.debug(
                 f"Circle coords range: Lon [{min(footprint_poly.exterior.xy[0])}-{max(footprint_poly.exterior.xy[0])}], "
                 f"Lat [{min(footprint_poly.exterior.xy[1])}-{max(footprint_poly.exterior.xy[1])}]"
             )
-            print(f"Bounding box: {self.bounding_box}")
+            logger.debug(f"Bounding box: {self.bounding_box}")
 
             # Add grid lines for better reference
             gl = ax.gridlines(draw_labels=True, linewidth=0.5, alpha=0.7, linestyle="--")
@@ -882,7 +884,7 @@ class MovingTargetDetection:
             else:
                 # Handling of other types if necessary
                 if verbose:
-                    print(f"WARNING: Unsupported geometry type {type(polygon)} for NaN check.")
+                    logger.warning(f"Unsupported geometry type {type(polygon)} for NaN check.")
                 return True # Assume NaN if unsupported type
 
         self.footprint_stats["total"] += 1
@@ -894,7 +896,7 @@ class MovingTargetDetection:
         footprint_points, spec_refl_point = refl_obj._compute_footprint(i, self.sat_antenna, frequency, earth_model=self.earth_model)
         if not footprint_points.is_valid:
             if verbose:
-                print(f"Invalid footprint for reflection index {i}. {explain_validity(footprint_points)}")
+                logger.warning(f"Invalid footprint for reflection index {i}. {explain_validity(footprint_points)}")
             footprint_points = footprint_points.buffer(0)  # Fix invalid geometry if necessary
         if isinstance(footprint_points, MultiPolygon):
             # Try to merge the polygons into one (MultiPolygon -> Polygon)
@@ -906,14 +908,14 @@ class MovingTargetDetection:
                 footprint_points = merged
             else:
                 if verbose:
-                    print(f"WARNING: Merging multipoligons for reflection index {i} not successful. Using largest of the MultiPolygon!")
+                    logger.warning(f"Merging multipoligons for reflection index {i} not successful. Using largest of the MultiPolygon!")
                 # If both method above didnt work take the largest polygon
                 footprint_points = max(footprint_points.geoms, key=lambda p: p.area)
 
         # Robustness: check if the points are nan
         if check_nan_coords(footprint_points):
             if verbose:
-                print(f"WARNING: Ellipse points contain NaN values for reflection index {i} in {refl_obj.gnss_const}. Skipping footprint creation. \n    The satellite might be too far away or the footprint size is too large.")
+                logger.warning(f"Ellipse points contain NaN values for reflection index {i} in {refl_obj.gnss_const}. Skipping footprint creation. The satellite might be too far away or the footprint size is too large.")
             self.footprint_stats["rejected_empty"] += 1
             return Polygon(), spec_refl_point
 
@@ -1002,7 +1004,7 @@ class MovingTargetDetection:
 
         except Exception as e:
             if hasattr(self, 'verbose') and self.verbose:
-                print(f"Error fixing polygon: {e}")
+                logger.warning(f"Error fixing polygon: {e}")
             return []
 
     def _plot_footprint(self, ax, polygon, color, linewidth=1, alpha=0.5, transform=None):
@@ -1203,10 +1205,10 @@ class MovingTargetDetection:
             return Polygon()  # Return empty Polygon if no usable geometry
 
         except GEOSException as e:
-            print(f"GEOS error while clipping polygon: {e}")
+            logger.error(f"GEOS error while clipping polygon: {e}")
             return Polygon()
         except Exception as e:
-            print(f"Error clipping polygon: {e}")
+            logger.error(f"Error clipping polygon: {e}")
             return Polygon()
 
     def show_track_and_detection_points(self, gnss_constellation=None, file_name=None, show_figure=False,
@@ -1325,7 +1327,7 @@ class MovingTargetDetection:
                             transform=ccrs.PlateCarree()
                         )
                         if not success and verbose:
-                            print(f"Skipped invalid footprint for {gnss_name}[{idx}]")
+                            logger.warning(f"Skipped invalid footprint for {gnss_name}[{idx}]")
 
                         plotted_count += 1
 
@@ -1349,7 +1351,7 @@ class MovingTargetDetection:
         if file_name is not None:
             file_path = os.path.join(Constants.output_folder_path, file_name)
             plt.savefig(file_path, dpi=300, bbox_inches="tight")
-            print(f"Figure saved as {file_name}")
+            logger.info(f"Figure saved as {file_name}")
 
         if show_figure:
             plt.show(block=True)
