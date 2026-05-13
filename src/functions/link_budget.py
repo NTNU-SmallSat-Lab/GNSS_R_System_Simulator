@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from functions.rotations import quat_to_rotation_matrix
+from functions.rotations import build_vnc_frame, eci_to_antenna_rotation
 from object_definitions.Constants_def import Constants
 from object_definitions.Rx_antenna_def import RxAntenna
 
@@ -225,29 +225,14 @@ def compute_rx_look_direction_antenna_frame(
         return invalid
     n_ar_eci = sat_to_refl / sat_to_refl_norm
 
-    sat_speed = np.linalg.norm(sat_vel_eci)
-    sat_radius = np.linalg.norm(sat_pos_eci)
-    if sat_speed <= 0.0 or sat_radius <= 0.0:
+    R_eci_to_vnc = build_vnc_frame(sat_pos_eci, sat_vel_eci)
+    if R_eci_to_vnc is None:
         return invalid
 
-    v_hat = sat_vel_eci / sat_speed
-    h_vec = np.cross(sat_pos_eci, v_hat)
-    h_norm = np.linalg.norm(h_vec)
-    if h_norm <= 0.0:
-        return invalid
-    n_hat = h_vec / h_norm
-
-    c_hat = np.cross(v_hat, n_hat)
-    c_norm = np.linalg.norm(c_hat)
-    if c_norm <= 0.0:
-        return invalid
-    c_hat = c_hat / c_norm
-
-    R_eci_to_vnc = np.vstack([v_hat, n_hat, c_hat])
-    R_attitude = quat_to_rotation_matrix(q_sat)
-    R_vnc_to_body = R_attitude @ Constants.R_body_to_vnc_normal.T
-
-    n_ar_a = antenna.R_antenna_to_body.T @ R_vnc_to_body @ R_eci_to_vnc @ n_ar_eci
+    R_eci_to_antenna = eci_to_antenna_rotation(
+        R_eci_to_vnc, q_sat, Constants.R_body_to_vnc_normal, antenna.R_antenna_to_body
+    )
+    n_ar_a = R_eci_to_antenna @ n_ar_eci
     n_ar_a_norm = np.linalg.norm(n_ar_a)
     if n_ar_a_norm <= 0.0:
         return invalid

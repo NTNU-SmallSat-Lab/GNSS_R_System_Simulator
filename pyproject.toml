@@ -61,6 +61,7 @@ dev = [
     "black>=25.1.0",  # Latest version compatible with Python 3.12.6
     "ruff>=0.8.2",
     "mypy>=1.13.0",
+    "pytest>=8.0",
 ]
 
 [project.urls]
@@ -161,3 +162,13 @@ ignore_missing_imports = true
 # Style guidelines for consistency
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"  # Use NumPy docstring style for scientific code
+
+[tool.pytest.ini_options]
+# SRC isn't installed as a package — entry-point scripts rely on SRC being on sys.path. Mirror
+# that for pytest so test modules can do `from functions.rotations import build_vnc_frame` etc.
+pythonpath = ["SRC", "tests"]
+testpaths = ["tests"]
+addopts = ["-ra", "--strict-markers"]
+markers = [
+    "golden: end-to-end golden-file comparison tests; slower than unit tests.",
+]

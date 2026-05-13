@@ -7,7 +7,7 @@ import pymap3d
 from shapely.geometry import Point, Polygon
 from skyfield.api import load, wgs84
 
-from functions.rotations import quat_to_rotation_matrix
+from functions.rotations import build_vnc_frame, eci_to_antenna_rotation
 from object_definitions.Constants_def import Constants
 from object_definitions.SatConstellation_def import SatelliteConstellation
 
@@ -564,32 +564,14 @@ def compute_footprint(sat_pos, sat_vel, refl_pos, time_i, antenna, frequency, q_
     n_ar_eci = (refl_pos - sat_pos) / l_sr  # Satellite-to-reflection unit vector in ECI coordinates
 
     # ========== VNC COORDINATE SYSTEM {vnc} (Velocity Normal Cross-track) ==========
-    # "Orbit-NED"  coordinate system decomposed in ECI coordinates
+    # "Orbit-NED" coordinate system decomposed in ECI coordinates. build_vnc_frame returns None
+    # for any degenerate satellite state (zero velocity / position, or velocity parallel to radius).
     v_s_i = sat_vel
     r_s_i = sat_pos
-    # Check for valid velocity
-    if np.linalg.norm(v_s_i) < 1e-6:
-        warnings.warn("Invalid satellite velocity")
+    R_eci_to_vnc = build_vnc_frame(r_s_i, v_s_i)
+    if R_eci_to_vnc is None:
+        warnings.warn("Invalid satellite state for VNC frame construction")
         return Polygon(), np.array([])
-    if np.linalg.norm(r_s_i) < 1e-6:
-        warnings.warn("Invalid satellite position")
-        return Polygon(), np.array([])
-
-    # 1. V-axis (satellite travel direction)
-    v_hat = v_s_i / np.linalg.norm(v_s_i)
-
-    # 2. N-axis (Orbit Normal direction, perpendicular to the orbit plane)
-    h_vec = np.cross(r_s_i, v_hat)
-    if np.linalg.norm(h_vec) < 1e-12:
-        warnings.warn("Satellite position and velocity are collinear")
-        return Polygon(), np.array([])
-    n_hat = h_vec / np.linalg.norm(h_vec)
-
-    # 3. C-axis (Cross-track direction, perpendicular to both V and N)
-    c_hat = np.cross(v_hat, n_hat)
-    c_hat = c_hat / np.linalg.norm(c_hat)
-
-    R_eci_to_vnc = np.vstack([v_hat, n_hat, c_hat])
 
     # ========== BEAM / RAY COORDINATE SYSTEM {r} ==========
     # Create perpendicular axes for the beam cone (orthogonal to the beam direction)
@@ -610,9 +592,10 @@ def compute_footprint(sat_pos, sat_vel, refl_pos, time_i, antenna, frequency, q_
     _R_eci_to_reflection = np.vstack([x_r_eci, y_r_eci, z_r_eci])
 
     # ========== REFLECTION DIRECTION IN ANTENNA FRAME ==========
-    R_attitude = quat_to_rotation_matrix(q_sat)
-    R_vnc_to_body = R_attitude @ Constants.R_body_to_vnc_normal.T
-    n_ar_a = antenna.R_antenna_to_body.T @ R_vnc_to_body @ R_eci_to_vnc @ n_ar_eci
+    R_eci_to_antenna = eci_to_antenna_rotation(
+        R_eci_to_vnc, q_sat, Constants.R_body_to_vnc_normal, antenna.R_antenna_to_body
+    )
+    n_ar_a = R_eci_to_antenna @ n_ar_eci
     if n_ar_a[2] < 0:
         # Normal geometry (reflection in antenna back hemisphere); empty polygon propagates downstream
         # and is counted via MovingTargetDetection.footprint_stats.
@@ -622,7 +605,7 @@ def compute_footprint(sat_pos, sat_vel, refl_pos, time_i, antenna, frequency, q_
     beam_dir_a = antenna._get_antenna_footprint(n_ar_a, frequency)
 
     # ========== VECTORIZED BEAM DIRECTIONS ==========
-    beam_dirs_i = (R_eci_to_vnc.T @ R_vnc_to_body.T @ antenna.R_antenna_to_body @ beam_dir_a.T)
+    beam_dirs_i = R_eci_to_antenna.T @ beam_dir_a.T
     no_footprint_points = beam_dirs_i.shape[1]
 
     # ========== VECTORIZED INTERSECTION ==========
