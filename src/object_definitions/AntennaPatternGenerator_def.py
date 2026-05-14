@@ -91,7 +91,10 @@ class AntennaPatternGenerator:
     #   v1: initial release.
     #   v2: azimuth grid switched from endpoint-inclusive [0..360] to endpoint-exclusive [0..360),
     #       matching the bilinear sampler convention in _bilinear_pattern_sample_linear.
-    _GENERATOR_FORMAT_VERSION = 2
+    #   v3: on-demand steering refactor (Phase 2 of (c)). Generator now emits ONE unsteered
+    #       (az=0, el=0) pattern per frequency. Steered gain is computed analytically inside
+    #       RxAntenna; the on-disk file feeds only the footprint-contour pipeline.
+    _GENERATOR_FORMAT_VERSION = 3
 
     def _signature(self):
         """Dict of every parameter that affects the generated JSONs; used as a cache key."""
@@ -102,8 +105,6 @@ class AntennaPatternGenerator:
             "d_x": self.d_x,
             "d_y": self.d_y,
             "freqs": sorted(self.freqs),
-            "elevation_directivity": self.elevation_directivity,
-            "azimuth_directivity": self.azimuth_directivity,
             "elevation_resolution": self.elevation_resolution,
             "azimuth_resolution": self.azimuth_resolution,
         }
@@ -113,13 +114,9 @@ class AntennaPatternGenerator:
         return self.output_folder / METADATA_FILENAME
 
     def _expected_filenames(self):
-        """Yield the filename for every (frequency, azimuth, elevation) combination generate() will produce."""
-        elevation_sweep = np.linspace(self.elevation_directivity[0], self.elevation_directivity[1], self.elevation_directivity[2])
-        azimuth_sweep = np.linspace(self.azimuth_directivity[0], self.azimuth_directivity[1], self.azimuth_directivity[2])
+        """Yield the filename for every pattern generate() will produce — one unsteered file per frequency."""
         for freq in self.freqs:
-            for az_deg in azimuth_sweep:
-                for el_deg in elevation_sweep:
-                    yield f"array_factor_{freq}MHz_{az_deg:.2f}az_{el_deg:.2f}el.json"
+            yield f"array_factor_{freq}MHz_0.00az_0.00el.json"
 
     def _all_files_exist(self):
         """True if every expected pattern JSON is present on disk."""
@@ -210,36 +207,25 @@ class AntennaPatternGenerator:
         elevation = np.linspace(0, 180, self.elevation_resolution).reshape(-1, 1) * np.pi / 180
         azimuth = np.linspace(0, 360, self.azimuth_resolution, endpoint=False).reshape(1, -1) * np.pi / 180
 
-        # Steering sweep, in radians
-        elevation_sweep = np.linspace(self.elevation_directivity[0], self.elevation_directivity[1], self.elevation_directivity[2]) * np.pi / 180
-        azimuth_sweep = np.linspace(self.azimuth_directivity[0], self.azimuth_directivity[1], self.azimuth_directivity[2]) * np.pi / 180
-
+        # Phase 2: write one unsteered (az=0, el=0) pattern per frequency. This feeds only the
+        # footprint-contour pipeline and the boresight directivity in RxAntenna; steered gain is
+        # computed analytically on demand from the array geometry.
         for freq in self.freqs:
             freq_hz = freq * 1e6
-            k = 2 * np.pi / (Constants.SPEED_OF_LIGHT / freq_hz)
+            af = ArrayFactor(self.elements_x, self.elements_y, freq_hz, self.d_x, self.d_y, 0.0, 0.0)
+            pattern_db = af.calculate_array_factor(elevation, azimuth)
 
-            for az_direction in azimuth_sweep:
-                for el_direction in elevation_sweep:
-                    beta_x = -k * self.d_x * np.sin(el_direction) * np.cos(az_direction)
-                    beta_y = -k * self.d_y * np.sin(el_direction) * np.sin(az_direction)
+            out_dict = {
+                "frequency": freq,
+                "azimuth_pointing": 0.0,
+                "elevation_pointing": 0.0,
+                "data": pattern_db.tolist(),
+            }
 
-                    az_deg = az_direction * 180 / np.pi
-                    el_deg = el_direction * 180 / np.pi
-
-                    af = ArrayFactor(self.elements_x, self.elements_y, freq_hz, self.d_x, self.d_y, beta_x, beta_y)
-                    pattern_db = af.calculate_array_factor(elevation, azimuth)
-
-                    out_dict = {
-                        "frequency": freq,
-                        "azimuth_pointing": az_deg,
-                        "elevation_pointing": el_deg,
-                        "data": pattern_db.tolist(),
-                    }
-
-                    filename = f"array_factor_{freq}MHz_{az_deg:.2f}az_{el_deg:.2f}el.json"
-                    with open(self.output_folder / filename, "w") as f:
-                        # Compact dump — the data array is large (~64k floats); pretty-printing is wasteful.
-                        json.dump(out_dict, f)
+            filename = f"array_factor_{freq}MHz_0.00az_0.00el.json"
+            with open(self.output_folder / filename, "w") as f:
+                # Compact dump — the data array is large (~64k floats); pretty-printing is wasteful.
+                json.dump(out_dict, f)
 
         self._write_metadata()
         self._warn_unexpected_pattern_files()

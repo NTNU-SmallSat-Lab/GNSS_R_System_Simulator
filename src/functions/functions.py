@@ -7,7 +7,7 @@ import pymap3d
 from shapely.geometry import Point, Polygon
 from skyfield.api import load, wgs84
 
-from functions.rotations import build_vnc_frame, eci_to_antenna_rotation
+from functions.rotations import eci_to_antenna_rotation_from_state
 from object_definitions.Constants_def import Constants
 from object_definitions.SatConstellation_def import SatelliteConstellation
 
@@ -552,9 +552,6 @@ def compute_footprint(sat_pos, sat_vel, refl_pos, time_i, antenna, frequency, q_
                           - center_point:      np.array([lat, lon]) of the reflection point
     =========================================================================================================
     """
-    if q_sat is None:
-        q_sat = np.array([1.0, 0.0, 0.0, 0.0])
-
     # Check if the satellite position is valid
     if np.any(np.isnan(sat_pos)) or np.any(np.isnan(refl_pos)):
         print("Invalid satellite or reflection position. Skipping footprint calculation.")
@@ -563,19 +560,15 @@ def compute_footprint(sat_pos, sat_vel, refl_pos, time_i, antenna, frequency, q_
     l_sr = np.linalg.norm(refl_pos - sat_pos)  # Beam length (slant range)
     n_ar_eci = (refl_pos - sat_pos) / l_sr  # Satellite-to-reflection unit vector in ECI coordinates
 
-    # ========== VNC COORDINATE SYSTEM {vnc} (Velocity Normal Cross-track) ==========
-    # "Orbit-NED" coordinate system decomposed in ECI coordinates. build_vnc_frame returns None
-    # for any degenerate satellite state (zero velocity / position, or velocity parallel to radius).
-    v_s_i = sat_vel
-    r_s_i = sat_pos
-    R_eci_to_vnc = build_vnc_frame(r_s_i, v_s_i)
-    if R_eci_to_vnc is None:
+    # ========== ECI → ANTENNA ROTATION (via VNC; degeneracy returns None) ==========
+    R_eci_to_antenna = eci_to_antenna_rotation_from_state(sat_pos, sat_vel, antenna, q_sat)
+    if R_eci_to_antenna is None:
         warnings.warn("Invalid satellite state for VNC frame construction")
         return Polygon(), np.array([])
 
     # ========== BEAM / RAY COORDINATE SYSTEM {r} ==========
     # Create perpendicular axes for the beam cone (orthogonal to the beam direction)
-    v_s_proj_i = v_s_i - np.dot(v_s_i, n_ar_eci) * n_ar_eci
+    v_s_proj_i = sat_vel - np.dot(sat_vel, n_ar_eci) * n_ar_eci
     # Handle edge case where velocity is parallel to the beam direction (should never happen in practice)
     if np.linalg.norm(v_s_proj_i) < 1e-6:
         if abs(n_ar_eci[2]) < 0.9:
@@ -592,9 +585,6 @@ def compute_footprint(sat_pos, sat_vel, refl_pos, time_i, antenna, frequency, q_
     _R_eci_to_reflection = np.vstack([x_r_eci, y_r_eci, z_r_eci])
 
     # ========== REFLECTION DIRECTION IN ANTENNA FRAME ==========
-    R_eci_to_antenna = eci_to_antenna_rotation(
-        R_eci_to_vnc, q_sat, Constants.R_body_to_vnc_normal, antenna.R_antenna_to_body
-    )
     n_ar_a = R_eci_to_antenna @ n_ar_eci
     if n_ar_a[2] < 0:
         # Normal geometry (reflection in antenna back hemisphere); empty polygon propagates downstream

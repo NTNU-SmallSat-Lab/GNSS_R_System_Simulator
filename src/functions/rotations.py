@@ -1,5 +1,7 @@
 import numpy as np
 
+from object_definitions.Constants_def import Constants
+
 
 def quat_to_rotation_matrix(q: list) -> np.ndarray:
     """
@@ -97,3 +99,16 @@ def eci_to_antenna_rotation(
     R_attitude = quat_to_rotation_matrix(q_sat)
     R_vnc_to_body = R_attitude @ R_body_to_vnc.T
     return R_antenna_to_body.T @ R_vnc_to_body @ R_eci_to_vnc
+
+
+def eci_to_antenna_rotation_from_state(
+    sat_pos_eci: np.ndarray,
+    sat_vel_eci: np.ndarray,
+    antenna,
+    q_sat: np.ndarray | None = None,
+) -> np.ndarray | None:
+    """Build VNC from the satellite state and compose the full ECI→antenna rotation in one call. Returns None if the VNC frame is degenerate."""
+    R_eci_to_vnc = build_vnc_frame(sat_pos_eci, sat_vel_eci)
+    if R_eci_to_vnc is None:
+        return None
+    return eci_to_antenna_rotation(R_eci_to_vnc, q_sat, Constants.R_body_to_vnc_normal, antenna.R_antenna_to_body)

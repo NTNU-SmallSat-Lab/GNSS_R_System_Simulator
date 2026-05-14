@@ -27,29 +27,17 @@ L1_MHZ = 1575.42
 L5_MHZ = 1176.45
 
 
-def _circular_abs_diff_deg(a: float, b: float) -> float:
-    return abs((a - b + 180.0) % 360.0 - 180.0)
-
-
-def _nearest_unsteered_pattern_key(pattern_files: dict, frequency_mhz: float, azimuth_deg: float = 90.0) -> tuple:
-    unsteered_patterns = [key for key in pattern_files if abs(key[1]) <= 1e-6]
-    if not unsteered_patterns:
-        raise AssertionError("No elevation=0 antenna pattern is available for the footprint diagnostic.")
-
-    return min(
-        unsteered_patterns,
-        key=lambda key: (
-            abs(key[2] - frequency_mhz),
-            _circular_abs_diff_deg(key[0], azimuth_deg),
-        ),
-    )
+def _nearest_pattern_key(pattern_files: dict, frequency_mhz: float) -> float:
+    if not pattern_files:
+        raise AssertionError("No antenna pattern files are available for the footprint diagnostic.")
+    return min(pattern_files, key=lambda key: abs(key - frequency_mhz))
 
 
 def _lightweight_antenna_settings(settings: dict, frequencies_mhz: list[float], footprint_db: float) -> dict:
     pattern_files = settings["antenna_pattern_files"]
     selected_patterns = {}
     for frequency_mhz in frequencies_mhz:
-        key = _nearest_unsteered_pattern_key(pattern_files, frequency_mhz)
+        key = _nearest_pattern_key(pattern_files, frequency_mhz)
         selected_patterns[key] = pattern_files[key]
 
     return {

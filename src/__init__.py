@@ -58,20 +58,12 @@ def _check_python_version() -> None:
             stacklevel=2,
         )
 
-def parse_antenna_angles(filename):
-    # Extract azimuth and elevation using regex
-    az_match = re.search(r'(\d+\.?\d*)az', filename)
-    el_match = re.search(r'(\d+\.?\d*)el', filename)
-    freq_match = re.search(r'(\d+\.?\d*)MHz', filename)
-
-    if az_match and el_match and freq_match:
-        azimuth = float(az_match.group(1))
-        elevation = float(el_match.group(1))
-        freq = float(freq_match.group(1))
-
-        return azimuth, elevation, freq
-    else:
-        raise ValueError(f"Could not parse azimuth/elevation from filename: {filename}")
+def _parse_antenna_frequency_mhz(filename: str) -> float:
+    """Extract the carrier frequency (MHz) from an array_factor_*MHz_*.json filename."""
+    match = re.search(r'array_factor_(\d+\.?\d*)MHz', filename)
+    if not match:
+        raise ValueError(f"Could not parse frequency from antenna pattern filename: {filename}")
+    return float(match.group(1))
 
 
 def _normalize_path_for_compare(path):
@@ -286,16 +278,15 @@ def initialize(config_file_name="Configuration.ini"):
 
             for file in filepaths_antenna_pattern:
                 if not os.path.isfile(file):
-                    # Additional robustness checks
                     raise FileNotFoundError(f"The specified antenna pattern file '{file}' does not exist. Please check the file path in the configuration file.")
 
-                # Get the azimuth and elevation of that file (through the filename)
-                filename = os.path.basename(file)
-                azimuth, elevation, freq = parse_antenna_angles(filename)
-
-                # Create a dictionary, linking azimuth and elevation angle to the file
-                antenna_patterns[(azimuth, elevation, freq)] = file
-            # Sort the antenna_patterns files
+                freq = _parse_antenna_frequency_mhz(os.path.basename(file))
+                if freq in antenna_patterns:
+                    raise ValueError(
+                        f"Duplicate antenna pattern files for frequency {freq} MHz in '{antenna_pattern_folder}'. "
+                        "Only one unsteered pattern per frequency is supported."
+                    )
+                antenna_patterns[freq] = file
             antenna_patterns = dict(sorted(antenna_patterns.items()))
             antenna_polarizations = ast.literal_eval(config["ANTENNA"]["polarizations"]) if "ANTENNA" in config else None  # Antenna polarizations (e.g., ["LHCP", "RHCP"])
         else:
@@ -420,6 +411,18 @@ def initialize(config_file_name="Configuration.ini"):
         "polarizations": antenna_polarizations,
         "bands": antenna_bands,
         "footprint_dB": float(footprint_dB) if footprint_dB is not None else None,
+        # Planar-array geometry consumed by RxAntenna for on-demand array-factor evaluation
+        # during gain queries (no pre-computed per-steering JSONs needed).
+        "array_geometry": (
+            {
+                "elements_along_x": antenna_pattern_settings["elements_along_x"],
+                "elements_along_y": antenna_pattern_settings["elements_along_y"],
+                "d_x": antenna_pattern_settings["d_x"],
+                "d_y": antenna_pattern_settings["d_y"],
+            }
+            if antenna_pattern_settings is not None
+            else None
+        ),
         #[LINK BUDGET]
         "link_budget": link_budget,
     }

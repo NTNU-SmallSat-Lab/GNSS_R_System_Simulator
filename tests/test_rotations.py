@@ -7,8 +7,16 @@ import pytest
 from functions.rotations import (
     build_vnc_frame,
     eci_to_antenna_rotation,
+    eci_to_antenna_rotation_from_state,
     quat_to_rotation_matrix,
 )
+
+
+class _FakeAntenna:
+    """Duck-typed antenna providing only the attribute the rotation helper reads."""
+
+    def __init__(self, R_antenna_to_body):
+        self.R_antenna_to_body = R_antenna_to_body
 
 
 # --------------------------------------------------------------------------- #
@@ -139,3 +147,29 @@ class TestEciToAntennaRotation:
         R = eci_to_antenna_rotation(cz, None, cz, cz)
         v = np.array([0.3, -0.7, 0.65])
         np.testing.assert_allclose(R.T @ (R @ v), v, atol=1e-12)
+
+
+# --------------------------------------------------------------------------- #
+# eci_to_antenna_rotation_from_state                                          #
+# --------------------------------------------------------------------------- #
+
+class TestEciToAntennaRotationFromState:
+    def test_matches_manual_two_step_composition(self):
+        # The helper must produce exactly the same matrix as build_vnc_frame + eci_to_antenna_rotation.
+        from object_definitions.Constants_def import Constants
+
+        r = np.array([7e6, 1e5, 3e5])
+        v = np.array([1e2, 7e3, -1e2])
+        R_antenna_to_body = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+        antenna = _FakeAntenna(R_antenna_to_body)
+        q = np.array([np.cos(np.pi / 6), 0.0, 0.0, np.sin(np.pi / 6)])
+
+        R_helper = eci_to_antenna_rotation_from_state(r, v, antenna, q)
+        R_eci_to_vnc = build_vnc_frame(r, v)
+        R_manual = eci_to_antenna_rotation(R_eci_to_vnc, q, Constants.R_body_to_vnc_normal, R_antenna_to_body)
+        np.testing.assert_allclose(R_helper, R_manual, atol=1e-12)
+
+    def test_degenerate_state_returns_none(self):
+        # Zero velocity → build_vnc_frame returns None → helper must propagate None.
+        antenna = _FakeAntenna(np.eye(3))
+        assert eci_to_antenna_rotation_from_state(np.array([7e6, 0.0, 0.0]), np.zeros(3), antenna) is None
