@@ -40,7 +40,6 @@ The similator can also be used to estimate if a moving or stationary target (see
 │   ├── main_simulation_areaCoverage.py
 │   ├── main_simulation_movingTarget.py
 │   ├── run_simulator_parallel.py
-│   ├── test_main.py
 │   ├── FF_socket
 │   │   └── <python file: FreeFlyer interface>
 │   ├── functions
@@ -56,6 +55,10 @@ The similator can also be used to estimate if a moving or stationary target (see
 │       ├── <Satellite>
 │       ├── <ShipTrajectory>
 │       └── <Static_classes>
+├── tests
+│   ├── <pytest test modules>
+│   └── golden
+│       └── <golden-file references>
 ├── DATA
 │   ├── world_coastline_data
 │   ├── TLE_EPHEMIRIS

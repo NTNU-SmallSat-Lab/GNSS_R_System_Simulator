@@ -616,7 +616,7 @@ class Coverage:
 
         grid_gdf = gpd.GeoDataFrame({"geometry": grid_polygons}, crs=self.gdf.crs)
         # Filter out grid cells that do not intersect with the input shapefile
-        grid_gdf = grid_gdf[grid_gdf.intersects(self.gdf.unary_union)]
+        grid_gdf = grid_gdf[grid_gdf.intersects(self.gdf.union_all())]
 
         # Save the grid as a shapefile
         grid_gdf.to_file(self.gridded_shapefile_path, driver="ESRI Shapefile")
@@ -648,7 +648,7 @@ class Coverage:
         # Create a GeoDataFrame for the gridded shapefile (fishnet)
         grid_gdf = gpd.GeoDataFrame({"geometry": grid_polygons}, crs=self.gdf.crs)
         # Filter out grid cells that do not intersect with the input shapefile
-        grid_gdf = grid_gdf[grid_gdf.intersects(self.gdf.unary_union)]
+        grid_gdf = grid_gdf[grid_gdf.intersects(self.gdf.union_all())]
 
         # Save the grid as a shapefile
         grid_gdf.to_file(self.gridded_shapefile_path, driver="ESRI Shapefile")

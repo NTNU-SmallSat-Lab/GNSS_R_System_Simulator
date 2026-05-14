@@ -14,9 +14,13 @@ requires-python = ">=3.12.3"  # Updated for Black compatibility
 dependencies = [
     # Core scientific computing
     "numpy>=2.0.2",
-    "pandas>=2.2.3", 
+    "pandas>=2.2.3",
     "scipy>=1.14.1",
     "matplotlib>=3.10.1",
+    # Pinned >=2.9.0 to silence the utcfromtimestamp DeprecationWarning fixed in that release.
+    # Pulled in transitively by pandas/matplotlib; harmony-py 0.4.15 has a stale ~=2.8.2 pin
+    # but is API-compatible with 2.9.x.
+    "python-dateutil>=2.9.0",
     
     # Space science and astronomy
     # NOTE: astropy is not imported directly anywhere in the source code,
