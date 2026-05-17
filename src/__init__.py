@@ -225,8 +225,8 @@ def initialize(config_file_name="Configuration.ini"):
                 "freqs": [float(f) for f in ast.literal_eval(section["freqs"])],
                 "elevation_directivity": ast.literal_eval(section["elevation_directivity"]),
                 "azimuth_directivity": ast.literal_eval(section["azimuth_directivity"]),
-                "elevation_resolution": int(section.get("elevation_resolution", "180")),
-                "azimuth_resolution": int(section.get("azimuth_resolution", "360")),
+                "theta_resolution": int(section.get("theta_resolution", "180")),
+                "phi_resolution": int(section.get("phi_resolution", "360")),
                 "output_folder": antenna_pattern_folder,
             }
         except (ValueError, SyntaxError) as e:
@@ -383,6 +383,16 @@ def initialize(config_file_name="Configuration.ini"):
                 except ValueError:
                     raise ValueError(f"Invalid value for '{key}' in [LINK BUDGET]: {section[key]}") from None
 
+    # --- [PLOT] (OPTIONAL SECTION) ---
+    detection_bbox_buffer_deg = 2.0
+    if "PLOT" in config and "detection_bbox_buffer_deg" in config["PLOT"]:
+        try:
+            detection_bbox_buffer_deg = float(config["PLOT"]["detection_bbox_buffer_deg"])
+        except ValueError:
+            raise ValueError(
+                f"Invalid value for 'detection_bbox_buffer_deg' in [PLOT]: {config['PLOT']['detection_bbox_buffer_deg']}"
+            ) from None
+
 
     simulation_settings = {
         #[SIMULATION SETTINGS]
@@ -425,6 +435,8 @@ def initialize(config_file_name="Configuration.ini"):
         ),
         #[LINK BUDGET]
         "link_budget": link_budget,
+        #[PLOT]
+        "detection_bbox_buffer_deg": detection_bbox_buffer_deg,
     }
     return config, simulation_settings
 

@@ -326,10 +326,13 @@ class Satellite:
 
         if satName is not None:
             # Initialize one satellite from a TLE file only
+            sat_data = None
             for sat_data_i in sat_data_all:
                 if sat_data_i.satName == satName:
                     sat_data = sat_data_i
                     break
+            if sat_data is None:
+                raise ValueError(f"Satellite '{satName}' not found in TLE file")
         else:
             # Initialize the first satellite from the TLE file
             sat_data = sat_data_all[0]

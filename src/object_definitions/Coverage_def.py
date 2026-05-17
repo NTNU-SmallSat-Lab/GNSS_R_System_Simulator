@@ -482,23 +482,16 @@ class Coverage:
             label="Grid Background",
         )
 
-        # Loop through each grid cell to plot with the correct color
-        for idx in self.grid_gdf.index:
-            # Get the intersection count for the grid cell
-            count = intersection_count[idx]
-            # Get the color for the current grid cell
-            color, alpha_val = _get_color(count)
-
-            # Access the shape from the grid_gdf directly
-            self.grid_gdf.loc[[idx]].boundary.plot(ax=ax, edgecolor="red", facecolor=color, alpha=alpha_val)
-
-        # Then plot cells with count>1 (blue) on top
-        for idx in self.grid_gdf.index:
-            count = intersection_count[idx]
-            color, alpha_val = _get_color(count)
-
-            if color == "blue":  # Only plot blue cells (more than 1 intersection)
-                self.grid_gdf.loc[[idx]].boundary.plot(ax=ax, edgecolor="blue", facecolor=color, alpha=alpha_val)
+        # Group cells by intersection count and plot each group in a single batch call —
+        # a per-cell .plot() loop over thousands of cells is the main bottleneck here.
+        counts = np.array([intersection_count[i] for i in self.grid_gdf.index])
+        for mask, fill_color in [
+            (counts == 1, "aqua"),
+            (counts == 2, "blue"),
+            (counts > 2, "orange"),
+        ]:
+            if mask.any():
+                self.grid_gdf[mask].plot(ax=ax, color=fill_color, edgecolor="red", alpha=0.3)
 
         # Plot reflection lines
         # Loop through the reflection vectors for each GNSS constellation
@@ -554,7 +547,7 @@ class Coverage:
         plt.tight_layout()
 
         file_path = os.path.join(Constants.output_folder_path, file_name)
-        plt.savefig(file_path, dpi=600)
+        plt.savefig(file_path, dpi=200)
 
         print(f"Coverage plot saved to {file_path}")
 

@@ -135,7 +135,7 @@ class RxAntenna:
         in the antenna frame.
 
         INPUTS:
-            antenna_pattern: [dict]   Pattern entry with radiation_pattern_dB / elevation / azimuth / frequency
+            antenna_pattern: [dict]   Pattern entry with radiation_pattern_dB
 
         OUTPUT:
             result: [tuple]   (directivity, directivity_dB, contour_vectors)
@@ -379,7 +379,7 @@ class RxAntenna:
             direction: [np.ndarray, shape (3,)]   Look direction in antenna frame
 
         OUTPUT:
-            angles: [tuple | None]   (azimuth_deg, elevation_deg/off-boresight) or None if invalid/behind antenna
+            angles: [tuple | None]   (theta_deg, phi_deg) or None if invalid/behind antenna
         =========================================================================================================
         """
         direction = np.asarray(direction, dtype=float)
@@ -394,9 +394,9 @@ class RxAntenna:
         if direction[2] <= 0.0:
             return None
 
-        elevation_deg = float(np.degrees(np.arccos(np.clip(direction[2], -1.0, 1.0))))
-        azimuth_deg = float((np.degrees(np.arctan2(direction[1], direction[0])) + 360.0) % 360.0)
-        return azimuth_deg, elevation_deg
+        theta_deg = float(np.degrees(np.arccos(np.clip(direction[2], -1.0, 1.0))))
+        phi_deg = float((np.degrees(np.arctan2(direction[1], direction[0])) + 360.0) % 360.0)
+        return theta_deg, phi_deg
 
     def resolve_steering_angles_for_direction(self, direction_antenna_frame: np.ndarray) -> tuple[float, float] | None:
         """
@@ -415,10 +415,10 @@ class RxAntenna:
         if angles is None:
             return None
 
-        azimuth_deg, elevation_deg = angles
-        if self.max_steering_off_boresight_deg is not None and elevation_deg > self.max_steering_off_boresight_deg:
+        theta_deg, phi_deg = angles
+        if self.max_steering_off_boresight_deg is not None and theta_deg > self.max_steering_off_boresight_deg:
             return None
-        return azimuth_deg, elevation_deg
+        return phi_deg, theta_deg
 
     @staticmethod
     def _array_factor_db_at_direction(
@@ -571,7 +571,7 @@ class RxAntenna:
         angles = self._direction_to_spherical_angles_deg(direction)
         if angles is None:
             return np.nan
-        phi_deg, theta_deg = angles
+        theta_deg, phi_deg = angles
 
         if azimuth_deg is None or elevation_deg is None:
             steering_angles = self.resolve_steering_angles_for_direction(direction)
@@ -702,7 +702,7 @@ class PlotRadiationPattern:
 
             INPUTS:
                 spherical_coordinates: [tuple]   (rad_pattern_spherical, theta_mesh, phi_mesh)
-                arrow:                 [tuple]   Optional (elevation_deg, azimuth_deg) — draws an arrow
+                arrow:                 [tuple]   Optional (theta_deg, phi_deg) — draws an arrow
         =========================================================================================================
         """
         # Convert linear radiation pattern from spherical coordinates to cartesian coordinates
@@ -720,11 +720,11 @@ class PlotRadiationPattern:
 
         if arrow is not None:
             r = np.max(np.abs(carthesian_coordinates))
-            el = arrow[0] * np.pi / 180
-            az = arrow[1] * np.pi / 180
-            arr_x = r * np.sin(el) * np.cos(az)
-            arr_y = r * np.sin(el) * np.sin(az)
-            arr_z = r * np.cos(el)
+            theta = arrow[0] * np.pi / 180
+            phi = arrow[1] * np.pi / 180
+            arr_x = r * np.sin(theta) * np.cos(phi)
+            arr_y = r * np.sin(theta) * np.sin(phi)
+            arr_z = r * np.cos(theta)
 
             self.ax.quiver(0, 0, 0, arr_x, arr_y, arr_z, length=2)
 

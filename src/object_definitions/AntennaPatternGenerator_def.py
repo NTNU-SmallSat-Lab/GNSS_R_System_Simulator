@@ -28,10 +28,10 @@ class ArrayFactor:
         self.beta_x = beta_x
         self.beta_y = beta_y
 
-    def calculate_array_factor(self, elevation, azimuth):
+    def calculate_array_factor(self, theta, phi):
         """Compute the (theta x phi) array factor pattern in dB, normalized to a 0 dB peak."""
-        psi_x = self.k * self.d_x * np.sin(elevation) * np.cos(azimuth) + self.beta_x
-        psi_y = self.k * self.d_y * np.sin(elevation) * np.sin(azimuth) + self.beta_y
+        psi_x = self.k * self.d_x * np.sin(theta) * np.cos(phi) + self.beta_x
+        psi_y = self.k * self.d_y * np.sin(theta) * np.sin(phi) + self.beta_y
 
         x_elems = np.arange(self.elements_along_x).reshape(-1, 1, 1)
         y_elems = np.arange(self.elements_along_y).reshape(-1, 1, 1)
@@ -56,8 +56,8 @@ class AntennaPatternGenerator:
         elevation_directivity,
         azimuth_directivity,
         output_folder,
-        elevation_resolution=180,
-        azimuth_resolution=360,
+        theta_resolution=180,
+        phi_resolution=360,
     ):
         """
         AntennaPatternGenerator:
@@ -71,8 +71,8 @@ class AntennaPatternGenerator:
             elevation_directivity: [list]        [start_deg, end_deg, n_steps] for the elevation steering sweep
             azimuth_directivity:   [list]        [start_deg, end_deg, n_steps] for the azimuth steering sweep
             output_folder:         [str]         Path to write generated JSON files
-            elevation_resolution:  [int]         Number of elevation samples in each pattern (0..180 deg), default 180
-            azimuth_resolution:    [int]         Number of azimuth samples in each pattern (0..360 deg), default 360
+            theta_resolution:      [int]         Number of theta samples in each pattern (0..180 deg), default 180
+            phi_resolution:        [int]         Number of phi samples in each pattern (0..360 deg), default 360
         """
         self.elements_x = int(elements_along_x)
         self.elements_y = int(elements_along_y)
@@ -82,8 +82,8 @@ class AntennaPatternGenerator:
         self.elevation_directivity = list(elevation_directivity)
         self.azimuth_directivity = list(azimuth_directivity)
         self.output_folder = Path(output_folder)
-        self.elevation_resolution = int(elevation_resolution)
-        self.azimuth_resolution = int(azimuth_resolution)
+        self.theta_resolution = int(theta_resolution)
+        self.phi_resolution = int(phi_resolution)
 
     # Bump this whenever the generator's output convention changes in a way that affects how the
     # consumer (Rx_antenna_def.py) must sample the patterns. Each bump invalidates every cached
@@ -94,7 +94,9 @@ class AntennaPatternGenerator:
     #   v3: on-demand steering refactor (Phase 2 of (c)). Generator now emits ONE unsteered
     #       (az=0, el=0) pattern per frequency. Steered gain is computed analytically inside
     #       RxAntenna; the on-disk file feeds only the footprint-contour pipeline.
-    _GENERATOR_FORMAT_VERSION = 3
+    #   v4: pattern coordinate names renamed elevation/azimuth -> theta/phi. Signature dict
+    #       keys changed, invalidating every existing cached metadata file.
+    _GENERATOR_FORMAT_VERSION = 4
 
     def _signature(self):
         """Dict of every parameter that affects the generated JSONs; used as a cache key."""
@@ -105,8 +107,8 @@ class AntennaPatternGenerator:
             "d_x": self.d_x,
             "d_y": self.d_y,
             "freqs": sorted(self.freqs),
-            "elevation_resolution": self.elevation_resolution,
-            "azimuth_resolution": self.azimuth_resolution,
+            "theta_resolution": self.theta_resolution,
+            "phi_resolution": self.phi_resolution,
         }
 
     def _metadata_path(self):
@@ -203,9 +205,9 @@ class AntennaPatternGenerator:
         # that match the current sweep.
         self._purge_existing_patterns()
 
-        # Pattern grid (theta = elevation 0..180 deg, phi = azimuth 0..360 deg)
-        elevation = np.linspace(0, 180, self.elevation_resolution).reshape(-1, 1) * np.pi / 180
-        azimuth = np.linspace(0, 360, self.azimuth_resolution, endpoint=False).reshape(1, -1) * np.pi / 180
+        # Pattern grid (theta = polar 0..180 deg, phi = azimuthal 0..360 deg)
+        theta = np.linspace(0, 180, self.theta_resolution).reshape(-1, 1) * np.pi / 180
+        phi = np.linspace(0, 360, self.phi_resolution, endpoint=False).reshape(1, -1) * np.pi / 180
 
         # Phase 2: write one unsteered (az=0, el=0) pattern per frequency. This feeds only the
         # footprint-contour pipeline and the boresight directivity in RxAntenna; steered gain is
@@ -213,7 +215,7 @@ class AntennaPatternGenerator:
         for freq in self.freqs:
             freq_hz = freq * 1e6
             af = ArrayFactor(self.elements_x, self.elements_y, freq_hz, self.d_x, self.d_y, 0.0, 0.0)
-            pattern_db = af.calculate_array_factor(elevation, azimuth)
+            pattern_db = af.calculate_array_factor(theta, phi)
 
             out_dict = {
                 "frequency": freq,

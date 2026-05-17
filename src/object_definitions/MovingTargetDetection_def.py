@@ -35,13 +35,14 @@ class MovingTargetDetection:
         self,
         sat_const,
         gnss_const,
-        moving_target_object,        
+        moving_target_object,
         antenna_obj,
         create_shapefile_for_visualization=False,
         deltaT=60,
         earth_model="spherical",
         reflection_mode="specular",  # <--- add this argument
         link_budget_settings=None,
+        bbox_buffer_deg=2.0,
     ) -> None:
         """
         =========================================================================================================
@@ -59,6 +60,7 @@ class MovingTargetDetection:
                 earth_model:                        [str]                      "spherical" or "elliptical"
                 reflection_mode:                    [str]                      "specular" or "backscatter"
                 link_budget_settings:               [dict | BistaticLinkBudgetSettings | None]   Link budget settings
+                bbox_buffer_deg:                    [float]                    Padding in degrees added around the trajectory bounding box when rendering detection plots (default: 2.0)
 
             ATTRIBUTES:
                 moving_target_object:        [ShipTrajectory]   Moving target object
@@ -94,6 +96,7 @@ class MovingTargetDetection:
         self.reflection_mode = reflection_mode  # Either Specular reflection, or backscattering calculation
         self.link_budget_settings = link_budget_settings
         self.link_budget_frequency_hz = lb.resolve_single_link_budget_frequency_hz(self.sat_antenna)
+        self.bbox_buffer_deg = float(bbox_buffer_deg)
         self.footprint_stats = {"total": 0, "rejected_empty": 0}  # populated by _reflection_point_footprint, summarised at the end of calculate_moving_target_reflection_intersection
         self.initialization()
 
@@ -132,8 +135,7 @@ class MovingTargetDetection:
             """
             fig, ax = plt.subplots(figsize=(10, 6), subplot_kw={"projection": ccrs.PlateCarree()})
 
-            # TODO: buffer_deg is hardcoded here and in the other plot helpers — promote to an INI/[PLOT] setting when needed.
-            buffer_deg = 2.0
+            buffer_deg = self.bbox_buffer_deg
             min_lon, max_lon, min_lat, max_lat = self.bounding_box
             ax.set_extent([min_lon - buffer_deg, max_lon + buffer_deg, min_lat - buffer_deg, max_lat + buffer_deg], crs=ccrs.PlateCarree())
 
@@ -523,7 +525,7 @@ class MovingTargetDetection:
         # Set the map extent to your bounding box (order: west, east, south, north)
         
         #ax.set_global()
-        buffer_deg = 2.0
+        buffer_deg = self.bbox_buffer_deg
         min_lon, max_lon, min_lat, max_lat = self.bounding_box
         ax.set_extent([min_lon - buffer_deg, max_lon + buffer_deg, min_lat - buffer_deg, max_lat + buffer_deg], crs=ccrs.PlateCarree())
 
@@ -1212,7 +1214,7 @@ class MovingTargetDetection:
             return Polygon()
 
     def show_track_and_detection_points(self, gnss_constellation=None, file_name=None, show_figure=False,
-                                       delta_lon=2.0, delta_lat=2.0, verbose=False, label_detections=False) -> None:
+                                       delta_lon=None, delta_lat=None, verbose=False, label_detections=False) -> None:
         """
         =========================================================================================================
         Plot the detection points for each GNSS constellation. Filters out problematic polygons that
@@ -1222,12 +1224,17 @@ class MovingTargetDetection:
             gnss_constellation: [str | None]   Comma-separated constellation filter (default: all)
             file_name:          [str | None]   Output file name (default: do not save)
             show_figure:        [bool]         Display interactively (default: False)
-            delta_lon:          [float]        Longitude buffer added to bounds [deg] (default: 0.5)
-            delta_lat:          [float]        Latitude buffer added to bounds [deg] (default: 0.5)
+            delta_lon:          [float | None] Longitude buffer added to bounds [deg]; falls back to self.bbox_buffer_deg
+            delta_lat:          [float | None] Latitude buffer added to bounds [deg]; falls back to self.bbox_buffer_deg
             verbose:            [bool]         Print warnings (default: False)
             label_detections:   [bool]         Annotate detections with sat IDs (default: False)
         =========================================================================================================
         """
+        if delta_lon is None:
+            delta_lon = self.bbox_buffer_deg
+        if delta_lat is None:
+            delta_lat = self.bbox_buffer_deg
+
         # Calculate plot bounds once (with buffer for better visualization)
         min_lon, max_lon, min_lat, max_lat = self.bounding_box
         min_lon -= delta_lon

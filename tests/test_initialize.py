@@ -398,3 +398,30 @@ class TestOptionalSections:
         path = write_config(tmp_path, minimal_config_body(extra_sections=link_budget))
         with pytest.raises(ValueError, match="tx_eirp_dbw"):
             initialize(path)
+
+    def test_no_plot_section_defaults_bbox_buffer(self, tmp_path):
+        path = write_config(tmp_path, minimal_config_body())
+        _, settings = initialize(path)
+        assert settings["detection_bbox_buffer_deg"] == 2.0
+
+    def test_plot_section_overrides_bbox_buffer(self, tmp_path):
+        plot = dedent(
+            """\
+            [PLOT]
+            detection_bbox_buffer_deg = 0.75
+            """
+        )
+        path = write_config(tmp_path, minimal_config_body(extra_sections=plot))
+        _, settings = initialize(path)
+        assert settings["detection_bbox_buffer_deg"] == 0.75
+
+    def test_plot_section_invalid_bbox_buffer_raises_value_error(self, tmp_path):
+        plot = dedent(
+            """\
+            [PLOT]
+            detection_bbox_buffer_deg = not_a_number
+            """
+        )
+        path = write_config(tmp_path, minimal_config_body(extra_sections=plot))
+        with pytest.raises(ValueError, match="detection_bbox_buffer_deg"):
+            initialize(path)

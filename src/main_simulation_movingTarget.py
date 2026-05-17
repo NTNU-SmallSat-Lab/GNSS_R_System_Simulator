@@ -95,6 +95,7 @@ def run_moving_target_detection(settings: dict):
         earth_model=earth_model,
         reflection_mode=settings["reflection_type"],
         link_budget_settings=settings.get("link_budget"),
+        bbox_buffer_deg=settings["detection_bbox_buffer_deg"],
     )
 
     # Optimize: only compute and propagate for visible windows
