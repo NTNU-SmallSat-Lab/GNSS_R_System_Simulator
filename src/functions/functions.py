@@ -84,23 +84,29 @@ def to_utc_datetime_array(times):
     return np.array(normalized_times, dtype=object)
 
 
-def angle_between_vectors(v1, v2, unit="degrees"):
-    """
-    =========================================================================================================
-    Calculate the angle between two vectors in degrees
+def angle_between_vectors(v1, v2, unit="degrees", axis=0):
+    """Angle between two vectors (or two arrays of vectors).
+
+    Supports both single 3-vectors (shape (3,)) and stacks of vectors (e.g. shape (3, N) with axis=0).
+    The angle is rotation-invariant — pass any consistent frame (ECI or ECEF); the result is the same.
 
     INPUTS:
-        v1:         [np.array]               First vector
-        v2:         [np.array]               Second vector
+        v1:   [np.ndarray]     First vector(s)
+        v2:   [np.ndarray]     Second vector(s)
+        unit: [str]            "degrees" (default) or "radians"
+        axis: [int]            Axis along which the 3 components lie (default 0)
 
     OUTPUT:
-        angle between vectors: [np.float]    Angle between the vectors in degrees
-    =========================================================================================================
+        angle: [float | np.ndarray]   Scalar for (3,) inputs, ndarray for stacks
     """
-    dot_product = np.dot(v1, v2)
-    magnitude_a = np.linalg.norm(v1)
-    magnitude_b = np.linalg.norm(v2)
-    cos_theta = dot_product / (magnitude_a * magnitude_b)
+    v1 = np.asarray(v1, dtype=float)
+    v2 = np.asarray(v2, dtype=float)
+    dot_product = np.sum(v1 * v2, axis=axis)
+    magnitude_a = np.linalg.norm(v1, axis=axis)
+    magnitude_b = np.linalg.norm(v2, axis=axis)
+    # Clip guards against float rounding pushing cos_theta slightly outside [-1, 1] for nearly
+    # (anti-)parallel vectors — without it, arccos returns NaN at the extremes.
+    cos_theta = np.clip(dot_product / (magnitude_a * magnitude_b), -1.0, 1.0)
     theta_radians = np.arccos(cos_theta)
     if unit == "radians":
         return theta_radians

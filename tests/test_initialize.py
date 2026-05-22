@@ -399,6 +399,48 @@ class TestOptionalSections:
         with pytest.raises(ValueError, match="tx_eirp_dbw"):
             initialize(path)
 
+    def test_no_reflection_section_defaults_cutoff_angles(self, tmp_path):
+        path = write_config(tmp_path, minimal_config_body())
+        _, settings = initialize(path)
+        assert settings["max_central_angle_deg"] == 80.0
+        assert settings["max_incidence_angle_deg"] == 45.0
+
+    def test_reflection_section_overrides_cutoff_angles(self, tmp_path):
+        reflection = dedent(
+            """\
+            [REFLECTION]
+            reflection_type = backscatter
+            max_central_angle_deg = 70.0
+            max_incidence_angle_deg = 30.0
+            """
+        )
+        path = write_config(tmp_path, minimal_config_body(extra_sections=reflection))
+        _, settings = initialize(path)
+        assert settings["max_central_angle_deg"] == 70.0
+        assert settings["max_incidence_angle_deg"] == 30.0
+
+    def test_reflection_section_invalid_central_angle_raises(self, tmp_path):
+        reflection = dedent(
+            """\
+            [REFLECTION]
+            max_central_angle_deg = not_a_number
+            """
+        )
+        path = write_config(tmp_path, minimal_config_body(extra_sections=reflection))
+        with pytest.raises(ValueError, match="max_central_angle_deg"):
+            initialize(path)
+
+    def test_reflection_section_invalid_incidence_angle_raises(self, tmp_path):
+        reflection = dedent(
+            """\
+            [REFLECTION]
+            max_incidence_angle_deg = nope
+            """
+        )
+        path = write_config(tmp_path, minimal_config_body(extra_sections=reflection))
+        with pytest.raises(ValueError, match="max_incidence_angle_deg"):
+            initialize(path)
+
     def test_no_plot_section_defaults_bbox_buffer(self, tmp_path):
         path = write_config(tmp_path, minimal_config_body())
         _, settings = initialize(path)

@@ -88,6 +88,7 @@ def run_area_coverage_simulation(sim_settings):
         grid_size_m=30_000,
         earth_model=earth,
         link_budget_settings=sim_settings.get("link_budget"),
+        max_central_angle_deg=sim_settings["max_central_angle_deg"],
     )
     coverage.calculate_reflection_points_and_coverage(verbose=True)
 

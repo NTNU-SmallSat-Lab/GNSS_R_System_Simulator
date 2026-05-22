@@ -365,11 +365,31 @@ def initialize(config_file_name="Configuration.ini"):
 
 
 
-    # --- [REFLECTION] (NEW SECTION) ---
-    # We read the reflection type here to pass it to MovingTargetDetection later
-    reflection_type = "specular"  # Default fallback
+    # --- [REFLECTION] (OPTIONAL SECTION) ---
+    # Reflection type and per-mode angular cutoffs. max_central_angle_deg is shared by both
+    # specular and backscatter (both check the Tx-Rx central angle the same way).
+    # max_incidence_angle_deg applies only when reflection_type = backscatter; the specular
+    # geometry constrains incidence implicitly via the mirror condition.
+    reflection_type = "specular"
+    max_central_angle_deg = 80.0
+    max_incidence_angle_deg = 45.0
     if "REFLECTION" in config:
-        reflection_type = config["REFLECTION"].get("reflection_type", "specular").strip('"').strip("'")
+        section = config["REFLECTION"]
+        reflection_type = section.get("reflection_type", "specular").strip('"').strip("'")
+        if "max_central_angle_deg" in section:
+            try:
+                max_central_angle_deg = float(section["max_central_angle_deg"])
+            except ValueError:
+                raise ValueError(
+                    f"Invalid value for 'max_central_angle_deg' in [REFLECTION]: {section['max_central_angle_deg']}"
+                ) from None
+        if "max_incidence_angle_deg" in section:
+            try:
+                max_incidence_angle_deg = float(section["max_incidence_angle_deg"])
+            except ValueError:
+                raise ValueError(
+                    f"Invalid value for 'max_incidence_angle_deg' in [REFLECTION]: {section['max_incidence_angle_deg']}"
+                ) from None
 
     # --- [LINK BUDGET] (OPTIONAL SECTION) ---
     # Defaults derived from BistaticLinkBudgetSettings so the two stay in sync.
@@ -400,6 +420,8 @@ def initialize(config_file_name="Configuration.ini"):
         "step_size": step_size,
         "sim_duration": sim_duration,
         "reflection_type": reflection_type,
+        "max_central_angle_deg": max_central_angle_deg,
+        "max_incidence_angle_deg": max_incidence_angle_deg,
         #[ORBITS]
         "orbits": orbits_input,
         "No_satellites": len(orbits_input),

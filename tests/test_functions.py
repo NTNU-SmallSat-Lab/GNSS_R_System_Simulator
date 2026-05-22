@@ -111,6 +111,40 @@ class TestAngleBetweenVectors:
         with pytest.raises(ValueError, match="Unit must be either 'radians' or 'degrees'"):
             fn.angle_between_vectors(x, y, unit="gradians")
 
+    def test_vectorised_input_returns_per_column_angle(self):
+        # Three column-vectors per input → returns shape (3,)
+        a = np.array([[1.0, 1.0, 1.0], [0.0, 1.0, 0.0], [0.0, 0.0, 0.0]])
+        b = np.array([[1.0, 0.0, -1.0], [0.0, 1.0, 0.0], [0.0, 0.0, 0.0]])
+        # Per-column expected: parallel (0°), 45°, anti-parallel (180°)
+        result = fn.angle_between_vectors(a, b)
+        assert result.shape == (3,)
+        assert result[0] == pytest.approx(0.0, abs=1e-9)
+        assert result[1] == pytest.approx(45.0, abs=1e-9)
+        assert result[2] == pytest.approx(180.0, abs=1e-9)
+
+    def test_small_magnitude_antiparallel_no_nan(self):
+        # Small-magnitude anti-parallel vectors can produce cos_theta slightly outside [-1, 1]
+        # due to float rounding in the dot/norm division. The clip keeps arccos safe.
+        v = np.array([1e-9, 2e-9, 3e-9])
+        result = fn.angle_between_vectors(v, -v)
+        assert not np.isnan(result)
+        assert result == pytest.approx(180.0, abs=1e-5)
+
+    def test_frame_invariance_under_z_rotation(self):
+        # ECI↔ECEF is a rotation about z (plus tiny corrections); the angle between two
+        # vectors is preserved under any shared rotation.
+        v1 = np.array([7000.0, 0.0, 100.0])
+        v2 = np.array([20000.0, 5000.0, -200.0])
+        theta_z = np.deg2rad(37.0)
+        Rz = np.array([
+            [np.cos(theta_z), -np.sin(theta_z), 0.0],
+            [np.sin(theta_z),  np.cos(theta_z), 0.0],
+            [0.0,              0.0,             1.0],
+        ])
+        original = fn.angle_between_vectors(v1, v2)
+        rotated = fn.angle_between_vectors(Rz @ v1, Rz @ v2)
+        assert rotated == pytest.approx(original, abs=1e-12)
+
 
 # --------------------------------------------------------------------------- #
 # skew_matrix                                                                 #

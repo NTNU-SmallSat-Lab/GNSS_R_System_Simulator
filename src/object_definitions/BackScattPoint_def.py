@@ -16,7 +16,7 @@ class BRP:
     def _is_valid_earth_model(model):
         return model in ["spherical", "elliptical"]
 
-    def __init__(self, gps_index, leo_index, cutoff_angle=45, earth_model="spherical", gnss_const=None):
+    def __init__(self, gps_index, leo_index, max_central_angle_deg=80.0, max_incidence_angle_deg=45.0, earth_model="spherical", gnss_const=None):
 
         # Earth model check
         if not BRP._is_valid_earth_model(earth_model):
@@ -24,7 +24,8 @@ class BRP:
 
         self.tx_satID = gps_index
         self.rx_satID = leo_index
-        self.cutoff_angle = cutoff_angle
+        self.max_central_angle_deg = float(max_central_angle_deg)
+        self.max_incidence_angle_deg = float(max_incidence_angle_deg)
         self.earth_model = earth_model
         self.gnss_const = gnss_const
 
@@ -81,7 +82,7 @@ class BRP:
             T_ecef = T_ecef_all[k]
             R_ecef = R_ecef_all[k]
 
-            brp, tval, reason = calculate_ellipsoid_intersection_t(T_ecef, R_ecef, a=a, b=b, cutoff_angle=self.cutoff_angle)
+            brp, tval, reason = calculate_ellipsoid_intersection_t(T_ecef, R_ecef, a=a, b=b, max_central_angle_deg=self.max_central_angle_deg)
             if reason == "ok":
                 ray_vec = R_ecef - brp
                 # Incidence angle is measured from the local ellipsoid normal at the BRP
@@ -92,7 +93,7 @@ class BRP:
                 cos_theta = np.clip(cos_theta, -1.0, 1.0)
                 theta_deg = np.degrees(np.arccos(cos_theta))
 
-                if theta_deg < self.cutoff_angle:
+                if theta_deg < self.max_incidence_angle_deg:
                     brp_ECEF_vec[k] = brp
                     incidence_angles[k] = theta_deg
 
@@ -176,17 +177,7 @@ class BRP:
 # ===============================
 #   GEOMETRY FUNCTIONS
 # ===============================
-def calculate_central_angle(pos_a, pos_b):
-    """Angle (deg) between two position vectors as seen from Earth's centre."""
-    a_norm = np.linalg.norm(pos_a)
-    b_norm = np.linalg.norm(pos_b)
-    if a_norm == 0 or b_norm == 0:
-        return np.nan
-    cos_gamma = np.clip(np.dot(pos_a, pos_b) / (a_norm * b_norm), -1.0, 1.0)
-    return np.degrees(np.arccos(cos_gamma))
-
-
-def calculate_ellipsoid_intersection_t(tx_ecef, rx_ecef, a=a, b=b, cutoff_angle=45):
+def calculate_ellipsoid_intersection_t(tx_ecef, rx_ecef, a=a, b=b, max_central_angle_deg=80.0):
     """Intersect the line through Tx and Rx with the WGS-84 ellipsoid; return the near-side surface point past Rx.
 
     The line is parameterised as tx_ecef + t * u, with u pointing from Tx toward Rx. Positive t
@@ -196,8 +187,8 @@ def calculate_ellipsoid_intersection_t(tx_ecef, rx_ecef, a=a, b=b, cutoff_angle=
     tx_ecef = np.asarray(tx_ecef, float)
     rx_ecef = np.asarray(rx_ecef, float)
 
-    central_angle = calculate_central_angle(tx_ecef, rx_ecef)
-    if central_angle >= cutoff_angle:
+    central_angle = fn.angle_between_vectors(tx_ecef, rx_ecef)
+    if central_angle >= max_central_angle_deg:
         return None, None, "opposite_side"
 
     d = rx_ecef - tx_ecef

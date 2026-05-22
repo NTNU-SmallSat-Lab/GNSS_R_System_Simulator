@@ -26,7 +26,7 @@ def main() -> None:
     # Equatorial-plane geometries, varying central angle. Low latitude => the
     # flattening effect on the specular point is small, so ellipse ~ sphere.
     refl = Reflection(tx_satID="dummy", rx_satID="dummy",
-                      earth_model="elliptical", angle=45)
+                      earth_model="elliptical", max_central_angle_deg=80.0)
 
     cases = []
     for sep_deg in (10.0, 20.0, 30.0, 40.0):

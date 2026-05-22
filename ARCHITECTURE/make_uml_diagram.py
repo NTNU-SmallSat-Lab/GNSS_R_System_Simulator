@@ -237,7 +237,7 @@ CLASSES: list[UClass] = [
         attrs=[
             "tx_satID,  rx_satID",
             "earth_model",
-            "cutoff_angle",
+            "max_central_angle_deg",
             "gnss_const",
             "time_vec",
             "refl_ECI_vec / refl_LL_vec",
@@ -254,7 +254,8 @@ CLASSES: list[UClass] = [
         attrs=[
             "tx_satID,  rx_satID",
             "earth_model",
-            "cutoff_angle",
+            "max_central_angle_deg",
+            "max_incidence_angle_deg",
             "gnss_const",
             "time_vec",
             "refl_ECI_vec / refl_LL_vec",

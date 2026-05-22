@@ -32,6 +32,7 @@ class Coverage:
         overwrite_shapefile=False,
         earth_model="spherical",
         link_budget_settings=None,
+        max_central_angle_deg=80.0,
     ) -> None:
         """
         =========================================================================================================
@@ -41,14 +42,15 @@ class Coverage:
         and reflection vectors.
 
         INPUTS:
-            sat_const:            [SatelliteConstellation]   LEO Rx satellite constellation
-            gnss_const:           [dict]                     {name: SatelliteConstellation} of GNSS Tx constellations
-            shapefile:            [str]                      Path to the shapefile defining the grid
-            grid_size_deg:        [float | None]             Grid cell size in degrees (equiangular grid)
-            grid_size_m:          [float | None]             Grid cell size in meters (equidistant grid)
-            overwrite_shapefile:  [bool]                     Regenerate the gridded shapefile if it exists
-            earth_model:          [str]                      "spherical" or "elliptical"
-            link_budget_settings: [dict | BistaticLinkBudgetSettings | None]   Link budget settings
+            sat_const:             [SatelliteConstellation]   LEO Rx satellite constellation
+            gnss_const:            [dict]                     {name: SatelliteConstellation} of GNSS Tx constellations
+            shapefile:             [str]                      Path to the shapefile defining the grid
+            grid_size_deg:         [float | None]             Grid cell size in degrees (equiangular grid)
+            grid_size_m:           [float | None]             Grid cell size in meters (equidistant grid)
+            overwrite_shapefile:   [bool]                     Regenerate the gridded shapefile if it exists
+            earth_model:           [str]                      "spherical" or "elliptical"
+            link_budget_settings:  [dict | BistaticLinkBudgetSettings | None]   Link budget settings
+            max_central_angle_deg: [float]                    Max Tx-Rx central angle [deg] (default: 80.0)
         =========================================================================================================
         """
         # Path to the input shapefile (outline of the area of interest)
@@ -76,6 +78,7 @@ class Coverage:
         self.sat_constellation = sat_const  # Satellite constellation object
         self.gnss_constellation = gnss_const  # Dictionary with GNSS constellation objects
         self.link_budget_settings = link_budget_settings
+        self.max_central_angle_deg = float(max_central_angle_deg)
         if earth_model not in ["spherical", "elliptical"]:
             raise ValueError("earth_model must be either 'spherical' or 'elliptical'")
         else:
@@ -213,14 +216,13 @@ class Coverage:
                             self.coverage_dict[gnss_name][rect_idx].angles.append(angle)
                             self.coverage_dict[gnss_name][rect_idx].power.append(power)
 
-    def calculate_reflection_points_and_coverage(self, angle=45, verbose=False):
+    def calculate_reflection_points_and_coverage(self, verbose=False):
         """
         =========================================================================================================
         Compute reflection points between satellites for every (LEO, GNSS) pair, then accumulate
         per-cell coverage from the resulting reflection vectors.
 
         INPUTS:
-            angle:   [float]   Cutoff angle in degrees (default: 45)
             verbose: [bool]    Print per-constellation progress (default: False)
         =========================================================================================================
         """
@@ -248,7 +250,7 @@ class Coverage:
                             gnss_sat.satID,
                             sat.satID,
                             earth_model=self.earth_model,
-                            angle=angle,
+                            max_central_angle_deg=self.max_central_angle_deg,
                             gnss_const=gnss_name,
                         )
                         antenna_obj = sat.gnss_r_antenna if hasattr(sat, "gnss_r_antenna") else None

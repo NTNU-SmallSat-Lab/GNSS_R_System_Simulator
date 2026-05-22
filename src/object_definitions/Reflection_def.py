@@ -14,7 +14,7 @@ class Reflection:
         tx_satID=None,
         rx_satID=None,
         earth_model=None,
-        angle=None,
+        max_central_angle_deg=80.0,
         gnss_const=None,
     ):
         """
@@ -22,11 +22,11 @@ class Reflection:
         Reflection class:
             - Defines a reflection object: Initialized with the following parameters:
                 INPUTS:
-                - tx_satID:     Transmitting satellite ID (GNSS satellite IS)
-                - rx_satID:     Receiving satellite ID    (LEO satellite ID)
-                - earth model:                            (spherical or elliptical)
-                - angle:                                  (Cutoff angle) (default: 45 degrees)
-                - gnss_const:   GNSS constellation        (GPS, GLONASS, GALILEO, BEIDOU) (optional)
+                - tx_satID:               Transmitting satellite ID (GNSS satellite)
+                - rx_satID:               Receiving satellite ID    (LEO satellite)
+                - earth model:                                      (spherical or elliptical)
+                - max_central_angle_deg:                            (Max Tx-Rx central angle [deg], default 80.0)
+                - gnss_const:             GNSS constellation        (GPS, GLONASS, GALILEO, BEIDOU) (optional)
 
                 ATTRIBUTES:
                 - earth_model:  Earth model               (spherical or elliptical)
@@ -46,19 +46,14 @@ class Reflection:
         elif not Reflection._is_valid_earth_model(earth_model):
             raise ValueError(f"Invalid earth_model {earth_model!r}. Use either 'spherical' or 'elliptical'.")
 
-        if angle is None:
-            # If not specified, use the default cutoff angle of 45 degrees
-            print("Cutoff angle not specified - Using default (45 degrees)")
-            angle = 45
-
         if tx_satID is None or rx_satID is None:
             raise ValueError("Transmitting and Receiving satellite IDs are required to initialize a Reflection object.")
-        self.initialization(earth_model, angle, tx_satID, rx_satID, gnss_const)
+        self.initialization(earth_model, max_central_angle_deg, tx_satID, rx_satID, gnss_const)
 
-    def initialization(self, earth_model, angle, tx_satID, rx_satID, gnss_const):
+    def initialization(self, earth_model, max_central_angle_deg, tx_satID, rx_satID, gnss_const):
         self.earth_model = earth_model  # 'spherical' or 'elliptical'
         self.gnss_const = gnss_const  # Could be [GPS, GLONASS, GALILEO, BEIDOU]
-        self.cutoff_angle = angle
+        self.max_central_angle_deg = float(max_central_angle_deg)
         self.tx_satID = tx_satID
         self.rx_satID = rx_satID
         self.time_vec = []
@@ -95,16 +90,12 @@ class Reflection:
         specular_point_vec = np.full((num_positions, 3), np.nan)
         specular_point_ecef_vec = None
 
-        # Calculate the angles (theta) between GPS and satellite positions
-        dot_product = np.einsum("ij,ij->j", GNSS_state.positions_eci, Sat_state.positions_eci)
-        magnitude_a = np.linalg.norm(GNSS_state.positions_eci, axis=0)
-        magnitude_b = np.linalg.norm(Sat_state.positions_eci, axis=0)
-        cos_theta = dot_product / (magnitude_a * magnitude_b)
-        theta = np.degrees(np.arccos(cos_theta))
+        # Central angle between Tx and Rx position vectors (rotation-invariant — ECI or ECEF works).
+        theta = fn.angle_between_vectors(GNSS_state.positions_eci, Sat_state.positions_eci)
 
         # Precompute line-of-sight (LOS) and valid theta indices for efficiency
         los_mask = np.array([self._check_los_satellites(Sat_state.positions_eci[:, i], GNSS_state.positions_eci[:, i]) for i in range(num_positions)])
-        valid_indices = (theta < self.cutoff_angle) & los_mask
+        valid_indices = (theta < self.max_central_angle_deg) & los_mask
         valid_index_array = np.where(valid_indices)[0]
 
         # Loop through satellite positions with valid LOS to compute reflection points
