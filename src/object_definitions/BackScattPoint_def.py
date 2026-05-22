@@ -176,30 +176,37 @@ class BRP:
 # ===============================
 #   GEOMETRY FUNCTIONS
 # ===============================
-def calculate_central_angle(R, T):
-    R_norm = np.linalg.norm(R)
-    T_norm = np.linalg.norm(T)
-    if R_norm == 0 or T_norm == 0:
+def calculate_central_angle(pos_a, pos_b):
+    """Angle (deg) between two position vectors as seen from Earth's centre."""
+    a_norm = np.linalg.norm(pos_a)
+    b_norm = np.linalg.norm(pos_b)
+    if a_norm == 0 or b_norm == 0:
         return np.nan
-    cos_gamma = np.clip(np.dot(R, T) / (R_norm * T_norm), -1.0, 1.0)
+    cos_gamma = np.clip(np.dot(pos_a, pos_b) / (a_norm * b_norm), -1.0, 1.0)
     return np.degrees(np.arccos(cos_gamma))
 
 
-def calculate_ellipsoid_intersection_t(R, T, a=a, b=b, cutoff_angle=45):
-    R = np.asarray(R, float)
-    T = np.asarray(T, float)
+def calculate_ellipsoid_intersection_t(tx_ecef, rx_ecef, a=a, b=b, cutoff_angle=45):
+    """Intersect the line through Tx and Rx with the WGS-84 ellipsoid; return the near-side surface point past Rx.
 
-    central_angle = calculate_central_angle(R, T)
+    The line is parameterised as tx_ecef + t * u, with u pointing from Tx toward Rx. Positive t
+    moves along that line past Rx toward Earth, so the smaller positive root is the surface point
+    on the Rx-side of Earth — the retroreflector BRP.
+    """
+    tx_ecef = np.asarray(tx_ecef, float)
+    rx_ecef = np.asarray(rx_ecef, float)
+
+    central_angle = calculate_central_angle(tx_ecef, rx_ecef)
     if central_angle >= cutoff_angle:
         return None, None, "opposite_side"
 
-    d = T - R
+    d = rx_ecef - tx_ecef
     nd = np.linalg.norm(d)
     if nd == 0:
         return None, None, "degenerate"
 
     u = d / nd
-    x0, y0, z0 = R
+    x0, y0, z0 = tx_ecef
     ux, uy, uz = u
 
     A_p = b**2 * (ux**2 + uy**2) + a**2 * uz**2
@@ -221,5 +228,5 @@ def calculate_ellipsoid_intersection_t(R, T, a=a, b=b, cutoff_angle=45):
     else:
         return None, None, "outside_segment"
 
-    P = R + t*u
+    P = tx_ecef + t*u
     return P, t, "ok"
