@@ -8,7 +8,6 @@ from object_definitions.Constants_def import Constants
 from object_definitions.Rx_antenna_def import RxAntenna
 from object_definitions.Satellite_def import Satellite
 
-
 class Reflection:
     def __init__(
         self,
