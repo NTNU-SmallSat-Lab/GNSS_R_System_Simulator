@@ -399,13 +399,13 @@ class TestOptionalSections:
         with pytest.raises(ValueError, match="tx_eirp_dbw"):
             initialize(path)
 
-    def test_no_reflection_section_defaults_cutoff_angles(self, tmp_path):
+    def test_no_reflection_section_defaults_angle_thresholds(self, tmp_path):
         path = write_config(tmp_path, minimal_config_body())
         _, settings = initialize(path)
         assert settings["max_central_angle_deg"] == 80.0
         assert settings["max_incidence_angle_deg"] == 45.0
 
-    def test_reflection_section_overrides_cutoff_angles(self, tmp_path):
+    def test_reflection_section_overrides_angle_thresholds(self, tmp_path):
         reflection = dedent(
             """\
             [REFLECTION]

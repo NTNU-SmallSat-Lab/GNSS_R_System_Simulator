@@ -3,6 +3,7 @@ import pymap3d
 
 import functions.functions as fn
 import functions.link_budget as lb
+from functions.rotations import eci_to_antenna_rotation_from_state
 from object_definitions.Constants_def import Constants
 from object_definitions.Rx_antenna_def import RxAntenna
 from object_definitions.Satellite_def import Satellite
@@ -77,10 +78,35 @@ class BRP:
                     np.isfinite(R_ecef_all).all(axis=1))
         valid_idx = np.where(valid_mask)[0]
 
+        # Whether to gate on antenna FOV before computing the BRP. The retroreflector look
+        # direction from the LEO is parallel to (LEO - Tx), so we can check the off-boresight
+        # angle without solving for the BRP first — saves the quadratic for samples the antenna
+        # could never receive from anyway.
+        antenna_fov_gating = antenna is not None and getattr(antenna, "max_steering_off_boresight_deg", None) is not None
+
         # --- Compute BRP for each GLOBAL index (geometry only; defer ECI conversion to batch below)
         for k in valid_idx:
             T_ecef = T_ecef_all[k]
             R_ecef = R_ecef_all[k]
+
+            if antenna_fov_gating:
+                R_eci_to_antenna = eci_to_antenna_rotation_from_state(
+                    Sat_state.positions_eci[:, k],
+                    Sat_state.velocities_eci[:, k],
+                    antenna,
+                    q_sat,
+                )
+                if R_eci_to_antenna is None:
+                    continue
+                look_eci = Sat_state.positions_eci[:, k] - GNSS_state.positions_eci[:, k]
+                look_eci_norm = np.linalg.norm(look_eci)
+                if look_eci_norm <= 0.0:
+                    continue
+                look_a = R_eci_to_antenna @ (look_eci / look_eci_norm)
+                # Antenna boresight is +z in the antenna frame; off-boresight = arccos(look_a[2]).
+                off_boresight_deg = np.degrees(np.arccos(np.clip(look_a[2], -1.0, 1.0)))
+                if off_boresight_deg > antenna.max_steering_off_boresight_deg:
+                    continue
 
             brp, tval, reason = calculate_ellipsoid_intersection_t(T_ecef, R_ecef, a=a, b=b, max_central_angle_deg=self.max_central_angle_deg)
             if reason == "ok":
