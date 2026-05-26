@@ -1,4 +1,5 @@
-"""Golden-file regression test for the antenna gain pipeline.
+"""
+Golden-file regression test for the antenna gain pipeline.
 
 Captures the output of RxAntenna.get_gain_dbi_for_direction over a fixed grid of inputs in
 a synthesized antenna setup, and compares to a stored reference. Any change to the gain

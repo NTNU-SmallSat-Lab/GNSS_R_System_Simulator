@@ -15,7 +15,9 @@ if TYPE_CHECKING:
 
 
 class OceanTarget(Target):
-    """Simplified ocean RCS: sigma0(theta_i) x A_fresnel x fresnel_scale."""
+    """
+    Simplified ocean RCS: sigma0(theta_i) x A_fresnel x fresnel_scale.
+    """
 
     def __init__(
         self,
@@ -31,7 +33,9 @@ class OceanTarget(Target):
 
     @classmethod
     def from_settings(cls, settings: "BistaticLinkBudgetSettings") -> "OceanTarget":
-        """Build an OceanTarget from the ocean-related fields of BistaticLinkBudgetSettings."""
+        """
+        Build an OceanTarget from the ocean-related fields of BistaticLinkBudgetSettings.
+        """
         return cls(
             sigma0_db=settings.ocean_sigma0_db,
             slope_db_per_deg=settings.ocean_sigma_slope_db_per_deg,
@@ -40,7 +44,9 @@ class OceanTarget(Target):
         )
 
     def compute_rcs(self, geometry: "BistaticGeometry", wavelength_m: float) -> TargetRcs:
-        """Return ocean RCS [m^2] + diagnostics (sigma0_db, fresnel_area_m2) per sample."""
+        """
+        Return ocean RCS [m^2] + diagnostics (sigma0_db, fresnel_area_m2) per sample.
+        """
         incidence_deg = geometry.incidence_angle_deg
         range_tx_m = geometry.range_tx_m
         range_rx_m = geometry.range_rx_m

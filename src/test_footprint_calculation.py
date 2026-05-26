@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 import sys
-
 import numpy as np
 
 SRC_DIR = Path(__file__).resolve().parent
@@ -21,7 +20,6 @@ from __init__ import initialize
 from functions.functions import compute_footprint
 from object_definitions.Constants_def import Constants
 from object_definitions.Rx_antenna_def import RxAntenna
-
 
 L1_MHZ = 1575.42
 L5_MHZ = 1176.45

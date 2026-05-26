@@ -60,7 +60,8 @@ def coerce_link_budget_settings(settings: dict | BistaticLinkBudgetSettings | No
 
 @dataclass(frozen=True, slots=True)
 class BistaticGeometry:
-    """Per-sample bistatic geometry: surface normal, propagation directions, ranges and angles.
+    """
+    Per-sample bistatic geometry: surface normal, propagation directions, ranges and angles.
 
     Conventions:
         - `k_hat_in`  points from Tx to surface (incoming propagation direction).
@@ -89,7 +90,8 @@ def build_bistatic_geometry(
     surface_positions: np.ndarray,
     surface_normals: np.ndarray,
 ) -> BistaticGeometry:
-    """Compute per-sample bistatic geometry from Tx, Rx, surface positions and surface normals.
+    """
+    Compute per-sample bistatic geometry from Tx, Rx, surface positions and surface normals.
 
     INPUTS:
         tx_positions:      [np.ndarray, shape (3, n)]   Transmitter positions [m]
