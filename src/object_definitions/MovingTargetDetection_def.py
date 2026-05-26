@@ -109,6 +109,16 @@ class MovingTargetDetection:
             self.max_incidence_angle_deg = float(max_incidence_angle_deg)
         else:
             self.max_incidence_angle_deg = None
+
+        # Per-constellation transmit EIRP, looked up once at construction so configuration
+        # mismatches (no L1-equivalent band for this constellation) fail fast instead of
+        # midway through propagation.
+        self.tx_eirp_dbw_per_constellation = {}
+        for gnss_name in self.gnss_constellation:
+            self.tx_eirp_dbw_per_constellation[gnss_name] = Constants.get_tx_eirp_dbw(
+                gnss_name, self.link_budget_frequency_hz
+            )
+
         self.footprint_stats = {"total": 0, "rejected_empty": 0}  # populated by _reflection_point_footprint, summarised at the end of calculate_moving_target_reflection_intersection
         self.initialization()
 
@@ -272,6 +282,7 @@ class MovingTargetDetection:
                             # Update progress bar description (only every 5th iteration)
                             pbar.set_description(f"GNSS-R Sat-{sat_no + 1} with {gnss_name} [{i}/{len(gnss_const.satellites)}]")
 
+                        tx_eirp_dbw = self.tx_eirp_dbw_per_constellation[gnss_name]
                         if self.reflection_mode == "specular":
                             reflection = Reflection(
                                 sat_tx.satID,
@@ -284,6 +295,7 @@ class MovingTargetDetection:
                                 sat_tx,
                                 sat_rx,
                                 times_refl_array,
+                                tx_eirp_dbw=tx_eirp_dbw,
                                 antenna=self.sat_antenna,
                                 frequency_hz=self.link_budget_frequency_hz,
                                 link_budget_settings=self.link_budget_settings,
@@ -302,6 +314,7 @@ class MovingTargetDetection:
                                 sat_tx,
                                 sat_rx,
                                 times_refl_array,
+                                tx_eirp_dbw=tx_eirp_dbw,
                                 antenna=self.sat_antenna,
                                 frequency_hz=self.link_budget_frequency_hz,
                                 link_budget_settings=self.link_budget_settings,

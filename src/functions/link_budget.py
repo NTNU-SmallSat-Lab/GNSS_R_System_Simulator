@@ -22,7 +22,6 @@ class BistaticLinkBudgetSettings:
     field names, defaults and units defined here are picked up automatically by the loader.
 
     ATTRIBUTES:
-        tx_eirp_dbw:               [float]  GNSS transmitter EIRP [dBW]
         system_losses_db:          [float]  Lumped implementation losses [dB]
         polarization_losses_db:    [float]  Receiver-side polarization mismatch losses [dB]
         ocean_wave_height_m:       [float]  RMS wave height [m]  (Rayleigh roughness diagnostic)
@@ -30,9 +29,11 @@ class BistaticLinkBudgetSettings:
         ocean_wind_direction_deg:  [float]  Wind direction (meteorological FROM bearing) [deg]
         ocean_sea_temperature_c:   [float]  Sea surface temperature [degC]
         ocean_salinity_psu:        [float]  Salinity (practical salinity units) [psu]
+
+    NOTE: GNSS transmitter EIRP is per-(constellation, band) and lives in
+    `Constants.GNSS_EIRP_DBW` — it is not a link-budget config knob.
     """
 
-    tx_eirp_dbw: float = 27.0
     system_losses_db: float = 2.0
     polarization_losses_db: float = 0.5
     ocean_wave_height_m: float = 1.5
@@ -215,6 +216,7 @@ def compute_reflection_link_budget(
     incidence_deg: np.ndarray,
     antenna: RxAntenna | None,
     frequency_hz: float,
+    tx_eirp_dbw: float,
     settings: dict | BistaticLinkBudgetSettings | None = None,
     q_sat: np.ndarray | None = None,
     target: "Target | None" = None,
@@ -234,9 +236,10 @@ def compute_reflection_link_budget(
         incidence_deg:            [np.ndarray, shape (n,)]    Incidence angle at reflection point [deg]
         antenna:                  [RxAntenna | None]          Receiver antenna (None => isotropic 0 dBi)
         frequency_hz:             [float]                     Carrier frequency [Hz]
-        settings:                 [dict | BistaticLinkBudgetSettings | None]  Link budget settings
+        tx_eirp_dbw:              [float]                     Transmitter EIRP for this (constellation, band) [dBW]
+        settings:                 [dict | BistaticLinkBudgetSettings | None]  Rx-system link-budget settings
         q_sat:                    [np.ndarray, shape (4,) | None]  Satellite attitude quaternion [w, x, y, z]
-        target:                   [Target | None]             RCS model; defaults to OceanTarget.from_settings(settings) (default: No ship)
+        target:                   [Target | None]             RCS model; defaults to OceanTarget.from_settings(settings)
 
     OUTPUT:
         link_budget: [dict]   Link budget components and received power arrays
@@ -314,6 +317,7 @@ def compute_reflection_link_budget(
         rx_gain_dbi=rx_gain_dbi,
         rcs_m2=target_rcs.rcs_m2,
         frequency_hz=frequency_hz,
+        tx_eirp_dbw=tx_eirp_dbw,
         settings=settings_obj,
     )
     link_budget["incidence_deg"] = geometry.incidence_angle_deg
@@ -396,6 +400,7 @@ def compute_bistatic_link_budget(
     rx_gain_dbi: np.ndarray,
     rcs_m2: np.ndarray,
     frequency_hz: float,
+    tx_eirp_dbw: float,
     settings: dict | BistaticLinkBudgetSettings | None = None,
 ) -> dict:
     """
@@ -414,7 +419,8 @@ def compute_bistatic_link_budget(
         rx_gain_dbi:   [np.ndarray]   Receiver antenna gain along look direction [dBi]
         rcs_m2:        [np.ndarray]   Target RCS per sample [m^2]; supplied by a Target implementation
         frequency_hz:  [float]        Carrier frequency [Hz]
-        settings:      [dict | BistaticLinkBudgetSettings | None]   Link budget settings (Tx/system)
+        tx_eirp_dbw:   [float]        Transmitter EIRP for the specific (constellation, band) [dBW]
+        settings:      [dict | BistaticLinkBudgetSettings | None]   Rx-system link-budget settings
 
     OUTPUT:
         link_budget: [dict]   Link budget components and received power arrays
@@ -452,7 +458,7 @@ def compute_bistatic_link_budget(
         bistatic_spreading_loss_db[valid_bistatic] = fspl_sum_db[valid_bistatic] - 10.0 * np.log10((4.0 * np.pi) / (wavelength_m**2))
 
     total_losses_lin = _linear_from_db(settings_obj.system_losses_db + settings_obj.polarization_losses_db)
-    tx_eirp_w = _linear_from_db(settings_obj.tx_eirp_dbw)
+    tx_eirp_w = _linear_from_db(tx_eirp_dbw)
     rx_gain_lin = _linear_from_db(rx_gain_dbi)
 
     denom = ((4.0 * np.pi) ** 3) * (range_tx_m**2) * (range_rx_m**2) * total_losses_lin

@@ -243,6 +243,11 @@ class Coverage:
                     # Update status but don't advance the progress bar yet
                     pbar.set_description(f"GNSS-R Sat-{sat_no + 1} with {gnss_name}")
 
+                    # Resolve antenna and EIRP once per LEO satellite, then reuse across all GNSS Tx pairings.
+                    antenna_obj = sat.gnss_r_antenna if hasattr(sat, "gnss_r_antenna") else None
+                    frequency_hz = lb.resolve_single_link_budget_frequency_hz(antenna_obj)
+                    tx_eirp_dbw = Constants.get_tx_eirp_dbw(gnss_name, frequency_hz)
+
                     for i, gnss_sat in enumerate(gnss_const.satellites):
                         if i % 5 == 0:
                             pbar.set_description(f"GNSS-R Sat-{sat_no + 1} with {gnss_name} [{i}/{len(gnss_const.satellites)}]")
@@ -254,12 +259,11 @@ class Coverage:
                             max_central_angle_deg=self.max_central_angle_deg,
                             gnss_const=gnss_name,
                         )
-                        antenna_obj = sat.gnss_r_antenna if hasattr(sat, "gnss_r_antenna") else None
-                        frequency_hz = lb.resolve_single_link_budget_frequency_hz(antenna_obj)
                         refl_gnss.compute_reflection_coordinates(
                             gnss_sat,
                             sat,
                             times,
+                            tx_eirp_dbw=tx_eirp_dbw,
                             antenna=antenna_obj,
                             frequency_hz=frequency_hz,
                             link_budget_settings=self.link_budget_settings,

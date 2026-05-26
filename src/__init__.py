@@ -395,12 +395,13 @@ def initialize(config_file_name="Configuration.ini"):
             ) from None
 
     # --- [LINK BUDGET] (REQUIRED SECTION) ---
-    # Transmitter and receiver-system parameters. No fallback defaults; missing keys raise.
+    # Receiver-system parameters. No fallback defaults; missing keys raise.
+    # (Transmit EIRP is per-(constellation, band) and lives in Constants.GNSS_EIRP_DBW.)
     if "LINK BUDGET" not in config:
         raise ValueError("[LINK BUDGET] section is required in the configuration file.")
     section = config["LINK BUDGET"]
     link_budget = {}
-    for key in ("tx_eirp_dbw", "system_losses_db", "polarization_losses_db"):
+    for key in ("system_losses_db", "polarization_losses_db"):
         if key not in section:
             raise ValueError(f"[LINK BUDGET].{key} is required in the configuration file.")
         try:

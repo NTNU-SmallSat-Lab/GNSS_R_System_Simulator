@@ -135,6 +135,7 @@ class TestAntennaFovPreGate:
             times=times,
             antenna=antenna,
             frequency_hz=1575.42e6,
+            tx_eirp_dbw=27.0,
         )
         assert np.isfinite(brp.refl_LL_vec).all()
 
@@ -152,6 +153,7 @@ class TestAntennaFovPreGate:
             times=times,
             antenna=antenna,
             frequency_hz=1575.42e6,
+            tx_eirp_dbw=27.0,
         )
         assert np.isnan(brp.refl_LL_vec).all()
 
@@ -165,5 +167,6 @@ class TestAntennaFovPreGate:
             times=times,
             antenna=None,
             frequency_hz=1575.42e6,
+            tx_eirp_dbw=27.0,
         )
         assert np.isfinite(brp.refl_LL_vec).all()

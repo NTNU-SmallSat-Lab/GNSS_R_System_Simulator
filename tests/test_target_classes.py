@@ -204,6 +204,7 @@ class TestComputeReflectionLinkBudgetIntegration:
             incidence_deg=incidence_deg,
             antenna=None,
             frequency_hz=1.57542e9,
+            tx_eirp_dbw=27.0,
             settings=None,
         )
         ocean = OceanTarget.from_settings(BistaticLinkBudgetSettings())
@@ -215,6 +216,7 @@ class TestComputeReflectionLinkBudgetIntegration:
             incidence_deg=incidence_deg,
             antenna=None,
             frequency_hz=1.57542e9,
+            tx_eirp_dbw=27.0,
             settings=None,
             target=ocean,
         )
@@ -232,6 +234,7 @@ class TestComputeReflectionLinkBudgetIntegration:
             incidence_deg=incidence_deg,
             antenna=None,
             frequency_hz=1.57542e9,
+            tx_eirp_dbw=27.0,
             settings=None,
         )
         for key in (
@@ -261,6 +264,7 @@ class TestComputeReflectionLinkBudgetIntegration:
             incidence_deg=incidence_deg,
             antenna=None,
             frequency_hz=1.57542e9,
+            tx_eirp_dbw=27.0,
             settings=None,
             target=FixedRcs(),
         )
@@ -286,6 +290,7 @@ class TestComputeReflectionLinkBudgetIntegration:
             incidence_deg=incidence_deg,
             antenna=None,
             frequency_hz=1.57542e9,
+            tx_eirp_dbw=27.0,
             settings=None,
             target=FixedRcs(50.0),
         )
@@ -297,6 +302,7 @@ class TestComputeReflectionLinkBudgetIntegration:
             incidence_deg=incidence_deg,
             antenna=None,
             frequency_hz=1.57542e9,
+            tx_eirp_dbw=27.0,
             settings=None,
             target=FixedRcs(100.0),
         )

@@ -73,6 +73,7 @@ class Reflection:
         GNSS_state: Satellite,
         Sat_state: Satellite,
         times: np.ndarray,
+        tx_eirp_dbw: float,
         antenna: RxAntenna | None = None,
         frequency_hz: float | None = None,
         link_budget_settings: dict | lb.BistaticLinkBudgetSettings | None = None,
@@ -210,6 +211,7 @@ class Reflection:
             incidence_deg=incidence_deg,
             antenna=antenna,
             frequency_hz=frequency_hz,
+            tx_eirp_dbw=tx_eirp_dbw,
             settings=link_budget_settings,
             q_sat=q_sat,
         )

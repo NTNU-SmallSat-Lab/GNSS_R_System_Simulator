@@ -104,6 +104,55 @@ class Constants:
     }
 
     ###########################
+    # GNSS transmit EIRP [dBW]
+    ###########################
+    # Civilian-signal EIRP per (constellation, constellation-specific band name).
+    # Inner-dict keys must match BANDS_CENTER_FREQUENCIES_Hz entries so the lookup
+    # in `get_tx_eirp_dbw` can reverse-resolve a band name from the carrier frequency.
+    #
+    # NOTES:
+    #   - QZSS entries are populated for completeness, but `SRC/__init__.py` does not
+    #     yet recognise QZSS TLE filenames (the regex only matches GPS|GLONASS|GALILEO|BEIDOU).
+    #     Extending that regex is required before QZSS reflections can actually be computed.
+    #   - NavIC (NavIC_L5 @ 1176.45 MHz, NavIC_S1 @ 2492.028 MHz, NavIC_L1 @ 1575.42 MHz)
+    #     intentionally deferred. Add a "NavIC" entry here when values are confirmed.
+    GNSS_EIRP_DBW = {
+        "GPS":     {"L1":  27.0,  "L2":  23.0,  "L5":  27.0},
+        "GALILEO": {"E1":  32.0,  "E5a": 32.0,  "E5b": 32.0,  "E6":  33.49},
+        "GLONASS": {"G1":  28.0,  "G2":  27.0,  "G3":  26.0},
+        "BEIDOU":  {"B1I": 28.0,  "B1C": 28.0,  "B2a": 28.0,  "B2b": 26.0,  "B2I": 28.0,  "B3I": 35.0},
+        "QZSS":    {"QZSS_L1": 27.0, "QZSS_L1C": 27.0, "QZSS_L2C": 25.0, "QZSS_L5": 29.1, "QZSS_L6": 35.0},
+    }
+
+    @classmethod
+    def get_tx_eirp_dbw(cls, constellation: str, frequency_hz: float, freq_tolerance_hz: float = 1.0e6) -> float:
+        """Return the transmit EIRP [dBW] for `constellation` at carrier `frequency_hz`.
+
+        Reverse-looks-up the constellation-specific band name from
+        `BANDS_CENTER_FREQUENCIES_Hz` (within `freq_tolerance_hz`), then indexes
+        `GNSS_EIRP_DBW[constellation][band]`. Raises KeyError with a clear message
+        if the constellation is unknown or has no EIRP entry at this frequency.
+        """
+        constellation = constellation.upper()
+        table = cls.GNSS_EIRP_DBW.get(constellation)
+        if table is None:
+            raise KeyError(
+                f"No EIRP table for constellation {constellation!r}. "
+                f"Known constellations: {sorted(cls.GNSS_EIRP_DBW)}."
+            )
+        for band, eirp_dbw in table.items():
+            band_freq = cls.BANDS_CENTER_FREQUENCIES_Hz.get(band)
+            if band_freq is None:
+                continue
+            if abs(band_freq - frequency_hz) <= freq_tolerance_hz:
+                return float(eirp_dbw)
+        raise KeyError(
+            f"No EIRP entry for constellation {constellation!r} at frequency "
+            f"{frequency_hz / 1e6:.3f} MHz. Available bands for this constellation: "
+            f"{[(b, cls.BANDS_CENTER_FREQUENCIES_Hz.get(b)) for b in table]}."
+        )
+
+    ###########################
     # 3rd Party Libraries and Tools
     ###########################
     # FreeFlyer installation path

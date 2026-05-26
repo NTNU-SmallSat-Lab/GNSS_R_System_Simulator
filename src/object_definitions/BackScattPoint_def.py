@@ -46,6 +46,7 @@ class BRP:
         GNSS_state: Satellite,
         Sat_state: Satellite,
         times,
+        tx_eirp_dbw: float,
         antenna: RxAntenna | None = None,
         frequency_hz: float | None = None,
         link_budget_settings: dict | lb.BistaticLinkBudgetSettings | None = None,
@@ -154,6 +155,7 @@ class BRP:
             incidence_deg=incidence_angles,
             antenna=antenna,
             frequency_hz=frequency_hz,
+            tx_eirp_dbw=tx_eirp_dbw,
             settings=link_budget_settings,
             q_sat=q_sat,
         )
