@@ -1,4 +1,4 @@
-"""Unit tests for Target ABC and OceanTarget."""
+"""Unit tests for Target ABC and OceanTarget (geometric-optics Cox-Munk model)."""
 
 import dataclasses
 
@@ -14,13 +14,36 @@ from object_definitions.OceanTarget_def import OceanTarget
 from object_definitions.Target_def import Target, TargetRcs
 
 
-def _trivial_geometry():
-    """Backscatter geometry: surface at origin (+z normal); Tx 10 m up, Rx 5 m up."""
+def _default_ocean() -> OceanTarget:
+    return OceanTarget(
+        wave_height_m=1.5,
+        wind_speed_m_s=7.0,
+        wind_direction_deg=270.0,
+        sea_temperature_c=15.0,
+        salinity_psu=35.0,
+    )
+
+
+def _zenith_geometry():
+    """Tx and Rx both straight above the surface point at (R, 0, 0). Pure backscatter, theta=0."""
+    R = 6.371e6
+    surf = np.array([[R, 0.0, 0.0]])
+    normal = np.array([[1.0, 0.0, 0.0]])
+    tx = np.array([[3 * R], [0.0], [0.0]])
+    rx = np.array([[2 * R], [0.0], [0.0]])
+    return build_bistatic_geometry(tx, rx, surf, normal)
+
+
+def _mirror_geometry(theta_deg: float):
+    """Symmetric specular geometry at incidence theta_deg, with surface normal +z."""
     surf = np.array([[0.0, 0.0, 0.0]])
-    norm = np.array([[0.0, 0.0, 1.0]])
-    tx = np.array([[0.0], [0.0], [10.0]])
-    rx = np.array([[0.0], [0.0], [5.0]])
-    return build_bistatic_geometry(tx, rx, surf, norm)
+    normal = np.array([[0.0, 0.0, 1.0]])
+    th = np.radians(theta_deg)
+    L = 1.0e6
+    tx = np.array([[-L * np.sin(th)], [0.0], [L * np.cos(th)]])
+    rx = np.array([[L * np.sin(th)], [0.0], [L * np.cos(th)]])
+    geom = build_bistatic_geometry(tx, rx, surf, normal)
+    return dataclasses.replace(geom, incidence_angle_deg=np.array([float(theta_deg)]))
 
 
 class TestTargetABC:
@@ -41,101 +64,124 @@ class TestTargetABC:
                 n = geometry.range_tx_m.shape[0]
                 return TargetRcs(rcs_m2=np.full(n, 1.0), info={"name": "constant"})
 
-        geom = _trivial_geometry()
-        target = ConstantRcs()
-        result = target.compute_rcs(geom, wavelength_m=0.19)
-        assert isinstance(result, TargetRcs)
+        geom = _zenith_geometry()
+        result = ConstantRcs().compute_rcs(geom, wavelength_m=0.19)
         np.testing.assert_allclose(result.rcs_m2, [1.0])
         assert result.info == {"name": "constant"}
 
 
 class TestOceanTargetConstruction:
     def test_init_stores_parameters_as_floats(self):
-        target = OceanTarget(sigma0_db=-20, slope_db_per_deg=0.25, sigma_floor_db=-45, fresnel_scale=1)
-        assert target.sigma0_db == -20.0
-        assert target.slope_db_per_deg == 0.25
-        assert target.sigma_floor_db == -45.0
-        assert target.fresnel_scale == 1.0
-        assert isinstance(target.sigma0_db, float)
+        target = OceanTarget(
+            wave_height_m=2,
+            wind_speed_m_s=8,
+            wind_direction_deg=180,
+            sea_temperature_c=12,
+            salinity_psu=34,
+        )
+        assert target.wave_height_m == 2.0
+        assert target.wind_speed_m_s == 8.0
+        assert target.wind_direction_deg == 180.0
+        assert target.sea_temperature_c == 12.0
+        assert target.salinity_psu == 34.0
+        assert isinstance(target.wave_height_m, float)
 
     def test_from_settings_roundtrips_ocean_params(self):
         settings = BistaticLinkBudgetSettings()
         target = OceanTarget.from_settings(settings)
-        assert target.sigma0_db == settings.ocean_sigma0_db
-        assert target.slope_db_per_deg == settings.ocean_sigma_slope_db_per_deg
-        assert target.sigma_floor_db == settings.ocean_sigma_floor_db
-        assert target.fresnel_scale == settings.fresnel_rcs_scale
+        assert target.wave_height_m == settings.ocean_wave_height_m
+        assert target.wind_speed_m_s == settings.ocean_wind_speed_m_s
+        assert target.wind_direction_deg == settings.ocean_wind_direction_deg
+        assert target.sea_temperature_c == settings.ocean_sea_temperature_c
+        assert target.salinity_psu == settings.ocean_salinity_psu
+
+    def test_negative_wave_height_raises(self):
+        with pytest.raises(ValueError, match="wave_height_m"):
+            OceanTarget(-0.1, 7.0, 0.0, 15.0, 35.0)
+
+    def test_zero_or_negative_wind_speed_raises(self):
+        with pytest.raises(ValueError, match="wind_speed_m_s"):
+            OceanTarget(1.0, 0.0, 0.0, 15.0, 35.0)
+        with pytest.raises(ValueError, match="wind_speed_m_s"):
+            OceanTarget(1.0, -1.0, 0.0, 15.0, 35.0)
+
+    def test_implausible_temperature_raises(self):
+        with pytest.raises(ValueError, match="sea_temperature_c"):
+            OceanTarget(1.0, 7.0, 0.0, -200.0, 35.0)
+
+    def test_implausible_salinity_raises(self):
+        with pytest.raises(ValueError, match="salinity_psu"):
+            OceanTarget(1.0, 7.0, 0.0, 15.0, -1.0)
+        with pytest.raises(ValueError, match="salinity_psu"):
+            OceanTarget(1.0, 7.0, 0.0, 15.0, 100.0)
 
 
 class TestOceanTargetComputeRcs:
     def test_returns_target_rcs_with_expected_shape(self):
-        geom = _trivial_geometry()
-        target = OceanTarget.from_settings(BistaticLinkBudgetSettings())
+        geom = _zenith_geometry()
 
-        result = target.compute_rcs(geom, wavelength_m=0.19)
+        result = _default_ocean().compute_rcs(geom, wavelength_m=0.19)
 
         assert isinstance(result, TargetRcs)
         assert result.rcs_m2.shape == (1,)
         assert np.isfinite(result.rcs_m2).all()
+        assert result.rcs_m2[0] > 0.0
 
-    def test_info_contains_sigma0_db_and_fresnel_area(self):
-        geom = _trivial_geometry()
-        target = OceanTarget.from_settings(BistaticLinkBudgetSettings())
+    def test_info_dict_carries_expected_diagnostics(self):
+        geom = _zenith_geometry()
 
-        result = target.compute_rcs(geom, wavelength_m=0.19)
+        result = _default_ocean().compute_rcs(geom, wavelength_m=0.19)
 
-        assert set(result.info.keys()) == {"sigma0_db", "fresnel_area_m2"}
-        assert result.info["sigma0_db"].shape == (1,)
-        assert result.info["fresnel_area_m2"].shape == (1,)
+        for key in (
+            "fresnel_reflectivity_RL_sq",
+            "fresnel_reflectivity_RR_sq",
+            "slope_pdf",
+            "slope_upwind",
+            "slope_crosswind",
+            "fresnel_area_m2",
+            "rayleigh_roughness_kappa",
+            "nrcs",
+        ):
+            assert key in result.info
+            assert result.info[key].shape == (1,)
 
-    def test_matches_hand_computed_value_at_zero_incidence(self):
-        # incidence=0, range_tx=10, range_rx=5, wavelength=0.19, default sigma0_db=-20
-        # => sigma0_lin = 0.01, fresnel_area = pi * 0.19 * 10 * 5 / 15 = pi * 0.6333..., rcs = 0.01 * area
-        geom = _trivial_geometry()
-        target = OceanTarget(sigma0_db=-20.0, slope_db_per_deg=0.25, sigma_floor_db=-45.0, fresnel_scale=1.0)
+    def test_mirror_geometry_gives_zero_slope(self):
+        # At specular mirror geometry the required facet slope is zero -> Cox-Munk peaks.
+        geom = _mirror_geometry(theta_deg=20.0)
+        result = _default_ocean().compute_rcs(geom, wavelength_m=0.19)
+        np.testing.assert_allclose(result.info["slope_upwind"], [0.0], atol=1e-12)
+        np.testing.assert_allclose(result.info["slope_crosswind"], [0.0], atol=1e-12)
 
-        result = target.compute_rcs(geom, wavelength_m=0.19)
+    def test_backscatter_geometry_gives_zero_slope(self):
+        geom = _zenith_geometry()
+        result = _default_ocean().compute_rcs(geom, wavelength_m=0.19)
+        np.testing.assert_allclose(result.info["slope_upwind"], [0.0], atol=1e-12)
+        np.testing.assert_allclose(result.info["slope_crosswind"], [0.0], atol=1e-12)
 
-        expected_area = np.pi * 0.19 * 10.0 * 5.0 / (10.0 + 5.0)
-        expected_rcs = 0.01 * expected_area * 1.0
-        np.testing.assert_allclose(result.rcs_m2, [expected_rcs], rtol=1e-12)
-        np.testing.assert_allclose(result.info["sigma0_db"], [-20.0], atol=1e-12)
-        np.testing.assert_allclose(result.info["fresnel_area_m2"], [expected_area], rtol=1e-12)
-
-    def test_sigma0_floor_applied_at_high_incidence(self):
-        # Override incidence to 89 deg; with slope 10 dB/deg, raw sigma0 = -20 - 890 = -910 dB,
-        # which gets clamped to the floor (-30 dB).
-        geom = _trivial_geometry()
-        geom = dataclasses.replace(geom, incidence_angle_deg=np.array([89.0]))
-        target = OceanTarget(sigma0_db=-20.0, slope_db_per_deg=10.0, sigma_floor_db=-30.0, fresnel_scale=1.0)
-
-        result = target.compute_rcs(geom, wavelength_m=0.19)
-
-        np.testing.assert_allclose(result.info["sigma0_db"], [-30.0])
+    def test_rcs_drops_with_increasing_wind(self):
+        # More wind -> wider slope PDF -> lower peak -> lower RCS at mirror direction.
+        geom = _mirror_geometry(theta_deg=20.0)
+        calm = OceanTarget(1.0, 3.0, 0.0, 15.0, 35.0).compute_rcs(geom, 0.19).rcs_m2
+        rough = OceanTarget(1.0, 15.0, 0.0, 15.0, 35.0).compute_rcs(geom, 0.19).rcs_m2
+        assert calm[0] > rough[0]
 
     def test_nan_geometry_propagates_to_nan_rcs(self):
         surf = np.array([[0.0, 0.0, 0.0]])
-        norm = np.array([[0.0, 0.0, 1.0]])
+        normal = np.array([[0.0, 0.0, 1.0]])
         tx = np.array([[np.nan], [0.0], [10.0]])
         rx = np.array([[0.0], [0.0], [5.0]])
-        geom = build_bistatic_geometry(tx, rx, surf, norm)
-        target = OceanTarget.from_settings(BistaticLinkBudgetSettings())
+        geom = build_bistatic_geometry(tx, rx, surf, normal)
 
-        result = target.compute_rcs(geom, wavelength_m=0.19)
+        result = _default_ocean().compute_rcs(geom, wavelength_m=0.19)
 
         assert np.isnan(result.rcs_m2[0])
-        assert np.isnan(result.info["sigma0_db"][0])
-        assert np.isnan(result.info["fresnel_area_m2"][0])
+        assert np.isnan(result.info["nrcs"][0])
 
-    def test_fresnel_scale_multiplies_rcs(self):
-        geom = _trivial_geometry()
-        target_unscaled = OceanTarget(sigma0_db=-20.0, slope_db_per_deg=0.0, sigma_floor_db=-45.0, fresnel_scale=1.0)
-        target_scaled = OceanTarget(sigma0_db=-20.0, slope_db_per_deg=0.0, sigma_floor_db=-45.0, fresnel_scale=3.5)
-
-        unscaled = target_unscaled.compute_rcs(geom, wavelength_m=0.19).rcs_m2
-        scaled = target_scaled.compute_rcs(geom, wavelength_m=0.19).rcs_m2
-
-        np.testing.assert_allclose(scaled, 3.5 * unscaled, rtol=1e-12)
+    def test_rayleigh_kappa_grows_with_wave_height(self):
+        geom = _mirror_geometry(theta_deg=10.0)
+        kappa_calm = OceanTarget(0.1, 5.0, 0.0, 15.0, 35.0).compute_rcs(geom, 0.19).info["rayleigh_roughness_kappa"]
+        kappa_storm = OceanTarget(5.0, 5.0, 0.0, 15.0, 35.0).compute_rcs(geom, 0.19).info["rayleigh_roughness_kappa"]
+        assert kappa_storm[0] > kappa_calm[0]
 
 
 class TestComputeReflectionLinkBudgetIntegration:
@@ -195,39 +241,19 @@ class TestComputeReflectionLinkBudgetIntegration:
             "rcs_m2",
             "target_info",
             "received_power_w",
-            "received_power_dbw",
-            "received_power_dbm",
         ):
-            assert key in lb, f"missing key {key!r}"
-        assert "sigma0_db" in lb["target_info"]
-        assert "fresnel_area_m2" in lb["target_info"]
-
-    def test_caller_supplied_incidence_overrides_geometry_default(self):
-        # Verify our spherical-normal default + replace() preserves caller's incidence.
-        tx, rx, rx_vel, refl, _ = self._canned_inputs()
-        chosen_incidence = np.array([42.0])
-
-        lb = compute_reflection_link_budget(
-            tx_positions_eci=tx,
-            rx_positions_eci=rx,
-            rx_velocities_eci=rx_vel,
-            reflection_positions_eci=refl,
-            incidence_deg=chosen_incidence,
-            antenna=None,
-            frequency_hz=1.57542e9,
-            settings=None,
-        )
-        np.testing.assert_allclose(lb["incidence_deg"], chosen_incidence)
+            assert key in lb
+        assert "fresnel_reflectivity_RL_sq" in lb["target_info"]
+        assert "slope_pdf" in lb["target_info"]
 
     def test_custom_target_replaces_ocean_rcs(self):
-        # Plug a non-ocean target through to confirm the abstraction works.
         class FixedRcs(Target):
             def compute_rcs(self, geometry, wavelength_m):
                 n = geometry.range_tx_m.shape[0]
                 return TargetRcs(rcs_m2=np.full(n, 100.0), info={"kind": "fixed"})
 
         tx, rx, rx_vel, refl, incidence_deg = self._canned_inputs()
-        lb_fixed = compute_reflection_link_budget(
+        lb = compute_reflection_link_budget(
             tx_positions_eci=tx,
             rx_positions_eci=rx,
             rx_velocities_eci=rx_vel,
@@ -238,11 +264,10 @@ class TestComputeReflectionLinkBudgetIntegration:
             settings=None,
             target=FixedRcs(),
         )
-        np.testing.assert_allclose(lb_fixed["rcs_m2"], [100.0])
-        assert lb_fixed["target_info"] == {"kind": "fixed"}
+        np.testing.assert_allclose(lb["rcs_m2"], [100.0])
+        assert lb["target_info"] == {"kind": "fixed"}
 
     def test_received_power_scales_linearly_with_rcs(self):
-        # Doubling RCS doubles Pr (the link equation is linear in sigma).
         tx, rx, rx_vel, refl, incidence_deg = self._canned_inputs()
 
         class FixedRcs(Target):

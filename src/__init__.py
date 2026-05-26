@@ -394,17 +394,46 @@ def initialize(config_file_name="Configuration.ini"):
                 f"Invalid value for 'max_incidence_angle_deg' in [REFLECTION]: {section['max_incidence_angle_deg']}"
             ) from None
 
-    # --- [LINK BUDGET] (OPTIONAL SECTION) ---
-    # Defaults derived from BistaticLinkBudgetSettings so the two stay in sync.
-    link_budget = {f.name: f.default for f in fields(BistaticLinkBudgetSettings)}
-    if "LINK BUDGET" in config:
-        section = config["LINK BUDGET"]
-        for key in link_budget:
-            if key in section:
-                try:
-                    link_budget[key] = float(section[key])
-                except ValueError:
-                    raise ValueError(f"Invalid value for '{key}' in [LINK BUDGET]: {section[key]}") from None
+    # --- [LINK BUDGET] (REQUIRED SECTION) ---
+    # Transmitter and receiver-system parameters. No fallback defaults; missing keys raise.
+    if "LINK BUDGET" not in config:
+        raise ValueError("[LINK BUDGET] section is required in the configuration file.")
+    section = config["LINK BUDGET"]
+    link_budget = {}
+    for key in ("tx_eirp_dbw", "system_losses_db", "polarization_losses_db"):
+        if key not in section:
+            raise ValueError(f"[LINK BUDGET].{key} is required in the configuration file.")
+        try:
+            link_budget[key] = float(section[key])
+        except ValueError:
+            raise ValueError(f"Invalid value for '{key}' in [LINK BUDGET]: {section[key]}") from None
+
+    # --- [OCEAN] (REQUIRED SECTION) ---
+    # Sea-state and water-property inputs for the bistatic ocean RCS model. INI-strict.
+    if "OCEAN" not in config:
+        raise ValueError("[OCEAN] section is required in the configuration file.")
+    section = config["OCEAN"]
+    for key in (
+        "ocean_wave_height_m",
+        "ocean_wind_speed_m_s",
+        "ocean_wind_direction_deg",
+        "ocean_sea_temperature_c",
+        "ocean_salinity_psu",
+    ):
+        if key not in section:
+            raise ValueError(f"[OCEAN].{key} is required in the configuration file.")
+        try:
+            link_budget[key] = float(section[key])
+        except ValueError:
+            raise ValueError(f"Invalid value for '{key}' in [OCEAN]: {section[key]}") from None
+
+    # Guard: keys parsed from the INI must exactly cover BistaticLinkBudgetSettings.
+    expected_fields = {f.name for f in fields(BistaticLinkBudgetSettings)}
+    if expected_fields != set(link_budget.keys()):
+        raise RuntimeError(
+            f"BistaticLinkBudgetSettings fields {sorted(expected_fields)} do not match parsed "
+            f"keys {sorted(link_budget.keys())}. Update the loader and the dataclass together."
+        )
 
     # --- [PLOT] (OPTIONAL SECTION) ---
     detection_bbox_buffer_deg = 2.0

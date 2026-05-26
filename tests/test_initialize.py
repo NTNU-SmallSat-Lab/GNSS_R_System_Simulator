@@ -55,6 +55,26 @@ MINIMAL_REFLECTION = dedent(
     """
 )
 
+MINIMAL_LINK_BUDGET = dedent(
+    """\
+    [LINK BUDGET]
+    tx_eirp_dbw = 27.0
+    system_losses_db = 2.0
+    polarization_losses_db = 0.5
+    """
+)
+
+MINIMAL_OCEAN = dedent(
+    """\
+    [OCEAN]
+    ocean_wave_height_m = 1.5
+    ocean_wind_speed_m_s = 7.0
+    ocean_wind_direction_deg = 270.0
+    ocean_sea_temperature_c = 10.0
+    ocean_salinity_psu = 35.0
+    """
+)
+
 
 def write_config(tmp_path, body: str) -> str:
     """Write the given INI body to a temporary file and return its path."""
@@ -69,6 +89,8 @@ def minimal_config_body(
     orbits_section: str = MINIMAL_ORBITS,
     gnss_section: str = MINIMAL_GNSS,
     reflection_section: str = MINIMAL_REFLECTION,
+    link_budget_section: str = MINIMAL_LINK_BUDGET,
+    ocean_section: str = MINIMAL_OCEAN,
     extra_sections: str = "",
 ) -> str:
     """Compose a minimal-but-valid INI body that initialize() can parse."""
@@ -78,6 +100,8 @@ def minimal_config_body(
             orbits_section,
             gnss_section,
             reflection_section,
+            link_budget_section,
+            ocean_section,
             extra_sections,
         ]
     )
@@ -381,36 +405,86 @@ class TestOptionalSections:
         _, settings = initialize(path)
         assert settings["reflection_type"] == "backscatter"
 
-    def test_no_link_budget_section_uses_defaults(self, tmp_path):
-        # The defaults come from BistaticLinkBudgetSettings (see functions/link_budget.py).
-        from functions.link_budget import BistaticLinkBudgetSettings
-
+    def test_link_budget_values_parsed(self, tmp_path):
         path = write_config(tmp_path, minimal_config_body())
         _, settings = initialize(path)
-        defaults = BistaticLinkBudgetSettings()
-        for field_name in settings["link_budget"]:
-            assert settings["link_budget"][field_name] == getattr(defaults, field_name)
+        assert settings["link_budget"]["tx_eirp_dbw"] == 27.0
+        assert settings["link_budget"]["system_losses_db"] == 2.0
+        assert settings["link_budget"]["polarization_losses_db"] == 0.5
 
-    def test_link_budget_override_applied(self, tmp_path):
-        link_budget = dedent(
+    def test_no_link_budget_section_raises(self, tmp_path):
+        path = write_config(tmp_path, minimal_config_body(link_budget_section=""))
+        with pytest.raises(ValueError, match=r"\[LINK BUDGET\] section is required"):
+            initialize(path)
+
+    def test_link_budget_missing_key_raises(self, tmp_path):
+        lb = dedent(
             """\
             [LINK BUDGET]
-            tx_eirp_dbw = 35.0
+            tx_eirp_dbw = 27.0
+            system_losses_db = 2.0
             """
         )
-        path = write_config(tmp_path, minimal_config_body(extra_sections=link_budget))
-        _, settings = initialize(path)
-        assert settings["link_budget"]["tx_eirp_dbw"] == 35.0
+        # Missing polarization_losses_db.
+        path = write_config(tmp_path, minimal_config_body(link_budget_section=lb))
+        with pytest.raises(ValueError, match="polarization_losses_db is required"):
+            initialize(path)
 
     def test_link_budget_invalid_float_raises_value_error(self, tmp_path):
-        link_budget = dedent(
+        lb = dedent(
             """\
             [LINK BUDGET]
             tx_eirp_dbw = not_a_number
+            system_losses_db = 2.0
+            polarization_losses_db = 0.5
             """
         )
-        path = write_config(tmp_path, minimal_config_body(extra_sections=link_budget))
+        path = write_config(tmp_path, minimal_config_body(link_budget_section=lb))
         with pytest.raises(ValueError, match="tx_eirp_dbw"):
+            initialize(path)
+
+    def test_ocean_values_parsed(self, tmp_path):
+        path = write_config(tmp_path, minimal_config_body())
+        _, settings = initialize(path)
+        assert settings["link_budget"]["ocean_wave_height_m"] == 1.5
+        assert settings["link_budget"]["ocean_wind_speed_m_s"] == 7.0
+        assert settings["link_budget"]["ocean_wind_direction_deg"] == 270.0
+        assert settings["link_budget"]["ocean_sea_temperature_c"] == 10.0
+        assert settings["link_budget"]["ocean_salinity_psu"] == 35.0
+
+    def test_no_ocean_section_raises(self, tmp_path):
+        path = write_config(tmp_path, minimal_config_body(ocean_section=""))
+        with pytest.raises(ValueError, match=r"\[OCEAN\] section is required"):
+            initialize(path)
+
+    def test_ocean_missing_key_raises(self, tmp_path):
+        ocean = dedent(
+            """\
+            [OCEAN]
+            ocean_wave_height_m = 1.5
+            ocean_wind_speed_m_s = 7.0
+            ocean_wind_direction_deg = 270.0
+            ocean_sea_temperature_c = 10.0
+            """
+        )
+        # Missing ocean_salinity_psu.
+        path = write_config(tmp_path, minimal_config_body(ocean_section=ocean))
+        with pytest.raises(ValueError, match="ocean_salinity_psu is required"):
+            initialize(path)
+
+    def test_ocean_invalid_float_raises_value_error(self, tmp_path):
+        ocean = dedent(
+            """\
+            [OCEAN]
+            ocean_wave_height_m = not_a_number
+            ocean_wind_speed_m_s = 7.0
+            ocean_wind_direction_deg = 270.0
+            ocean_sea_temperature_c = 10.0
+            ocean_salinity_psu = 35.0
+            """
+        )
+        path = write_config(tmp_path, minimal_config_body(ocean_section=ocean))
+        with pytest.raises(ValueError, match="ocean_wave_height_m"):
             initialize(path)
 
     def test_no_reflection_section_raises(self, tmp_path):

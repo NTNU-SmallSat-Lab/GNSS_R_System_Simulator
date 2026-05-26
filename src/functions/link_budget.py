@@ -16,36 +16,30 @@ if TYPE_CHECKING:
 @dataclass(slots=True)
 class BistaticLinkBudgetSettings:
     """
-    =========================================================================================================
-    BistaticLinkBudgetSettings class:
-        - Configuration values for a simplified bistatic GNSS-R link budget.
-        - Single source of truth for the `[LINK BUDGET]` INI section: field names, defaults
-          and units defined here are picked up automatically by the configuration loader.
+    Configuration values for the bistatic GNSS-R link budget.
 
-        ATTRIBUTES:
-            tx_eirp_dbw:                  [float]  GNSS transmitter EIRP [dBW]
-            system_losses_db:             [float]  Lumped implementation losses [dB]
-            polarization_losses_db:       [float]  Polarization mismatch losses [dB]
-            ocean_sigma0_db:              [float]  Effective sigma0 at nadir [dB]
-            ocean_sigma_slope_db_per_deg: [float]  Linear incidence-angle slope of sigma0 [dB/deg]
-            ocean_sigma_floor_db:         [float]  Lower bound on effective sigma0 [dB]
-            fresnel_rcs_scale:            [float]  Scalar multiplier on Fresnel-area RCS [-]
+    Field-by-field source of truth for the `[LINK BUDGET]` + `[OCEAN]` INI sections;
+    field names, defaults and units defined here are picked up automatically by the loader.
 
-        NOTES:
-            - Ocean RCS is modeled as `sigma = sigma0(theta_i) * A_fresnel * fresnel_rcs_scale`.
-            - `ocean_sigma*` parameters are effective calibration terms in this simplified model,
-              not a strict geophysical NRCS split into coherent and diffuse components.
-            - This is intentionally a first-order engineering model for rapid trade studies.
-    =========================================================================================================
+    ATTRIBUTES:
+        tx_eirp_dbw:               [float]  GNSS transmitter EIRP [dBW]
+        system_losses_db:          [float]  Lumped implementation losses [dB]
+        polarization_losses_db:    [float]  Receiver-side polarization mismatch losses [dB]
+        ocean_wave_height_m:       [float]  RMS wave height [m]  (Rayleigh roughness diagnostic)
+        ocean_wind_speed_m_s:      [float]  Wind speed at 10 m [m/s]  (drives Cox-Munk slope variances)
+        ocean_wind_direction_deg:  [float]  Wind direction (meteorological FROM bearing) [deg]
+        ocean_sea_temperature_c:   [float]  Sea surface temperature [degC]
+        ocean_salinity_psu:        [float]  Salinity (practical salinity units) [psu]
     """
 
     tx_eirp_dbw: float = 27.0
     system_losses_db: float = 2.0
     polarization_losses_db: float = 0.5
-    ocean_sigma0_db: float = -20.0
-    ocean_sigma_slope_db_per_deg: float = 0.25
-    ocean_sigma_floor_db: float = -45.0
-    fresnel_rcs_scale: float = 1.0
+    ocean_wave_height_m: float = 1.5
+    ocean_wind_speed_m_s: float = 7.0
+    ocean_wind_direction_deg: float = 270.0
+    ocean_sea_temperature_c: float = 15.0
+    ocean_salinity_psu: float = 35.0
 
 
 def coerce_link_budget_settings(settings: dict | BistaticLinkBudgetSettings | None) -> BistaticLinkBudgetSettings:
@@ -61,22 +55,25 @@ def coerce_link_budget_settings(settings: dict | BistaticLinkBudgetSettings | No
 @dataclass(frozen=True, slots=True)
 class BistaticGeometry:
     """
+    =========================================================================================================
     Per-sample bistatic geometry: surface normal, propagation directions, ranges and angles.
 
     Conventions:
-        - `k_hat_in`  points from Tx to surface (incoming propagation direction).
-        - `k_hat_out` points from surface to Rx (outgoing propagation direction).
-        - `incidence_angle_deg`  is between -k_hat_in and n_hat_surface (0deg = normal incidence).
-        - `scattering_angle_deg` is between  k_hat_out and n_hat_surface.
-        - `bistatic_angle_deg`   is between -k_hat_in and  k_hat_out
+        - `n_tx2s`  points from Tx to surface (incoming propagation direction, unit).
+        - `n_s2rx`  points from surface to Rx (outgoing propagation direction, unit).
+        - `n_surface` is the outward surface unit normal.
+        - `incidence_angle_deg`  is between -n_tx2s and n_surface (0deg = normal incidence).
+        - `scattering_angle_deg` is between  n_s2rx  and n_surface.
+        - `bistatic_angle_deg`   is between -n_tx2s and  n_s2rx
           (0deg = backscatter, 2 * theta_i for the specular mirror geometry, 180deg = forward).
 
     Shapes: vectors are (n, 3); scalar quantities are (n,). Invalid samples carry NaN.
+    =========================================================================================================
     """
 
-    n_hat_surface: np.ndarray
-    k_hat_in: np.ndarray
-    k_hat_out: np.ndarray
+    n_surface: np.ndarray
+    n_tx2s: np.ndarray
+    n_s2rx: np.ndarray
     range_tx_m: np.ndarray
     range_rx_m: np.ndarray
     incidence_angle_deg: np.ndarray
@@ -91,6 +88,7 @@ def build_bistatic_geometry(
     surface_normals: np.ndarray,
 ) -> BistaticGeometry:
     """
+    =========================================================================================================
     Compute per-sample bistatic geometry from Tx, Rx, surface positions and surface normals.
 
     INPUTS:
@@ -104,6 +102,7 @@ def build_bistatic_geometry(
 
     OUTPUT:
         geometry: [BistaticGeometry]   Per-sample directions, ranges and angles.
+    =========================================================================================================
     """
     tx = np.asarray(tx_positions, dtype=float)
     rx = np.asarray(rx_positions, dtype=float)
@@ -126,42 +125,42 @@ def build_bistatic_geometry(
     tx_T = tx.T
     rx_T = rx.T
 
-    p_s2tx = tx_T - surf # Vectors from surface to Tx; k_hat_in = -p_s2tx / |p_s2tx|
-    p_s2rx = rx_T - surf # Vectors from surface to Rx; k_hat_out = p_s2rx / |p_s2rx|
+    p_s2tx = tx_T - surf # Vectors from surface to Tx; n_tx2s = -p_s2tx / |p_s2tx|
+    p_s2rx = rx_T - surf # Vectors from surface to Rx; n_s2rx =  p_s2rx / |p_s2rx|
 
     range_tx_m = np.linalg.norm(p_s2tx, axis=1)
     range_rx_m = np.linalg.norm(p_s2rx, axis=1)
-    norm_mag = np.linalg.norm(normal, axis=1)
+    normal_mag = np.linalg.norm(normal, axis=1)
 
     # Validity mask
     valid = (
         np.isfinite(range_tx_m)
         & np.isfinite(range_rx_m)
-        & np.isfinite(norm_mag)
+        & np.isfinite(normal_mag)
         & (range_tx_m > 0.0)
         & (range_rx_m > 0.0)
-        & (norm_mag > 0.0)
+        & (normal_mag > 0.0)
     )
 
     # Initialize outputs with NaN; valid samples get overwritten below, invalid samples stay NaN
-    k_hat_in = np.full((n, 3), np.nan)
-    k_hat_out = np.full((n, 3), np.nan)
-    n_hat = np.full((n, 3), np.nan)
+    n_tx2s = np.full((n, 3), np.nan)
+    n_s2rx = np.full((n, 3), np.nan)
+    n_surface = np.full((n, 3), np.nan)
 
     # Unit vectors point in the physically correct directions for valid geometry; invalid geometry stays NaN.
-    k_hat_in[valid] = -p_s2tx[valid] / range_tx_m[valid, None] # Unit vector from Tx to surface
-    k_hat_out[valid] = p_s2rx[valid] / range_rx_m[valid, None] # Unit vector from surface to Rx
-    n_hat[valid] = normal[valid] / norm_mag[valid, None] # Unit surface normal
+    n_tx2s[valid] = -p_s2tx[valid] / range_tx_m[valid, None] # Unit vector from Tx to surface
+    n_s2rx[valid] = p_s2rx[valid] / range_rx_m[valid, None]  # Unit vector from surface to Rx
+    n_surface[valid] = normal[valid] / normal_mag[valid, None]  # Unit surface normal
 
     # Angle calculations: NaN for invalid geometry, valid angles in [0, 180] degrees for valid geometry.
-    cos_inc = np.full(n, np.nan) 
-    cos_sca = np.full(n, np.nan) 
-    cos_bist = np.full(n, np.nan) 
+    cos_inc = np.full(n, np.nan)
+    cos_sca = np.full(n, np.nan)
+    cos_bist = np.full(n, np.nan)
 
     # Valid geometry: compute cosines of angles using dot products, then clip to [-1, 1] to avoid numerical issues with arccos.
-    cos_inc[valid] = -np.sum(k_hat_in[valid] * n_hat[valid], axis=1) # Cosine of incidence angle = -k_hat_in . n_hat
-    cos_sca[valid] = np.sum(k_hat_out[valid] * n_hat[valid], axis=1) # Cosine of scattering angle = k_hat_out . n_hat
-    cos_bist[valid] = -np.sum(k_hat_in[valid] * k_hat_out[valid], axis=1) # Cosine of bistatic angle = -k_hat_in . k_hat_out (out to in)
+    cos_inc[valid] = -np.sum(n_tx2s[valid] * n_surface[valid], axis=1) # Cosine of incidence angle  = -n_tx2s . n_surface
+    cos_sca[valid] = np.sum(n_s2rx[valid] * n_surface[valid], axis=1)  # Cosine of scattering angle =  n_s2rx . n_surface
+    cos_bist[valid] = -np.sum(n_tx2s[valid] * n_s2rx[valid], axis=1)   # Cosine of bistatic angle   = -n_tx2s . n_s2rx
 
     # Convert to degrees; invalid geometry stays NaN.
     # Clipping to [-1, 1] above ensures that valid geometry yields real angles in [0, 180] degrees, even with small numerical errors.
@@ -170,9 +169,9 @@ def build_bistatic_geometry(
     bistatic_deg = np.degrees(np.arccos(np.clip(cos_bist, -1.0, 1.0)))
 
     return BistaticGeometry(
-        n_hat_surface=n_hat,
-        k_hat_in=k_hat_in,
-        k_hat_out=k_hat_out,
+        n_surface=n_surface,
+        n_tx2s=n_tx2s,
+        n_s2rx=n_s2rx,
         range_tx_m=np.where(valid, range_tx_m, np.nan),
         range_rx_m=np.where(valid, range_rx_m, np.nan),
         incidence_angle_deg=incidence_deg,

@@ -1,9 +1,11 @@
 """
+=========================================================================================================
 Target abstract base class for bistatic RCS models (ocean, ship, ...).
 
 A `Target` knows how to turn a `BistaticGeometry` plus carrier wavelength into a per-sample
 RCS in m^2, with optional target-specific diagnostic info. Concrete implementations live in
 sibling `_def.py` modules (e.g. `OceanTarget_def.py`).
+=========================================================================================================
 """
 
 from __future__ import annotations
