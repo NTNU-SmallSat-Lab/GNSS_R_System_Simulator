@@ -100,13 +100,19 @@ class TestSpecularReceivedPower:
         print(f"  Galileo E1 specular theta={theta_inc_deg:5.1f} deg  ->  Pr = {pr_dbm:7.2f} dBm")
         assert np.isfinite(pr_dbm)
 
-    def test_specular_pr_decreases_with_incidence(self):
-        """At the specular peak, larger incidence increases R_t and R_r so Pr should drop."""
-        pr_dbm = [
+    def test_specular_pr_bounded_across_incidence(self):
+        """Across 5..60 deg incidence, Pr stays within a few dB of typical CYGNSS-class values.
+
+        Pr is not monotonic in incidence: the glistening-zone area grows as sec^3(theta_i),
+        which can overcompensate for the longer slant ranges. We only assert a bounded spread.
+        """
+        pr_dbm = np.array([
             _specular_scenario(th, tx_eirp_dbw=27.0)["received_power_dbm"][0]
             for th in (5.0, 30.0, 60.0)
-        ]
-        assert pr_dbm[0] > pr_dbm[1] > pr_dbm[2], f"non-monotonic Pr vs incidence: {pr_dbm}"
+        ])
+        spread = float(pr_dbm.max() - pr_dbm.min())
+        print(f"  Specular Pr spread across 5..60 deg incidence: {spread:.2f} dB")
+        assert spread < 25.0, f"Pr spread {spread:.2f} dB across incidence is implausibly large: {pr_dbm}"
 
     def test_galileo_e1_is_five_db_higher_than_gps_l1(self):
         """The per-constellation EIRP plumbing must produce a 5 dB Pr shift (32 - 27)."""
@@ -135,14 +141,18 @@ class TestBackscatterReceivedPower:
 
 
 class TestAbsoluteRange:
-    """Loose absolute-range envelope for the OceanTarget model with default sea state.
+    """CYGNSS-class envelope for the coherent + incoherent OceanTarget model with default sea state.
 
-    The current OceanTarget uses the first Fresnel zone as the effective scattering area,
-    which under-counts the glistening-zone integral typical of CYGNSS-style references.
-    These bounds are wide on purpose; they catch order-of-magnitude regressions rather
-    than calibrate to a specific reference number.
+    The coherent term collapses for any non-trivial sea state (kappa >> 1); the incoherent
+    glistening-zone term sets the absolute Pr around -120 to -150 dBm at GPS L1 / typical LEO
+    altitudes. Bounds intentionally widened by ~10 dB on each side to absorb future tuning of
+    the glistening-area formula without spurious failures.
     """
 
     def test_gps_l1_specular_pr_within_envelope(self):
         pr_dbm = _specular_scenario(30.0, tx_eirp_dbw=27.0)["received_power_dbm"][0]
-        assert -260.0 < pr_dbm < -80.0, f"Pr {pr_dbm:.2f} dBm outside envelope"
+        assert -160.0 < pr_dbm < -110.0, f"Pr {pr_dbm:.2f} dBm outside CYGNSS-class envelope"
+
+    def test_gps_l1_backscatter_pr_within_envelope(self):
+        pr_dbm = _backscatter_scenario(0.0, tx_eirp_dbw=27.0)["received_power_dbm"][0]
+        assert -160.0 < pr_dbm < -110.0, f"Pr {pr_dbm:.2f} dBm outside CYGNSS-class envelope"

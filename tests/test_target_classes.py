@@ -158,12 +158,29 @@ class TestOceanTargetComputeRcs:
         np.testing.assert_allclose(result.info["slope_upwind"], [0.0], atol=1e-12)
         np.testing.assert_allclose(result.info["slope_crosswind"], [0.0], atol=1e-12)
 
-    def test_rcs_drops_with_increasing_wind(self):
-        # More wind -> wider slope PDF -> lower peak -> lower RCS at mirror direction.
+    def test_coherent_dominates_for_calm_low_freq_smooth_surface(self):
+        # Tiny wave height (sigma_h = 1 mm) at L1 keeps the Rayleigh attenuation kappa small,
+        # so the coherent term survives. The incoherent term still exists but is comparable
+        # to or smaller than coherent at very low wind.
+        geom = _mirror_geometry(theta_deg=10.0)
+        result = OceanTarget(1e-3, 1.0, 0.0, 15.0, 35.0).compute_rcs(geom, 0.19)
+        assert result.info["rcs_coherent_m2"][0] > 0.0
+        assert result.info["rayleigh_roughness_kappa"][0] < 1.0    # Rayleigh-smooth regime
+
+    def test_coherent_collapses_for_rough_sea(self):
+        # At a typical sea state (sigma_h = 1.5 m) the Rayleigh attenuation kills the coherent term.
+        geom = _mirror_geometry(theta_deg=10.0)
+        result = _default_ocean().compute_rcs(geom, 0.19)
+        coh = result.info["rcs_coherent_m2"][0]
+        inc = result.info["rcs_incoherent_m2"][0]
+        assert coh < 1e-6 * inc, f"coherent {coh:.3e} not negligible vs incoherent {inc:.3e}"
+
+    def test_glistening_area_grows_with_wind(self):
+        # Wider Cox-Munk slope variance -> bigger glistening zone.
         geom = _mirror_geometry(theta_deg=20.0)
-        calm = OceanTarget(1.0, 3.0, 0.0, 15.0, 35.0).compute_rcs(geom, 0.19).rcs_m2
-        rough = OceanTarget(1.0, 15.0, 0.0, 15.0, 35.0).compute_rcs(geom, 0.19).rcs_m2
-        assert calm[0] > rough[0]
+        a_calm = OceanTarget(1.0, 3.0, 0.0, 15.0, 35.0).compute_rcs(geom, 0.19).info["glistening_area_m2"][0]
+        a_rough = OceanTarget(1.0, 15.0, 0.0, 15.0, 35.0).compute_rcs(geom, 0.19).info["glistening_area_m2"][0]
+        assert a_rough > a_calm
 
     def test_nan_geometry_propagates_to_nan_rcs(self):
         surf = np.array([[0.0, 0.0, 0.0]])

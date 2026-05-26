@@ -129,22 +129,47 @@ class OceanTarget(Target):
         eps_r = seawater_permittivity(frequency_hz, self.sea_temperature_c, self.salinity_psu)
         R_RL_sq, R_RR_sq = circular_pol_reflectivities(theta_local_rad, eps_r)
 
-        # First-Fresnel-zone area (effective scattering area)
+        # Effective areas
         range_sum = range_tx + range_rx
         denom = np.where(range_sum > 0.0, range_sum, np.nan)
         fresnel_radius_sq = wavelength_m * range_tx * range_rx / denom    # r_F^2 = lambda * R_t * R_r / (R_t + R_r)
-        fresnel_area = np.pi * fresnel_radius_sq
+        fresnel_area = np.pi * fresnel_radius_sq                          # A_F: first Fresnel zone (coherent regime)
 
-        # Zavorotny-Voronovich geometric-optics RCS
+        # Glistening-zone area for the incoherent regime: integration of the slope PDF
+        # over the surface, expressed as an effective area at the specular peak. The
+        # sec^3(theta_inc) factor is the projection of the surface patch onto the
+        # ranges geometry; capped near grazing to avoid an unphysical sec divergence.
+        cos_inc = np.cos(np.radians(incidence_deg))
+        cos_inc_safe = np.clip(cos_inc, 0.05, 1.0)                        # cap below ~87 deg
+        slope_var_total = sigma_u_sq + sigma_c_sq                         # total slope variance (Cox-Munk)
+        glistening_area = (
+            np.pi * (range_tx * range_rx / denom) ** 2 * slope_var_total / cos_inc_safe ** 3
+        )
+
+        # NRCS from the Z-V geometric-optics formula (per-unit-area, dimensionless)
         geom_factor = np.full(n_samples, np.nan)
         geom_factor[valid_q] = (q_mag[valid_q] / np.abs(q_z[valid_q])) ** 4    # (|q| / q_z)^4
-        nrcs = np.pi * R_RL_sq * geom_factor * pdf                             # sigma^0 [-/m^2 in radians]
-        rcs_m2 = nrcs * fresnel_area                                           # sigma  [m^2]
+        nrcs = np.pi * R_RL_sq * geom_factor * pdf
 
-        # Rayleigh roughness diagnostic
+        # Incoherent contribution: NRCS integrated over the glistening zone.
+        sigma_incoherent = nrcs * glistening_area                         # rough-surface diffuse return
+
+        # Coherent contribution: smooth-surface specular reflection, suppressed by Rayleigh
+        # roughness exp(-kappa) and gated to geometries where the required facet slope is
+        # zero (the macroscopic surface IS the mirror). Off-specular geometries get sigma_coh = 0.
         rayleigh_kappa = (
-            4.0 * np.pi * self.wave_height_m * np.cos(np.radians(incidence_deg)) / wavelength_m
-        ) ** 2                                            # (4 pi sigma_h cos theta_i / lambda)^2
+            4.0 * np.pi * self.wave_height_m * np.cos(theta_local_rad) / wavelength_m
+        ) ** 2                                                            # kappa = (4 pi sigma_h cos theta_local / lambda)^2
+        slope_mag_sq = s_u ** 2 + s_c ** 2
+        at_specular = np.isfinite(slope_mag_sq) & (slope_mag_sq < 1.0e-6) # required facet slope ~ 0
+        sigma_coherent = np.where(
+            at_specular,
+            R_RL_sq * fresnel_area * np.exp(-rayleigh_kappa),
+            0.0,
+        )
+
+        # Combined RCS
+        rcs_m2 = sigma_coherent + sigma_incoherent
 
         valid = (
             valid_q
@@ -165,7 +190,10 @@ class OceanTarget(Target):
                 "slope_upwind": np.where(valid, s_u, np.nan),
                 "slope_crosswind": np.where(valid, s_c, np.nan),
                 "fresnel_area_m2": np.where(valid, fresnel_area, np.nan),
+                "glistening_area_m2": np.where(valid, glistening_area, np.nan),
                 "rayleigh_roughness_kappa": np.where(valid, rayleigh_kappa, np.nan),
                 "nrcs": np.where(valid, nrcs, np.nan),
+                "rcs_coherent_m2": np.where(valid, sigma_coherent, np.nan),
+                "rcs_incoherent_m2": np.where(valid, sigma_incoherent, np.nan),
             },
         )
