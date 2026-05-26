@@ -1,10 +1,16 @@
+from __future__ import annotations
+import dataclasses
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from functions.rotations import eci_to_antenna_rotation_from_state
 from object_definitions.Constants_def import Constants
 from object_definitions.Rx_antenna_def import RxAntenna
+
+if TYPE_CHECKING:
+    from object_definitions.Target_def import Target
 
 
 @dataclass(slots=True)
@@ -210,6 +216,7 @@ def compute_reflection_link_budget(
     frequency_hz: float,
     settings: dict | BistaticLinkBudgetSettings | None = None,
     q_sat: np.ndarray | None = None,
+    target: "Target | None" = None,
 ) -> dict:
     """
     =========================================================================================================
@@ -228,6 +235,7 @@ def compute_reflection_link_budget(
         frequency_hz:             [float]                     Carrier frequency [Hz]
         settings:                 [dict | BistaticLinkBudgetSettings | None]  Link budget settings
         q_sat:                    [np.ndarray, shape (4,) | None]  Satellite attitude quaternion [w, x, y, z]
+        target:                   [Target | None]             RCS model; defaults to OceanTarget.from_settings(settings) (default: No ship)
 
     OUTPUT:
         link_budget: [dict]   Link budget components and received power arrays
@@ -237,6 +245,12 @@ def compute_reflection_link_budget(
     if q_sat is None:
         q_sat = np.array([1.0, 0.0, 0.0, 0.0], dtype=float)
 
+    if target is None:
+        # Local import to avoid a load-time cycle (Target_def imports BistaticGeometry from here).
+        from object_definitions.OceanTarget_def import OceanTarget
+
+        target = OceanTarget.from_settings(settings_obj)
+
     tx_positions_eci = np.asarray(tx_positions_eci, dtype=float)
     rx_positions_eci = np.asarray(rx_positions_eci, dtype=float)
     rx_velocities_eci = np.asarray(rx_velocities_eci, dtype=float)
@@ -244,8 +258,21 @@ def compute_reflection_link_budget(
     incidence_deg = np.asarray(incidence_deg, dtype=float)
 
     num_positions = reflection_positions_eci.shape[0]
-    range_rx_m = np.linalg.norm((reflection_positions_eci - rx_positions_eci.T) * 1e-3, axis=1) * 1e3
-    range_tx_m = np.linalg.norm((reflection_positions_eci - tx_positions_eci.T) * 1e-3, axis=1) * 1e3
+
+    # Spherical surface normal (the position vector itself) is used by default;
+    # `scattering_angle_deg` and `bistatic_angle_deg` therefore carry up to ~0.19 deg residual
+    # error when the upstream geometry was solved on the ellipsoid.
+    geometry = build_bistatic_geometry(
+        tx_positions_eci,
+        rx_positions_eci,
+        reflection_positions_eci,
+        reflection_positions_eci,
+    )
+    # Override the incidence angle with the caller-supplied value to preserve elliptical-Earth accuracy.
+    geometry = dataclasses.replace(geometry, incidence_angle_deg=incidence_deg)
+
+    range_tx_m = geometry.range_tx_m
+    range_rx_m = geometry.range_rx_m
 
     # No antenna pattern -> assume isotropic (0 dBi). Otherwise NaN gains
     # (e.g. reflection outside FOV) propagate to NaN power.
@@ -277,14 +304,22 @@ def compute_reflection_link_budget(
                 elevation_deg=steering_elevation_deg,
             )
 
-    return compute_bistatic_link_budget(
+    wavelength_m = Constants.SPEED_OF_LIGHT / frequency_hz
+    target_rcs = target.compute_rcs(geometry, wavelength_m)
+
+    link_budget = compute_bistatic_link_budget(
         range_tx_m=range_tx_m,
         range_rx_m=range_rx_m,
-        incidence_deg=incidence_deg,
         rx_gain_dbi=rx_gain_dbi,
+        rcs_m2=target_rcs.rcs_m2,
         frequency_hz=frequency_hz,
         settings=settings_obj,
     )
+    link_budget["incidence_deg"] = geometry.incidence_angle_deg
+    link_budget["scattering_deg"] = geometry.scattering_angle_deg
+    link_budget["bistatic_deg"] = geometry.bistatic_angle_deg
+    link_budget["target_info"] = target_rcs.info
+    return link_budget
 
 
 def _linear_from_db(values_db):
@@ -354,70 +389,19 @@ def compute_rx_look_direction_antenna_frame(
     return n_ar_a / n_ar_a_norm
 
 
-def compute_simple_ocean_rcs(
-    range_tx_m: np.ndarray,
-    range_rx_m: np.ndarray,
-    incidence_deg: np.ndarray,
-    wavelength_m: float,
-    settings: BistaticLinkBudgetSettings,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    =========================================================================================================
-    Compute simple ocean RCS model for a bistatic link budget.
-
-    The model is `sigma = sigma0(theta_i) * A_fresnel` where A_fresnel is an isotropic first
-    Fresnel-zone area approximation.
-
-    INPUTS:
-        range_tx_m:    [np.ndarray]                  Tx-to-surface range [m]
-        range_rx_m:    [np.ndarray]                  Surface-to-Rx range [m]
-        incidence_deg: [np.ndarray]                  Incidence angle at the surface [deg]
-        wavelength_m:  [float]                       Carrier wavelength [m]
-        settings:      [BistaticLinkBudgetSettings]  Calibration parameters
-
-    OUTPUT:
-        result: [tuple]   (sigma0_db, fresnel_area_m2, rcs_m2) — each np.ndarray same shape as inputs
-
-    NOTES:
-        - `sigma0` here is treated as an effective coefficient in the simplified model above.
-        - The function does not explicitly separate coherent/specular and diffuse/incoherent
-          scattering physics.
-    =========================================================================================================
-    """
-    range_tx_m = np.asarray(range_tx_m, dtype=float)
-    range_rx_m = np.asarray(range_rx_m, dtype=float)
-    incidence_deg = np.asarray(incidence_deg, dtype=float)
-
-    incidence_pos = np.clip(incidence_deg, 0.0, None)
-    sigma0_db = settings.ocean_sigma0_db - settings.ocean_sigma_slope_db_per_deg * incidence_pos
-    sigma0_db = np.maximum(sigma0_db, settings.ocean_sigma_floor_db)
-    sigma0_lin = _linear_from_db(sigma0_db)
-
-    range_sum = range_tx_m + range_rx_m
-    denom = np.where(range_sum > 0.0, range_sum, np.nan)
-    fresnel_radius = np.sqrt(wavelength_m * range_tx_m * range_rx_m / denom)
-    fresnel_area = np.pi * fresnel_radius**2
-    rcs_m2 = sigma0_lin * fresnel_area * settings.fresnel_rcs_scale
-
-    valid = np.isfinite(range_tx_m) & np.isfinite(range_rx_m) & np.isfinite(incidence_deg) & (range_tx_m > 0.0) & (range_rx_m > 0.0)
-    sigma0_db = np.where(valid, sigma0_db, np.nan)
-    fresnel_area = np.where(valid, fresnel_area, np.nan)
-    rcs_m2 = np.where(valid, rcs_m2, np.nan)
-
-    return sigma0_db, fresnel_area, rcs_m2
-
-
 def compute_bistatic_link_budget(
     range_tx_m: np.ndarray,
     range_rx_m: np.ndarray,
-    incidence_deg: np.ndarray,
     rx_gain_dbi: np.ndarray,
+    rcs_m2: np.ndarray,
     frequency_hz: float,
     settings: dict | BistaticLinkBudgetSettings | None = None,
 ) -> dict:
     """
     =========================================================================================================
-    Compute simplified bistatic GNSS-R received power.
+    Compute simplified bistatic GNSS-R received power from a precomputed RCS.
+
+    Pr = EIRP * G_rx * lambda^2 * sigma / ((4 pi)^3 * R_t^2 * R_r^2 * L)
 
     `fspl_sum_db` is the sum of one-way FSPL terms (Tx->surface plus surface->Rx).
     `bistatic_spreading_loss_db` is the corresponding spreading term used in the simplified
@@ -426,10 +410,10 @@ def compute_bistatic_link_budget(
     INPUTS:
         range_tx_m:    [np.ndarray]   Distance transmitter to reflection point [m]
         range_rx_m:    [np.ndarray]   Distance reflection point to receiver [m]
-        incidence_deg: [np.ndarray]   Incidence angle at the ocean surface [deg]
         rx_gain_dbi:   [np.ndarray]   Receiver antenna gain along look direction [dBi]
+        rcs_m2:        [np.ndarray]   Target RCS per sample [m^2]; supplied by a Target implementation
         frequency_hz:  [float]        Carrier frequency [Hz]
-        settings:      [dict | BistaticLinkBudgetSettings | None]   Link budget settings
+        settings:      [dict | BistaticLinkBudgetSettings | None]   Link budget settings (Tx/system)
 
     OUTPUT:
         link_budget: [dict]   Link budget components and received power arrays
@@ -439,15 +423,15 @@ def compute_bistatic_link_budget(
 
     range_tx_m = np.asarray(range_tx_m, dtype=float)
     range_rx_m = np.asarray(range_rx_m, dtype=float)
-    incidence_deg = np.asarray(incidence_deg, dtype=float)
     rx_gain_dbi = np.asarray(rx_gain_dbi, dtype=float)
+    rcs_m2 = np.asarray(rcs_m2, dtype=float)
 
     if range_tx_m.shape != range_rx_m.shape:
         raise ValueError("range_tx_m and range_rx_m must have identical shape")
-    if incidence_deg.shape != range_tx_m.shape:
-        raise ValueError("incidence_deg must match range arrays shape")
     if rx_gain_dbi.shape != range_tx_m.shape:
         raise ValueError("rx_gain_dbi must match range arrays shape")
+    if rcs_m2.shape != range_tx_m.shape:
+        raise ValueError("rcs_m2 must match range arrays shape")
     if frequency_hz <= 0.0:
         raise ValueError("frequency_hz must be positive")
 
@@ -465,8 +449,6 @@ def compute_bistatic_link_budget(
     valid_bistatic = valid_tx & valid_rx
     if np.any(valid_bistatic):
         bistatic_spreading_loss_db[valid_bistatic] = fspl_sum_db[valid_bistatic] - 10.0 * np.log10((4.0 * np.pi) / (wavelength_m**2))
-
-    sigma0_db, fresnel_area_m2, rcs_m2 = compute_simple_ocean_rcs(range_tx_m, range_rx_m, incidence_deg, wavelength_m, settings_obj)
 
     total_losses_lin = _linear_from_db(settings_obj.system_losses_db + settings_obj.polarization_losses_db)
     tx_eirp_w = _linear_from_db(settings_obj.tx_eirp_dbw)
@@ -489,11 +471,8 @@ def compute_bistatic_link_budget(
         "fspl_rx_db": fspl_rx_db,
         "fspl_sum_db": fspl_sum_db,
         "bistatic_spreading_loss_db": bistatic_spreading_loss_db,
-        "incidence_deg": incidence_deg,
         "rx_gain_dbi": rx_gain_dbi,
-        "ocean_sigma0_db": sigma0_db,
-        "ocean_fresnel_area_m2": fresnel_area_m2,
-        "ocean_rcs_m2": rcs_m2,
+        "rcs_m2": rcs_m2,
         "received_power_w": pr_w,
         "received_power_dbw": pr_dbw,
         "received_power_dbm": pr_dbm,
