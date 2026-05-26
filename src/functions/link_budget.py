@@ -52,6 +52,127 @@ def coerce_link_budget_settings(settings: dict | BistaticLinkBudgetSettings | No
     raise TypeError("settings must be None, dict, or BistaticLinkBudgetSettings")
 
 
+@dataclass(frozen=True, slots=True)
+class BistaticGeometry:
+    """Per-sample bistatic geometry: surface normal, propagation directions, ranges and angles.
+
+    Conventions:
+        - `k_hat_in`  points from Tx to surface (incoming propagation direction).
+        - `k_hat_out` points from surface to Rx (outgoing propagation direction).
+        - `incidence_angle_deg`  is between -k_hat_in and n_hat_surface (0deg = normal incidence).
+        - `scattering_angle_deg` is between  k_hat_out and n_hat_surface.
+        - `bistatic_angle_deg`   is between -k_hat_in and  k_hat_out
+          (0deg = backscatter, 2 * theta_i for the specular mirror geometry, 180deg = forward).
+
+    Shapes: vectors are (n, 3); scalar quantities are (n,). Invalid samples carry NaN.
+    """
+
+    n_hat_surface: np.ndarray
+    k_hat_in: np.ndarray
+    k_hat_out: np.ndarray
+    range_tx_m: np.ndarray
+    range_rx_m: np.ndarray
+    incidence_angle_deg: np.ndarray
+    scattering_angle_deg: np.ndarray
+    bistatic_angle_deg: np.ndarray
+
+
+def build_bistatic_geometry(
+    tx_positions: np.ndarray,
+    rx_positions: np.ndarray,
+    surface_positions: np.ndarray,
+    surface_normals: np.ndarray,
+) -> BistaticGeometry:
+    """Compute per-sample bistatic geometry from Tx, Rx, surface positions and surface normals.
+
+    INPUTS:
+        tx_positions:      [np.ndarray, shape (3, n)]   Transmitter positions [m]
+        rx_positions:      [np.ndarray, shape (3, n)]   Receiver positions [m]
+        surface_positions: [np.ndarray, shape (n, 3)]   Surface (reflection) positions [m]
+        surface_normals:   [np.ndarray, shape (n, 3)]   Outward surface normals (any magnitude)
+
+    All four arrays must share the same reference frame at the same time samples.
+    Invalid entries (NaN, zero range, zero-length normal) propagate as NaN in the output.
+
+    OUTPUT:
+        geometry: [BistaticGeometry]   Per-sample directions, ranges and angles.
+    """
+    tx = np.asarray(tx_positions, dtype=float)
+    rx = np.asarray(rx_positions, dtype=float)
+    surf = np.asarray(surface_positions, dtype=float)
+    normal = np.asarray(surface_normals, dtype=float)
+
+    # Robustness checks
+    if tx.ndim != 2 or tx.shape[0] != 3:
+        raise ValueError(f"tx_positions must have shape (3, n); got {tx.shape}")
+    if rx.ndim != 2 or rx.shape[0] != 3:
+        raise ValueError(f"rx_positions must have shape (3, n); got {rx.shape}")
+    if surf.ndim != 2 or surf.shape[1] != 3:
+        raise ValueError(f"surface_positions must have shape (n, 3); got {surf.shape}")
+    if normal.shape != surf.shape:
+        raise ValueError(f"surface_normals must match surface_positions shape; got {normal.shape} vs {surf.shape}")
+    n = surf.shape[0]
+    if tx.shape[1] != n or rx.shape[1] != n:
+        raise ValueError(f"tx_positions and rx_positions must have n={n} columns; got {tx.shape[1]} and {rx.shape[1]}")
+
+    tx_T = tx.T
+    rx_T = rx.T
+
+    p_s2tx = tx_T - surf # Vectors from surface to Tx; k_hat_in = -p_s2tx / |p_s2tx|
+    p_s2rx = rx_T - surf # Vectors from surface to Rx; k_hat_out = p_s2rx / |p_s2rx|
+
+    range_tx_m = np.linalg.norm(p_s2tx, axis=1)
+    range_rx_m = np.linalg.norm(p_s2rx, axis=1)
+    norm_mag = np.linalg.norm(normal, axis=1)
+
+    # Validity mask
+    valid = (
+        np.isfinite(range_tx_m)
+        & np.isfinite(range_rx_m)
+        & np.isfinite(norm_mag)
+        & (range_tx_m > 0.0)
+        & (range_rx_m > 0.0)
+        & (norm_mag > 0.0)
+    )
+
+    # Initialize outputs with NaN; valid samples get overwritten below, invalid samples stay NaN
+    k_hat_in = np.full((n, 3), np.nan)
+    k_hat_out = np.full((n, 3), np.nan)
+    n_hat = np.full((n, 3), np.nan)
+
+    # Unit vectors point in the physically correct directions for valid geometry; invalid geometry stays NaN.
+    k_hat_in[valid] = -p_s2tx[valid] / range_tx_m[valid, None] # Unit vector from Tx to surface
+    k_hat_out[valid] = p_s2rx[valid] / range_rx_m[valid, None] # Unit vector from surface to Rx
+    n_hat[valid] = normal[valid] / norm_mag[valid, None] # Unit surface normal
+
+    # Angle calculations: NaN for invalid geometry, valid angles in [0, 180] degrees for valid geometry.
+    cos_inc = np.full(n, np.nan) 
+    cos_sca = np.full(n, np.nan) 
+    cos_bist = np.full(n, np.nan) 
+
+    # Valid geometry: compute cosines of angles using dot products, then clip to [-1, 1] to avoid numerical issues with arccos.
+    cos_inc[valid] = -np.sum(k_hat_in[valid] * n_hat[valid], axis=1) # Cosine of incidence angle = -k_hat_in . n_hat
+    cos_sca[valid] = np.sum(k_hat_out[valid] * n_hat[valid], axis=1) # Cosine of scattering angle = k_hat_out . n_hat
+    cos_bist[valid] = -np.sum(k_hat_in[valid] * k_hat_out[valid], axis=1) # Cosine of bistatic angle = -k_hat_in . k_hat_out (out to in)
+
+    # Convert to degrees; invalid geometry stays NaN.
+    # Clipping to [-1, 1] above ensures that valid geometry yields real angles in [0, 180] degrees, even with small numerical errors.
+    incidence_deg = np.degrees(np.arccos(np.clip(cos_inc, -1.0, 1.0)))
+    scattering_deg = np.degrees(np.arccos(np.clip(cos_sca, -1.0, 1.0)))
+    bistatic_deg = np.degrees(np.arccos(np.clip(cos_bist, -1.0, 1.0)))
+
+    return BistaticGeometry(
+        n_hat_surface=n_hat,
+        k_hat_in=k_hat_in,
+        k_hat_out=k_hat_out,
+        range_tx_m=np.where(valid, range_tx_m, np.nan),
+        range_rx_m=np.where(valid, range_rx_m, np.nan),
+        incidence_angle_deg=incidence_deg,
+        scattering_angle_deg=scattering_deg,
+        bistatic_angle_deg=bistatic_deg,
+    )
+
+
 def resolve_single_link_budget_frequency_hz(antenna) -> float:
     """
     =========================================================================================================
