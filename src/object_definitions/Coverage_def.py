@@ -32,7 +32,8 @@ class Coverage:
         overwrite_shapefile=False,
         earth_model="spherical",
         link_budget_settings=None,
-        max_central_angle_deg=80.0,
+        *,
+        max_central_angle_deg,
     ) -> None:
         """
         =========================================================================================================
@@ -50,7 +51,7 @@ class Coverage:
             overwrite_shapefile:   [bool]                     Regenerate the gridded shapefile if it exists
             earth_model:           [str]                      "spherical" or "elliptical"
             link_budget_settings:  [dict | BistaticLinkBudgetSettings | None]   Link budget settings
-            max_central_angle_deg: [float]                    Max Tx-Rx central angle [deg] (default: 80.0)
+            max_central_angle_deg: [float]                    Max Tx-Rx central angle [deg] (required)
         =========================================================================================================
         """
         # Path to the input shapefile (outline of the area of interest)

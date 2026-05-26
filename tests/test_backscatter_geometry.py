@@ -30,7 +30,7 @@ class TestEllipsoidIntersection:
         # surface point (essentially R_E along x), i.e. directly below the LEO.
         rx_ecef = np.array([WGS84_A + 700_000.0, 0.0, 0.0])      # LEO at 700 km
         tx_ecef = np.array([WGS84_A + 20_200_000.0, 0.0, 0.0])   # GPS at 20 200 km
-        brp, t, reason = calculate_ellipsoid_intersection_t(tx_ecef, rx_ecef)
+        brp, t, reason = calculate_ellipsoid_intersection_t(tx_ecef, rx_ecef, max_central_angle_deg=80.0)
         assert reason == "ok"
         assert brp is not None
         # BRP should be on the +x surface within numerical tolerance.
@@ -43,7 +43,7 @@ class TestEllipsoidIntersection:
         # We verify by checking that (BRP - Tx) and (Rx - Tx) are parallel.
         rx_ecef = np.array([WGS84_A + 700_000.0, 0.0, 0.0])
         tx_ecef = np.array([15_000_000.0, 12_000_000.0, 5_000_000.0])
-        brp, t, reason = calculate_ellipsoid_intersection_t(tx_ecef, rx_ecef)
+        brp, t, reason = calculate_ellipsoid_intersection_t(tx_ecef, rx_ecef, max_central_angle_deg=80.0)
         assert reason == "ok"
         v_to_rx = rx_ecef - tx_ecef
         v_to_brp = brp - tx_ecef
@@ -58,17 +58,17 @@ class TestEllipsoidIntersection:
         # The returned BRP must satisfy the ellipsoid equation.
         rx_ecef = np.array([WGS84_A + 700_000.0, 0.0, 0.0])
         tx_ecef = np.array([WGS84_A + 20_200_000.0, 1_000_000.0, 0.0])
-        brp, _, reason = calculate_ellipsoid_intersection_t(tx_ecef, rx_ecef)
+        brp, _, reason = calculate_ellipsoid_intersection_t(tx_ecef, rx_ecef, max_central_angle_deg=80.0)
         assert reason == "ok"
         # x²/a² + y²/a² + z²/b² should equal 1
         residual = brp[0] ** 2 / WGS84_A**2 + brp[1] ** 2 / WGS84_A**2 + brp[2] ** 2 / WGS84_B**2 - 1.0
         assert residual == pytest.approx(0.0, abs=1e-9)
 
     def test_tx_and_rx_too_far_apart_returns_opposite_side(self):
-        # Central angle = 90° between Tx and Rx; default cutoff = 80° should reject.
+        # Central angle = 90° between Tx and Rx; cutoff = 80° should reject.
         rx_ecef = np.array([WGS84_A + 700_000.0, 0.0, 0.0])
         tx_ecef = np.array([0.0, WGS84_A + 20_200_000.0, 0.0])
-        brp, t, reason = calculate_ellipsoid_intersection_t(tx_ecef, rx_ecef)
+        brp, t, reason = calculate_ellipsoid_intersection_t(tx_ecef, rx_ecef, max_central_angle_deg=80.0)
         assert reason == "opposite_side"
         assert brp is None
         assert t is None
@@ -76,8 +76,8 @@ class TestEllipsoidIntersection:
     def test_line_misses_earth_returns_outside_segment(self):
         # At ~70° central angle (LEO at 700 km, GPS at 20 200 km), the line through Tx and Rx
         # tangents away from Earth — the extended line never touches the ellipsoid. The
-        # central-angle filter at default 80° lets this case through, and the quadratic's
-        # discriminant then comes out negative.
+        # 80° central-angle filter lets this case through, and the quadratic's discriminant
+        # then comes out negative.
         rx_ecef = np.array([WGS84_A + 700_000.0, 0.0, 0.0])
         alpha_rad = np.deg2rad(70.0)
         tx_ecef = np.array([
@@ -85,7 +85,7 @@ class TestEllipsoidIntersection:
             (WGS84_A + 20_200_000.0) * np.sin(alpha_rad),
             0.0,
         ])
-        brp, t, reason = calculate_ellipsoid_intersection_t(tx_ecef, rx_ecef)
+        brp, t, reason = calculate_ellipsoid_intersection_t(tx_ecef, rx_ecef, max_central_angle_deg=80.0)
         assert reason == "outside_segment"
         assert brp is None
         assert t is None
@@ -93,7 +93,7 @@ class TestEllipsoidIntersection:
     def test_degenerate_tx_equals_rx(self):
         # Zero-length direction vector → degenerate.
         pos = np.array([WGS84_A + 700_000.0, 0.0, 0.0])
-        brp, t, reason = calculate_ellipsoid_intersection_t(pos, pos)
+        brp, t, reason = calculate_ellipsoid_intersection_t(pos, pos, max_central_angle_deg=80.0)
         assert reason == "degenerate"
         assert brp is None
         assert t is None
@@ -128,7 +128,7 @@ class TestAntennaFovPreGate:
         # Tx directly above LEO (zero y offset) → BRP at sub-LEO point, look direction at boresight.
         antenna = make_test_antenna()
         tx_pos, tx_vel, rx_pos, rx_vel, times = self._build_state(tx_offset_along_y=0.0)
-        brp = BRP(gps_index=0, leo_index=0, earth_model="elliptical")
+        brp = BRP(gps_index=0, leo_index=0, earth_model="elliptical", max_central_angle_deg=80.0, max_incidence_angle_deg=45.0)
         brp.compute_brp_coordinates(
             GNSS_state=_make_satellite_stub(tx_pos, tx_vel),
             Sat_state=_make_satellite_stub(rx_pos, rx_vel),
@@ -145,7 +145,7 @@ class TestAntennaFovPreGate:
         antenna = make_test_antenna()
         antenna.max_steering_off_boresight_deg = 5.0  # tighter than the fixture default 30°
         tx_pos, tx_vel, rx_pos, rx_vel, times = self._build_state(tx_offset_along_y=10_000_000.0)
-        brp = BRP(gps_index=0, leo_index=0, earth_model="elliptical")
+        brp = BRP(gps_index=0, leo_index=0, earth_model="elliptical", max_central_angle_deg=80.0, max_incidence_angle_deg=45.0)
         brp.compute_brp_coordinates(
             GNSS_state=_make_satellite_stub(tx_pos, tx_vel),
             Sat_state=_make_satellite_stub(rx_pos, rx_vel),
@@ -158,7 +158,7 @@ class TestAntennaFovPreGate:
     def test_no_antenna_skips_fov_gate(self):
         # Without an antenna, the pre-gate is bypassed and the BRP is computed by geometry alone.
         tx_pos, tx_vel, rx_pos, rx_vel, times = self._build_state(tx_offset_along_y=0.0)
-        brp = BRP(gps_index=0, leo_index=0, earth_model="elliptical")
+        brp = BRP(gps_index=0, leo_index=0, earth_model="elliptical", max_central_angle_deg=80.0, max_incidence_angle_deg=45.0)
         brp.compute_brp_coordinates(
             GNSS_state=_make_satellite_stub(tx_pos, tx_vel),
             Sat_state=_make_satellite_stub(rx_pos, rx_vel),

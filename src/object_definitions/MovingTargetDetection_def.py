@@ -43,8 +43,9 @@ class MovingTargetDetection:
         reflection_mode="specular",  # <--- add this argument
         link_budget_settings=None,
         bbox_buffer_deg=2.0,
-        max_central_angle_deg=80.0,
-        max_incidence_angle_deg=45.0,
+        *,
+        max_central_angle_deg,
+        max_incidence_angle_deg,
     ) -> None:
         """
         =========================================================================================================
@@ -63,8 +64,8 @@ class MovingTargetDetection:
                 reflection_mode:                    [str]                      "specular" or "backscatter"
                 link_budget_settings:               [dict | BistaticLinkBudgetSettings | None]   Link budget settings
                 bbox_buffer_deg:                    [float]                    Padding in degrees added around the trajectory bounding box when rendering detection plots (default: 2.0)
-                max_central_angle_deg:              [float]                    Max Tx-Rx central angle [deg] (default: 80.0)
-                max_incidence_angle_deg:            [float]                    Max BRP incidence angle [deg], backscatter only (default: 45.0)
+                max_central_angle_deg:              [float]                    Max Tx-Rx central angle [deg] (required)
+                max_incidence_angle_deg:            [float | None]             Max BRP incidence angle [deg]; required when reflection_mode = "backscatter", may be None for "specular"
 
             ATTRIBUTES:
                 moving_target_object:        [ShipTrajectory]   Moving target object
@@ -102,7 +103,12 @@ class MovingTargetDetection:
         self.link_budget_frequency_hz = lb.resolve_single_link_budget_frequency_hz(self.sat_antenna)
         self.bbox_buffer_deg = float(bbox_buffer_deg)
         self.max_central_angle_deg = float(max_central_angle_deg)
-        self.max_incidence_angle_deg = float(max_incidence_angle_deg)
+        if self.reflection_mode == "backscatter":
+            if max_incidence_angle_deg is None:
+                raise ValueError("max_incidence_angle_deg is required when reflection_mode = 'backscatter'.")
+            self.max_incidence_angle_deg = float(max_incidence_angle_deg)
+        else:
+            self.max_incidence_angle_deg = None
         self.footprint_stats = {"total": 0, "rejected_empty": 0}  # populated by _reflection_point_footprint, summarised at the end of calculate_moving_target_reflection_intersection
         self.initialization()
 

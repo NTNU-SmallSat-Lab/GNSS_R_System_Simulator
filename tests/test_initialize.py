@@ -48,6 +48,13 @@ MINIMAL_GNSS = dedent(
     """
 )
 
+MINIMAL_REFLECTION = dedent(
+    """\
+    [REFLECTION]
+    max_central_angle_deg = 80.0
+    """
+)
+
 
 def write_config(tmp_path, body: str) -> str:
     """Write the given INI body to a temporary file and return its path."""
@@ -61,6 +68,7 @@ def minimal_config_body(
     extra_sim_settings: str = "",
     orbits_section: str = MINIMAL_ORBITS,
     gnss_section: str = MINIMAL_GNSS,
+    reflection_section: str = MINIMAL_REFLECTION,
     extra_sections: str = "",
 ) -> str:
     """Compose a minimal-but-valid INI body that initialize() can parse."""
@@ -69,6 +77,7 @@ def minimal_config_body(
             MINIMAL_SIMULATION_SETTINGS + extra_sim_settings,
             orbits_section,
             gnss_section,
+            reflection_section,
             extra_sections,
         ]
     )
@@ -339,7 +348,8 @@ class TestOptionalSections:
         assert settings["start_coord_ll"] == (60.0, 5.0)
         assert settings["end_coord_ll"] == (62.0, 8.0)
 
-    def test_no_reflection_section_defaults_to_specular(self, tmp_path):
+    def test_no_reflection_type_key_defaults_to_specular(self, tmp_path):
+        # [REFLECTION] is required, but reflection_type within it is optional and defaults to specular.
         path = write_config(tmp_path, minimal_config_body())
         _, settings = initialize(path)
         assert settings["reflection_type"] == "specular"
@@ -349,9 +359,11 @@ class TestOptionalSections:
             """\
             [REFLECTION]
             reflection_type = backscatter
+            max_central_angle_deg = 80.0
+            max_incidence_angle_deg = 45.0
             """
         )
-        path = write_config(tmp_path, minimal_config_body(extra_sections=reflection))
+        path = write_config(tmp_path, minimal_config_body(reflection_section=reflection))
         _, settings = initialize(path)
         assert settings["reflection_type"] == "backscatter"
 
@@ -361,9 +373,11 @@ class TestOptionalSections:
             """\
             [REFLECTION]
             reflection_type = "backscatter"
+            max_central_angle_deg = 80.0
+            max_incidence_angle_deg = 45.0
             """
         )
-        path = write_config(tmp_path, minimal_config_body(extra_sections=reflection))
+        path = write_config(tmp_path, minimal_config_body(reflection_section=reflection))
         _, settings = initialize(path)
         assert settings["reflection_type"] == "backscatter"
 
@@ -399,13 +413,45 @@ class TestOptionalSections:
         with pytest.raises(ValueError, match="tx_eirp_dbw"):
             initialize(path)
 
-    def test_no_reflection_section_defaults_angle_thresholds(self, tmp_path):
+    def test_no_reflection_section_raises(self, tmp_path):
+        # The whole [REFLECTION] section is required — no silent fallback to default angles.
+        path = write_config(tmp_path, minimal_config_body(reflection_section=""))
+        with pytest.raises(ValueError, match=r"\[REFLECTION\] section is required"):
+            initialize(path)
+
+    def test_missing_max_central_angle_raises(self, tmp_path):
+        reflection = dedent(
+            """\
+            [REFLECTION]
+            reflection_type = specular
+            """
+        )
+        path = write_config(tmp_path, minimal_config_body(reflection_section=reflection))
+        with pytest.raises(ValueError, match="max_central_angle_deg is required"):
+            initialize(path)
+
+    def test_backscatter_without_max_incidence_angle_raises(self, tmp_path):
+        # max_incidence_angle_deg is required only when reflection_type = backscatter.
+        reflection = dedent(
+            """\
+            [REFLECTION]
+            reflection_type = backscatter
+            max_central_angle_deg = 80.0
+            """
+        )
+        path = write_config(tmp_path, minimal_config_body(reflection_section=reflection))
+        with pytest.raises(ValueError, match="max_incidence_angle_deg is required when reflection_type = backscatter"):
+            initialize(path)
+
+    def test_specular_without_max_incidence_angle_ok(self, tmp_path):
+        # For specular mode the incidence cutoff is irrelevant; settings exposes it as None.
         path = write_config(tmp_path, minimal_config_body())
         _, settings = initialize(path)
+        assert settings["reflection_type"] == "specular"
         assert settings["max_central_angle_deg"] == 80.0
-        assert settings["max_incidence_angle_deg"] == 45.0
+        assert settings["max_incidence_angle_deg"] is None
 
-    def test_reflection_section_overrides_angle_thresholds(self, tmp_path):
+    def test_reflection_section_provides_angle_thresholds(self, tmp_path):
         reflection = dedent(
             """\
             [REFLECTION]
@@ -414,7 +460,7 @@ class TestOptionalSections:
             max_incidence_angle_deg = 30.0
             """
         )
-        path = write_config(tmp_path, minimal_config_body(extra_sections=reflection))
+        path = write_config(tmp_path, minimal_config_body(reflection_section=reflection))
         _, settings = initialize(path)
         assert settings["max_central_angle_deg"] == 70.0
         assert settings["max_incidence_angle_deg"] == 30.0
@@ -426,7 +472,7 @@ class TestOptionalSections:
             max_central_angle_deg = not_a_number
             """
         )
-        path = write_config(tmp_path, minimal_config_body(extra_sections=reflection))
+        path = write_config(tmp_path, minimal_config_body(reflection_section=reflection))
         with pytest.raises(ValueError, match="max_central_angle_deg"):
             initialize(path)
 
@@ -434,10 +480,12 @@ class TestOptionalSections:
         reflection = dedent(
             """\
             [REFLECTION]
+            reflection_type = backscatter
+            max_central_angle_deg = 80.0
             max_incidence_angle_deg = nope
             """
         )
-        path = write_config(tmp_path, minimal_config_body(extra_sections=reflection))
+        path = write_config(tmp_path, minimal_config_body(reflection_section=reflection))
         with pytest.raises(ValueError, match="max_incidence_angle_deg"):
             initialize(path)
 

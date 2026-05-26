@@ -50,6 +50,7 @@ def coverage_deg(input_shapefile_path):
             shapefile=input_shapefile_path,
             grid_size_deg=2.5,
             overwrite_shapefile=True,
+            max_central_angle_deg=80.0,
         )
 
 
@@ -188,6 +189,7 @@ class TestCoverageEquidistantGrid:
                 shapefile=input_shapefile_path,
                 grid_size_m=200_000,  # 200 km cells
                 overwrite_shapefile=True,
+                max_central_angle_deg=80.0,
             )
         # A 10°x10° region near the equator (~1100 km on a side) with 200 km cells → at least a
         # handful of cells; the exact count depends on lat-scaling and intersection filtering,
@@ -203,6 +205,7 @@ class TestCoverageEquidistantGrid:
                 shapefile=input_shapefile_path,
                 grid_size_m=200_000,
                 overwrite_shapefile=True,
+                max_central_angle_deg=80.0,
             )
         assert coverage.grid_type == "equidistant"
         assert coverage.gridded_shapefile_path.endswith("_gridded_m.shp")
@@ -225,6 +228,7 @@ class TestGetBoundingBox:
                 shapefile=input_shapefile_path,
                 grid_size_m=200_000,
                 overwrite_shapefile=True,
+                max_central_angle_deg=80.0,
             )
         bbox = coverage.bounding_box
         assert bbox is not None
@@ -253,4 +257,5 @@ class TestEarthModelValidation:
                     grid_size_deg=2.5,
                     overwrite_shapefile=True,
                     earth_model="NOT_A_VALID_MODEL",
+                    max_central_angle_deg=80.0,
                 )

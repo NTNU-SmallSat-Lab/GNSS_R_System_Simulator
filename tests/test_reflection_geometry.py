@@ -33,7 +33,7 @@ R_GNSS = Constants.RADIUS_EARTH_EQUAT + 20_200e3
 def refl():
     """A Reflection object with sane defaults; construction noise is suppressed."""
     with contextlib.redirect_stdout(io.StringIO()):
-        return Reflection(tx_satID=1, rx_satID=2, earth_model="spherical")
+        return Reflection(tx_satID=1, rx_satID=2, earth_model="spherical", max_central_angle_deg=80.0)
 
 
 # --------------------------------------------------------------------------- #

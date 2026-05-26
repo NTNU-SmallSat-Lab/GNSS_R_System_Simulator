@@ -17,7 +17,7 @@ class BRP:
     def _is_valid_earth_model(model):
         return model in ["spherical", "elliptical"]
 
-    def __init__(self, gps_index, leo_index, max_central_angle_deg=80.0, max_incidence_angle_deg=45.0, earth_model="spherical", gnss_const=None):
+    def __init__(self, gps_index, leo_index, *, max_central_angle_deg, max_incidence_angle_deg, earth_model="spherical", gnss_const=None):
 
         # Earth model check
         if not BRP._is_valid_earth_model(earth_model):
@@ -203,7 +203,7 @@ class BRP:
 # ===============================
 #   GEOMETRY FUNCTIONS
 # ===============================
-def calculate_ellipsoid_intersection_t(tx_ecef, rx_ecef, a=a, b=b, max_central_angle_deg=80.0):
+def calculate_ellipsoid_intersection_t(tx_ecef, rx_ecef, *, max_central_angle_deg, a=a, b=b):
     """Intersect the line through Tx and Rx with the WGS-84 ellipsoid; return the near-side surface point past Rx.
 
     The line is parameterised as tx_ecef + t * u, with u pointing from Tx toward Rx. Positive t

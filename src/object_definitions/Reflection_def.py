@@ -14,7 +14,8 @@ class Reflection:
         tx_satID=None,
         rx_satID=None,
         earth_model=None,
-        max_central_angle_deg=80.0,
+        *,
+        max_central_angle_deg,
         gnss_const=None,
     ):
         """
@@ -25,7 +26,7 @@ class Reflection:
                 - tx_satID:               Transmitting satellite ID (GNSS satellite)
                 - rx_satID:               Receiving satellite ID    (LEO satellite)
                 - earth model:                                      (spherical or elliptical)
-                - max_central_angle_deg:                            (Max Tx-Rx central angle [deg], default 80.0)
+                - max_central_angle_deg:                            (Max Tx-Rx central angle [deg], required)
                 - gnss_const:             GNSS constellation        (GPS, GLONASS, GALILEO, BEIDOU) (optional)
 
                 ATTRIBUTES:

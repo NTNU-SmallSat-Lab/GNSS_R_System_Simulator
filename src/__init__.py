@@ -365,31 +365,34 @@ def initialize(config_file_name="Configuration.ini"):
 
 
 
-    # --- [REFLECTION] (OPTIONAL SECTION) ---
-    # Reflection type and per-mode angular cutoffs. max_central_angle_deg is shared by both
-    # specular and backscatter (both check the Tx-Rx central angle the same way).
-    # max_incidence_angle_deg applies only when reflection_type = backscatter; the specular
-    # geometry constrains incidence implicitly via the mirror condition.
-    reflection_type = "specular"
-    max_central_angle_deg = 80.0
-    max_incidence_angle_deg = 45.0
-    if "REFLECTION" in config:
-        section = config["REFLECTION"]
-        reflection_type = section.get("reflection_type", "specular").strip('"').strip("'")
-        if "max_central_angle_deg" in section:
-            try:
-                max_central_angle_deg = float(section["max_central_angle_deg"])
-            except ValueError:
-                raise ValueError(
-                    f"Invalid value for 'max_central_angle_deg' in [REFLECTION]: {section['max_central_angle_deg']}"
-                ) from None
-        if "max_incidence_angle_deg" in section:
-            try:
-                max_incidence_angle_deg = float(section["max_incidence_angle_deg"])
-            except ValueError:
-                raise ValueError(
-                    f"Invalid value for 'max_incidence_angle_deg' in [REFLECTION]: {section['max_incidence_angle_deg']}"
-                ) from None
+    # --- [REFLECTION] (REQUIRED SECTION) ---
+    # max_central_angle_deg is required always; max_incidence_angle_deg only when
+    # reflection_type = backscatter. No fallback defaults — these knobs materially
+    # change the result count and must be set explicitly per simulation.
+    if "REFLECTION" not in config:
+        raise ValueError("[REFLECTION] section is required in the configuration file.")
+    section = config["REFLECTION"]
+    reflection_type = section.get("reflection_type", "specular").strip('"').strip("'")
+    if "max_central_angle_deg" not in section:
+        raise ValueError("[REFLECTION].max_central_angle_deg is required in the configuration file.")
+    try:
+        max_central_angle_deg = float(section["max_central_angle_deg"])
+    except ValueError:
+        raise ValueError(
+            f"Invalid value for 'max_central_angle_deg' in [REFLECTION]: {section['max_central_angle_deg']}"
+        ) from None
+    max_incidence_angle_deg = None
+    if reflection_type == "backscatter":
+        if "max_incidence_angle_deg" not in section:
+            raise ValueError(
+                "[REFLECTION].max_incidence_angle_deg is required when reflection_type = backscatter."
+            )
+        try:
+            max_incidence_angle_deg = float(section["max_incidence_angle_deg"])
+        except ValueError:
+            raise ValueError(
+                f"Invalid value for 'max_incidence_angle_deg' in [REFLECTION]: {section['max_incidence_angle_deg']}"
+            ) from None
 
     # --- [LINK BUDGET] (OPTIONAL SECTION) ---
     # Defaults derived from BistaticLinkBudgetSettings so the two stay in sync.
