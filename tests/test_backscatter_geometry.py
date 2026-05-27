@@ -140,11 +140,11 @@ class TestAntennaFovPreGate:
         assert np.isfinite(brp.refl_LL_vec).all()
 
     def test_far_off_nadir_brp_rejected_by_fov_gate(self):
-        # Tx displaced along +y → BRP look direction tilts off nadir. With the antenna's steering
-        # limit tightened to 5°, even a modest tilt is rejected by the pre-gate before the
+        # Tx displaced along +y → BRP look direction tilts off nadir. With the antenna's fixed FOV
+        # tightened to 5°, even a modest tilt is rejected by the pre-gate before the
         # ellipsoid math runs, so the BRP stays NaN.
         antenna = make_test_antenna()
-        antenna.max_steering_off_boresight_deg = 5.0  # tighter than the fixture default 30°
+        antenna.max_fov_off_boresight_deg = 5.0  # tighter than the fixture default 30°
         tx_pos, tx_vel, rx_pos, rx_vel, times = self._build_state(tx_offset_along_y=10_000_000.0)
         brp = BRP(gps_index=0, leo_index=0, earth_model="elliptical", max_central_angle_deg=80.0, max_incidence_angle_deg=45.0)
         brp.compute_brp_coordinates(

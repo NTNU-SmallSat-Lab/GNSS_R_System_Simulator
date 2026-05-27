@@ -25,10 +25,9 @@ class RxAntenna:
                                        polarizations:         list (e.g. ["LHCP", "RHCP"])
                                        bands:                 list (e.g. ["L1", "L5"])
                                        footprint_dB:          float, dB contour for the footprint
-                                       array_geometry:        dict with keys elements_along_x,
-                                                              elements_along_y, d_x, d_y. Required for any
-                                                              gain query — the steered array factor is computed
-                                                              analytically from this geometry.
+                                       array_geometry:        optional diagnostic-only dict with keys
+                                                              elements_along_x, elements_along_y, d_x, d_y.
+                                                              Fixed-nadir gain queries use only the JSON pattern.
         =========================================================================================================
         """
         if settings is None:
@@ -39,7 +38,7 @@ class RxAntenna:
             self.footprint_dB_contour = -3.0
         if self.footprint_dB_contour >= 0.0:
             raise ValueError("footprint_dB must be below 0 dB because antenna patterns are normalized to a 0 dB peak.")
-        self.max_steering_off_boresight_deg = self._parse_max_steering_off_boresight(settings.get("max_steering_angle_deg"))
+        self.max_fov_off_boresight_deg = self._parse_max_fov_off_boresight(settings.get("max_fov_angle_deg"))
 
         antenna_patterns_temp = {}
         pattern_files = settings.get("antenna_pattern_files") or {}
@@ -284,9 +283,8 @@ class RxAntenna:
             raise ValueError("Input 'refl_dir_antenna_frame' must be non-zero.")
         refl_dir_antenna_frame = refl_dir_antenna_frame / direction_norm
 
-        # Footprint projection starts from the unsteered contour and rotates it
-        # to the requested reflection direction. Steered patterns remain valid
-        # for gain lookup, but using them here would apply steering twice.
+        # Footprint projection starts from the fixed nadir contour and rotates it
+        # to the requested reflection direction for geometric footprint drawing only.
         footprint_lookup_key = self._resolve_unsteered_footprint_lookup_key(frequency)
 
         # Check if the direction is the same as boresight (no rotation needed)
@@ -336,19 +334,19 @@ class RxAntenna:
         return min(self.antenna_lookuptable, key=lambda available_freq: abs(available_freq - float(frequency_mhz)))
 
     @staticmethod
-    def _parse_max_steering_off_boresight(value) -> float | None:
+    def _parse_max_fov_off_boresight(value) -> float | None:
         """
         =========================================================================================================
-        Parse the configured max steering angle into an off-boresight limit.
+        Parse the fixed-antenna field-of-view limit.
 
-        The INI uses ``max_steering_angle_deg = [azimuth, elevation]``. Azimuth is circular, so the
-        elevation/off-boresight component is the useful field for rejecting impossible steering requests.
+        The INI accepts ``max_fov_angle_deg = [azimuth, max_off_boresight]`` (two-element list, the
+        first element is currently ignored) or a scalar; the value used is the off-boresight half-angle.
 
         INPUTS:
-            value: [float | list | tuple | str | None]   Configured steering limit
+            value: [float | list | tuple | str | None]   Configured FOV limit
 
         OUTPUT:
-            limit: [float | None]   Maximum off-boresight steering angle in degrees, or None if unlimited
+            limit: [float | None]   Maximum off-boresight angle in degrees, or None if unlimited
         =========================================================================================================
         """
         if value is None:
@@ -359,14 +357,14 @@ class RxAntenna:
             try:
                 value = ast.literal_eval(value)
             except (ValueError, SyntaxError) as exc:
-                raise ValueError(f"Invalid max_steering_angle_deg value: {value}") from exc
+                raise ValueError(f"Invalid max_fov_angle_deg value: {value}") from exc
 
         values = np.asarray(value, dtype=float).reshape(-1)
         if values.size == 0:
             return None
         limit = values[1] if values.size >= 2 else values[0]
         if limit < 0:
-            raise ValueError("max_steering_angle_deg must not contain a negative off-boresight limit.")
+            raise ValueError("max_fov_angle_deg must not contain a negative off-boresight limit.")
         return float(limit)
 
     @staticmethod
@@ -397,28 +395,6 @@ class RxAntenna:
         theta_deg = float(np.degrees(np.arccos(np.clip(direction[2], -1.0, 1.0))))
         phi_deg = float((np.degrees(np.arctan2(direction[1], direction[0])) + 360.0) % 360.0)
         return theta_deg, phi_deg
-
-    def resolve_steering_angles_for_direction(self, direction_antenna_frame: np.ndarray) -> tuple[float, float] | None:
-        """
-        =========================================================================================================
-        Resolve the automatic steering command for a look direction in antenna coordinates.
-
-        INPUTS:
-            direction_antenna_frame: [np.ndarray, shape (3,)]   Look direction in antenna frame
-
-        OUTPUT:
-            angles: [tuple | None]   (azimuth_deg, elevation_deg) used to select the closest generated pattern,
-                                     or None if the direction is invalid or outside the steering limit
-        =========================================================================================================
-        """
-        angles = self._direction_to_spherical_angles_deg(direction_antenna_frame)
-        if angles is None:
-            return None
-
-        theta_deg, phi_deg = angles
-        if self.max_steering_off_boresight_deg is not None and theta_deg > self.max_steering_off_boresight_deg:
-            return None
-        return phi_deg, theta_deg
 
     @staticmethod
     def _array_factor_db_at_direction(
@@ -492,9 +468,10 @@ class RxAntenna:
     ):
         """
         =========================================================================================================
-        On-demand uniform planar-array factor in dB at (theta, phi) with exact steering applied.
+        Diagnostic uniform planar-array factor in dB at (theta, phi) with exact steering applied.
 
-        Requires the RxAntenna to have been initialized with array_geometry.
+        This helper is not used by the fixed-nadir link-budget gain path. It requires the RxAntenna
+        to have been initialized explicitly with array_geometry.
 
         INPUTS:
             theta_deg:        [float]   Polar angle from boresight [deg]
@@ -510,7 +487,7 @@ class RxAntenna:
         if getattr(self, "_array_geometry", None) is None:
             raise ValueError(
                 "Array geometry not configured on RxAntenna. Pass an 'array_geometry' dict "
-                "(elements_along_x, elements_along_y, d_x, d_y) in settings to enable on-demand AF."
+                "(elements_along_x, elements_along_y, d_x, d_y) in settings to enable the diagnostic AF helper."
             )
         geom = self._array_geometry
         freq_hz = float(freq_mhz) * 1e6
@@ -543,13 +520,13 @@ class RxAntenna:
     ) -> float:
         """
         =========================================================================================================
-        Get absolute gain [dBi] for a given look direction in antenna coordinates.
+        Get fixed-nadir absolute gain [dBi] for a given look direction in antenna coordinates.
 
         INPUTS:
             direction_antenna_frame: [np.ndarray, shape (3,)]   Look direction in antenna frame
             frequency_mhz:           [float]                    Carrier frequency [MHz]
-            azimuth_deg:             [float | None]             Steering azimuth [deg] (optional)
-            elevation_deg:           [float | None]             Steering elevation [deg] (optional)
+            azimuth_deg:             [float | None]             Retained for API compatibility; ignored.
+            elevation_deg:           [float | None]             Retained for API compatibility; ignored.
 
         OUTPUT:
             gain_dbi: [float]   Absolute gain [dBi], or NaN if direction is invalid / behind the antenna
@@ -573,37 +550,43 @@ class RxAntenna:
             return np.nan
         theta_deg, phi_deg = angles
 
-        if azimuth_deg is None or elevation_deg is None:
-            steering_angles = self.resolve_steering_angles_for_direction(direction)
-            if steering_angles is None:
-                return np.nan
-            auto_azimuth_deg, auto_elevation_deg = steering_angles
-            steering_azimuth_deg = auto_azimuth_deg if azimuth_deg is None else float(azimuth_deg)
-            steering_elevation_deg = auto_elevation_deg if elevation_deg is None else float(elevation_deg)
-        else:
-            steering_azimuth_deg = float(azimuth_deg)
-            steering_elevation_deg = float(elevation_deg)
-
-        if self.max_steering_off_boresight_deg is not None and steering_elevation_deg > self.max_steering_off_boresight_deg:
+        if self.max_fov_off_boresight_deg is not None and theta_deg > self.max_fov_off_boresight_deg:
             return np.nan
 
-        # Compute the steered array factor analytically and scale by the unsteered (boresight) directivity.
-        # A planar aperture loses projected area when scanned away from boresight.
         unsteered_key = self._resolve_unsteered_footprint_lookup_key(frequency_mhz)
-        directivity_linear = 10.0 ** (self.antenna_lookuptable[unsteered_key]["directivity_dB"] / 10.0)
-        scan_loss_linear = max(np.cos(np.deg2rad(steering_elevation_deg)), 0.0)
-        af_db = self.compute_array_factor_db_on_demand(
-            theta_deg=theta_deg,
-            phi_deg=phi_deg,
-            steering_az_deg=steering_azimuth_deg,
-            steering_el_deg=steering_elevation_deg,
-            freq_mhz=frequency_mhz,
-        )
-        total_linear = directivity_linear * scan_loss_linear * (10.0 ** (af_db / 10.0))
-
-        if total_linear <= 0.0:
+        pattern_db = self._sample_radiation_pattern_db(unsteered_key, theta_deg, phi_deg)
+        if not np.isfinite(pattern_db):
             return np.nan
-        return float(10.0 * np.log10(total_linear))
+
+        return float(self.antenna_lookuptable[unsteered_key]["directivity_dB"] + pattern_db)
+
+    def _sample_radiation_pattern_db(self, frequency_key: float, theta_deg: float, phi_deg: float) -> float:
+        """Bilinearly sample the stored nadir-looking radiation pattern."""
+        pattern = np.asarray(self.antenna_lookuptable[frequency_key]["radiation_pattern_dB"], dtype=float)
+        n_theta, n_phi = pattern.shape
+        if n_theta == 0 or n_phi == 0 or not (0.0 <= theta_deg <= 180.0):
+            return np.nan
+
+        theta_pos = theta_deg / 180.0 * (n_theta - 1) if n_theta > 1 else 0.0
+        theta_0 = int(np.floor(theta_pos))
+        theta_1 = min(theta_0 + 1, n_theta - 1)
+        theta_frac = theta_pos - theta_0
+
+        # Stored grid is np.linspace(0, 360, n_phi) with endpoint=True, so bin spacing is 360/(n_phi-1)
+        # and bin (n_phi-1) coincides with bin 0 by periodicity.
+        phi_pos = (phi_deg % 360.0) / 360.0 * (n_phi - 1) if n_phi > 1 else 0.0
+        phi_0 = int(np.floor(phi_pos))
+        phi_1 = (phi_0 + 1) % n_phi
+        phi_frac = phi_pos - phi_0
+
+        value_00 = pattern[theta_0, phi_0]
+        value_10 = pattern[theta_1, phi_0]
+        value_01 = pattern[theta_0, phi_1]
+        value_11 = pattern[theta_1, phi_1]
+
+        value_0 = (1.0 - theta_frac) * value_00 + theta_frac * value_10
+        value_1 = (1.0 - theta_frac) * value_01 + theta_frac * value_11
+        return float((1.0 - phi_frac) * value_0 + phi_frac * value_1)
 
     @staticmethod
     def _calculate_directivity(rad_pattern_lin_spherical, theta_rad, phi_rad, theta_mesh):

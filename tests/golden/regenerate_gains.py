@@ -1,8 +1,8 @@
 """Regenerate the antenna-gain golden file.
 
 Run this manually when:
-  * the expected gain-pipeline behaviour intentionally changes (e.g. (c) on-demand steering,
-    multi-band, polarisation handling); OR
+  * the expected fixed-nadir gain-pipeline behaviour intentionally changes (e.g. JSON
+    sampling, multi-band, polarisation handling); OR
   * the test fixture itself is updated (new sampling grid, new pattern shape).
 
 Usage (from repo root):

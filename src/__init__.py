@@ -140,7 +140,7 @@ def initialize(config_file_name="Configuration.ini"):
         [ANTENNA]
         pattern_folder         = path/to/generated_or_precomputed_patterns                       (only needed for moving target analysis)
         antenna_beamwidth_3dB  = [x1, y1, x2, y2, ...] (from 0 to 90 degrees rotationally) (only needed for moving target analysis)
-        max_steering_angle_deg = [azimuth, elevation] (in degrees)                         (only needed for moving target analysis)
+        max_fov_angle_deg      = [azimuth, max_off_boresight] (degrees)                    (only needed for moving target analysis)
         polarizations          = ["LHCP", "RHCP", "VP", "HP"]                              (only needed for moving target analysis)
         bands                  = ["L1", "L2", "L2", "L5"]                                        (only needed for moving target analysis)
 
@@ -242,9 +242,9 @@ def initialize(config_file_name="Configuration.ini"):
     #[ANTENNA]
     try:
         antenna_patterns = {}  # Initialize the dictionary here
-        max_steering_angle_deg = (
-            ast.literal_eval(config["ANTENNA"]["max_steering_angle_deg"])
-            if ("ANTENNA" in config and "max_steering_angle_deg" in config["ANTENNA"])
+        max_fov_angle_deg = (
+            ast.literal_eval(config["ANTENNA"]["max_fov_angle_deg"])
+            if ("ANTENNA" in config and "max_fov_angle_deg" in config["ANTENNA"])
             else None
         )
         bands = config["ANTENNA"]["bands"] if ("ANTENNA" in config and "bands" in config["ANTENNA"]) else None  # Antenna bands
@@ -301,7 +301,7 @@ def initialize(config_file_name="Configuration.ini"):
         if footprint_dB is not None and footprint_dB >= 0.0:
             raise ValueError("'footprint_dB' must be below 0 dB because antenna patterns are normalized to a 0 dB peak.")
     except KeyError:
-        raise KeyError("The 'antenna_filepath_0deg', 'max_steering_angle_deg', 'polarizations', 'bands' or 'antenna_gain' key is missing in the 'ANTENNA' section of the configuration file.") # noqa: B904
+        raise KeyError("The 'pattern_folder', 'max_fov_angle_deg', 'polarizations' or 'bands' key is missing in the 'ANTENNA' section of the configuration file.") # noqa: B904
 
     #[ORBITS]
     # Check how many orbits are specified in the configuration file
@@ -472,22 +472,10 @@ def initialize(config_file_name="Configuration.ini"):
         #[ANTENNA]
         "antenna_pattern_folder": antenna_pattern_folder,
         "antenna_pattern_files": antenna_patterns,
-        "max_steering_angle_deg": max_steering_angle_deg,
+        "max_fov_angle_deg": max_fov_angle_deg,
         "polarizations": antenna_polarizations,
         "bands": antenna_bands,
         "footprint_dB": float(footprint_dB) if footprint_dB is not None else None,
-        # Planar-array geometry consumed by RxAntenna for on-demand array-factor evaluation
-        # during gain queries (no pre-computed per-steering JSONs needed).
-        "array_geometry": (
-            {
-                "elements_along_x": antenna_pattern_settings["elements_along_x"],
-                "elements_along_y": antenna_pattern_settings["elements_along_y"],
-                "d_x": antenna_pattern_settings["d_x"],
-                "d_y": antenna_pattern_settings["d_y"],
-            }
-            if antenna_pattern_settings is not None
-            else None
-        ),
         #[LINK BUDGET]
         "link_budget": link_budget,
         #[PLOT]

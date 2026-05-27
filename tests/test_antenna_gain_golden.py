@@ -3,8 +3,8 @@ Golden-file regression test for the antenna gain pipeline.
 
 Captures the output of RxAntenna.get_gain_dbi_for_direction over a fixed grid of inputs in
 a synthesized antenna setup, and compares to a stored reference. Any change to the gain
-pipeline (bilinear sampler, steering bracket, directivity scaling, future on-demand steering)
-that drifts numerically will trip this test.
+pipeline (fixed-nadir JSON sampling, FOV bracket, directivity scaling) that drifts
+numerically will trip this test.
 
 To accept a new reference (after an intentional change), run
     python tests/golden/regenerate_gains.py
@@ -36,13 +36,13 @@ def test_antenna_gain_matches_golden():
     antenna = make_test_antenna()
     current = compute_gain_grid(antenna)
 
-    # NaN pattern (e.g. behind-antenna or beyond-max-steering) must match
+    # NaN pattern (e.g. behind-antenna or beyond fixed-antenna FOV) must match
     np.testing.assert_array_equal(
         np.isnan(current), np.isnan(ref_gains),
         err_msg="NaN pattern differs from golden reference.",
     )
 
-    # Finite gain values must match to ~math precision (post-bilinear refactor; pre any (c) change)
+    # Finite gain values must match to ~math precision.
     finite = ~np.isnan(current)
     np.testing.assert_allclose(
         current[finite], ref_gains[finite],
@@ -50,3 +50,14 @@ def test_antenna_gain_matches_golden():
         err_msg="Gain values differ from golden reference. If the change was intentional, "
                 "run tests/golden/regenerate_gains.py to update the baseline.",
     )
+
+
+def test_fixed_nadir_gain_ignores_steering_arguments():
+    antenna = make_test_antenna()
+    current = compute_gain_grid(antenna)
+    reference = current[:, :, :1, :1]
+    expected = np.broadcast_to(reference, current.shape)
+
+    np.testing.assert_array_equal(np.isnan(current), np.isnan(expected))
+    finite = np.isfinite(current)
+    np.testing.assert_allclose(current[finite], expected[finite], atol=1e-10, rtol=1e-10)

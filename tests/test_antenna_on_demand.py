@@ -1,4 +1,4 @@
-"""Phase 1 of the (c) on-demand steering refactor: analytic array-factor helper.
+"""Diagnostic analytic array-factor helper tests.
 
 Validates the closed-form AF added to RxAntenna against:
   - Peak normalization at the steering direction (= 0 dB)
@@ -7,8 +7,8 @@ Validates the closed-form AF added to RxAntenna against:
   - Vectorized input/output shape
   - Missing-geometry guard
 
-The on-demand path is not yet wired into get_gain_dbi_for_direction, so the existing
-golden test continues to exercise the cached-JSON path bit-for-bit.
+This helper is intentionally kept out of the active fixed-nadir gain path; the golden
+gain test exercises JSON-pattern sampling bit-for-bit.
 """
 
 import numpy as np

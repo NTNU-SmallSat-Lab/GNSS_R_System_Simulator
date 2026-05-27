@@ -1,9 +1,9 @@
 """Deterministic in-memory RxAntenna fixture for golden-file regression tests.
 
 Bypasses RxAntenna.__init__ and populates the attributes that get_gain_dbi_for_direction
-depends on. Gain is computed analytically from the array geometry; only one unsteered
-pattern per frequency is needed to supply the boresight directivity used in the on-demand
-gain scaling.
+depends on. Gain is computed from one fixed-nadir JSON-like pattern per frequency.
+The steering arguments in the sampling grid are retained only as API-compatibility inputs
+that must not change fixed-nadir gain.
 """
 
 import numpy as np
@@ -15,41 +15,26 @@ FREQUENCY_MHZ = 1575.42
 N_THETA = 36   # 5° steps
 N_PHI = 72     # 5° steps
 
-# Array geometry chosen so the analytic AF has visible directional structure within the
-# test sampling grid: 4x4 half-wavelength array at L1 yields a main beam ~26° wide and
-# clear sidelobes/nulls.
-WAVELENGTH_M = 299792458.0 / (FREQUENCY_MHZ * 1e6)
-ELEMENTS_X = 4
-ELEMENTS_Y = 4
-D_X = WAVELENGTH_M / 2.0
-D_Y = WAVELENGTH_M / 2.0
 BORESIGHT_DIRECTIVITY_DB = 10.0
 
 
 def make_test_antenna() -> RxAntenna:
-    """Build a deterministic RxAntenna with a known array geometry and boresight directivity."""
+    """Build a deterministic RxAntenna with a known fixed-nadir pattern and directivity."""
     antenna = RxAntenna.__new__(RxAntenna)
     antenna.R_antenna_to_body = np.array([
         [0.0, 1.0, 0.0],
         [-1.0, 0.0, 0.0],
         [0.0, 0.0, 1.0],
     ])
-    antenna.max_steering_off_boresight_deg = 30.0
+    antenna.max_fov_off_boresight_deg = 30.0
     antenna.frequencies = [FREQUENCY_MHZ]
     antenna.bands = ["L1"]
     antenna.polarizations = ["RHCP"]
     antenna.footprint_dB_contour = -3.0
     antenna.footprint_resolution = 64
-    antenna._array_geometry = {
-        "elements_along_x": ELEMENTS_X,
-        "elements_along_y": ELEMENTS_Y,
-        "d_x": D_X,
-        "d_y": D_Y,
-    }
 
-    # Single unsteered entry per frequency — supplies the boresight directivity that the on-demand
-    # gain path scales the analytic AF by. The radiation_pattern_dB grid is retained for the
-    # footprint-contour pipeline (not exercised by the golden gain test).
+    # Single unsteered entry per frequency. The gain path samples this fixed-nadir pattern and
+    # adds directivity_dB.
     pattern_db = (-0.5 * np.arange(N_THETA).reshape(-1, 1)).repeat(N_PHI, axis=1).astype(float)
     antenna.antenna_lookuptable = {
         FREQUENCY_MHZ: {
@@ -64,7 +49,7 @@ def make_test_antenna() -> RxAntenna:
 
 
 def gain_sampling_grid() -> tuple:
-    """Deterministic input grid for the gain measurements."""
+    """Deterministic input grid; steering axes are compatibility inputs and should be ignored."""
     theta_deg = np.array([5.0, 15.0, 30.0, 60.0])
     phi_deg = np.array([0.0, 45.0, 90.0, 135.0, 180.0, 270.0, 359.0])
     az_steer = np.array([0.0, 45.0, 90.0, 135.0, 200.0, 290.0, 350.0])

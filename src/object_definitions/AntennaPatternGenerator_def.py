@@ -68,8 +68,8 @@ class AntennaPatternGenerator:
             d_x:                   [float]       Element spacing along x [m]
             d_y:                   [float]       Element spacing along y [m]
             freqs:                 [list[float]] Frequencies to simulate [MHz]
-            elevation_directivity: [list]        [start_deg, end_deg, n_steps] for the elevation steering sweep
-            azimuth_directivity:   [list]        [start_deg, end_deg, n_steps] for the azimuth steering sweep
+            elevation_directivity: [list]        Legacy compatibility setting; generated patterns are unsteered
+            azimuth_directivity:   [list]        Legacy compatibility setting; generated patterns are unsteered
             output_folder:         [str]         Path to write generated JSON files
             theta_resolution:      [int]         Number of theta samples in each pattern (0..180 deg), default 180
             phi_resolution:        [int]         Number of phi samples in each pattern (0..360 deg), default 360
@@ -91,9 +91,8 @@ class AntennaPatternGenerator:
     #   v1: initial release.
     #   v2: azimuth grid switched from endpoint-inclusive [0..360] to endpoint-exclusive [0..360),
     #       matching the bilinear sampler convention in _bilinear_pattern_sample_linear.
-    #   v3: on-demand steering refactor (Phase 2 of (c)). Generator now emits ONE unsteered
-    #       (az=0, el=0) pattern per frequency. Steered gain is computed analytically inside
-    #       RxAntenna; the on-disk file feeds only the footprint-contour pipeline.
+    #   v3: fixed-nadir pattern generation. Generator emits ONE unsteered (az=0, el=0)
+    #       pattern per frequency, and RxAntenna samples that JSON pattern directly.
     #   v4: pattern coordinate names renamed elevation/azimuth -> theta/phi. Signature dict
     #       keys changed, invalidating every existing cached metadata file.
     _GENERATOR_FORMAT_VERSION = 4
@@ -125,8 +124,7 @@ class AntennaPatternGenerator:
         filenames = list(self._expected_filenames())
         if not filenames:
             raise ValueError(
-                "AntennaPatternGenerator: no output files expected — check that freqs, "
-                "elevation_directivity, and azimuth_directivity are set correctly."
+                "AntennaPatternGenerator: no output files expected — check that freqs is set correctly."
             )
         existing = sum(1 for name in filenames if (self.output_folder / name).exists())
         print(f"[AntennaPatternGenerator] {existing}/{len(filenames)} pattern files found in '{self.output_folder.resolve()}'.")
@@ -183,7 +181,7 @@ class AntennaPatternGenerator:
             json.dump(self._signature(), f, indent=2)
 
     def generate(self):
-        """Generate (or reuse cached) per-(freq, az, el) JSON pattern files based on a metadata signature."""
+        """Generate (or reuse cached) one fixed-nadir JSON pattern per frequency."""
         self.output_folder.mkdir(parents=True, exist_ok=True)
 
         current_signature = self._signature()
@@ -209,9 +207,8 @@ class AntennaPatternGenerator:
         theta = np.linspace(0, 180, self.theta_resolution).reshape(-1, 1) * np.pi / 180
         phi = np.linspace(0, 360, self.phi_resolution, endpoint=False).reshape(1, -1) * np.pi / 180
 
-        # Phase 2: write one unsteered (az=0, el=0) pattern per frequency. This feeds only the
-        # footprint-contour pipeline and the boresight directivity in RxAntenna; steered gain is
-        # computed analytically on demand from the array geometry.
+        # Write one unsteered (az=0, el=0) pattern per frequency. RxAntenna samples this
+        # fixed-nadir pattern directly for gain and footprint calculations.
         for freq in self.freqs:
             freq_hz = freq * 1e6
             af = ArrayFactor(self.elements_x, self.elements_y, freq_hz, self.d_x, self.d_y, 0.0, 0.0)
