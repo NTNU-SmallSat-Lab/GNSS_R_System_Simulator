@@ -98,6 +98,7 @@ def run_moving_target_detection(settings: dict):
         bbox_buffer_deg=settings["detection_bbox_buffer_deg"],
         max_central_angle_deg=settings["max_central_angle_deg"],
         max_incidence_angle_deg=settings["max_incidence_angle_deg"],
+        ship_dimensions=settings["ship"],
     )
 
     # Optimize: only compute and propagate for visible windows
@@ -119,6 +120,11 @@ def run_moving_target_detection(settings: dict):
     output_plot = f"Detection_points_{mtd.reflection_mode}_footprint_{footprint_db_label}.png"
     mtd.show_track_and_detection_points(file_name=output_plot, show_figure=False)
     print(f"Detection plot saved as: {output_plot}")
+
+    # Link-budget breakdown: ocean clutter vs ship signal per detection event.
+    contributions_plot = f"Detection_Pr_breakdown_{mtd.reflection_mode}.png"
+    mtd.show_link_budget_contributions(file_name=contributions_plot, show_figure=False)
+    print(f"Pr breakdown plot saved as: {contributions_plot}")
 
     # Optional: Animation (Set to True via settings if needed)
     if settings.get("create_animation", False):

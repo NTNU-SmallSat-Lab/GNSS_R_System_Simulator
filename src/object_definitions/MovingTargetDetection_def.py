@@ -1,3 +1,4 @@
+from bisect import bisect_left
 from collections import defaultdict, namedtuple
 from dataclasses import dataclass, field
 import datetime as dt
@@ -14,6 +15,7 @@ matplotlib.use("Agg")  # Use Agg backend for off-screen rendering
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import pymap3d
 from shapely.errors import GEOSException
 from shapely.geometry import MultiPolygon, Polygon, box
 from shapely.ops import unary_union
@@ -25,6 +27,7 @@ import functions.link_budget as lb
 from object_definitions.Constants_def import Constants
 from object_definitions.Reflection_def import Reflection
 from object_definitions.BackScattPoint_def import BRP as Backscatter
+from object_definitions.ShipTarget_def import ShipTarget
 from object_definitions.ShipTrajectory_def import ShipTrajectory
 
 logger = logging.getLogger(__name__)
@@ -46,6 +49,7 @@ class MovingTargetDetection:
         *,
         max_central_angle_deg,
         max_incidence_angle_deg,
+        ship_dimensions: dict | None = None,
     ) -> None:
         """
         =========================================================================================================
@@ -66,6 +70,7 @@ class MovingTargetDetection:
                 bbox_buffer_deg:                    [float]                    Padding in degrees added around the trajectory bounding box when rendering detection plots (default: 2.0)
                 max_central_angle_deg:              [float]                    Max Tx-Rx central angle [deg] (required)
                 max_incidence_angle_deg:            [float | None]             Max BRP incidence angle [deg]; required when reflection_mode = "backscatter", may be None for "specular"
+                ship_dimensions:                    [dict | None]              {length_m, beam_m, freeboard_m}; enables ship-RCS contribution at detection events when set
 
             ATTRIBUTES:
                 moving_target_object:        [ShipTrajectory]   Moving target object
@@ -120,6 +125,9 @@ class MovingTargetDetection:
             )
 
         self.footprint_stats = {"total": 0, "rejected_empty": 0}  # populated by _reflection_point_footprint, summarised at the end of calculate_moving_target_reflection_intersection
+        # Optional ship physical dimensions (length / beam / freeboard) for evaluating the ship's
+        # contribution to detection-event Pr. None => ocean-only mode (legacy behaviour).
+        self.ship_dimensions = ship_dimensions
         self.initialization()
 
     def initialization(self) -> None:
@@ -462,6 +470,25 @@ class MovingTargetDetection:
                                     possible_target_detection.tx_satID = refl_obj.tx_satID
                                     possible_target_detection.rx_satID = refl_obj.rx_satID
 
+                                    # Per-event link budget split: ocean clutter (already cached on
+                                    # refl_obj from the per-constellation propagation) plus ship signal.
+                                    cached_lb = refl_obj.link_budget
+                                    pr_ocean_w = float(cached_lb["received_power_w"][reflection_index])
+                                    rcs_ocean_m2 = float(cached_lb["rcs_m2"][reflection_index])
+                                    possible_target_detection.pr_ocean_w = pr_ocean_w
+                                    possible_target_detection.rcs_ocean_m2 = rcs_ocean_m2
+
+                                    if self.ship_dimensions is not None:
+                                        pr_ship_w, rcs_ship_m2 = self._compute_ship_pr_at_event(
+                                            refl_obj, reflection_index, gnss_name, time_tgt_i,
+                                        )
+                                        possible_target_detection.pr_ship_w = pr_ship_w
+                                        possible_target_detection.rcs_ship_m2 = rcs_ship_m2
+                                        if np.isfinite(pr_ocean_w) and np.isfinite(pr_ship_w):
+                                            possible_target_detection.pr_total_w = pr_ocean_w + pr_ship_w
+                                            if pr_ocean_w > 0.0:
+                                                possible_target_detection.scr_db = 10.0 * np.log10(pr_ship_w / pr_ocean_w)
+
                                     # Append the possible target detection to the target detection list
                                     self.target_detect_dict[gnss_name].append(possible_target_detection)
                 elif time_refl_i is not None:
@@ -479,6 +506,238 @@ class MovingTargetDetection:
         if total > 0:
             pct = rejected / total * 100.0
             logger.info(f"Footprint computations: {rejected}/{total} rejected as empty ({pct:.1f}%)")
+
+    def _compute_ship_heading_eci(self, detection_time: dt.datetime) -> np.ndarray | None:
+        """
+        Estimate the ship's bow direction in ECI at the detection time.
+
+        Uses the two trajectory waypoints that bracket the detection time directly — the
+        trajectory's stored timestamps and points define the segment, so no interval lookup
+        or ad-hoc sampling window is needed. Times outside the trajectory range fall back to
+        the first / last segment (initial / final bearing).
+        Returns None if the trajectory is too short or the segment is degenerate.
+        """
+        timestamps = self.moving_target_object.timestamps
+        points = self.moving_target_object.trajectory_points
+        if len(timestamps) < 2 or len(points) < 2:
+            return None                                       # need >= 2 waypoints to define a heading
+
+        idx = bisect_left(timestamps, detection_time)
+        if idx <= 0:
+            i_before, i_after = 0, 1                          # before trajectory -> first segment (initial bearing)
+        elif idx >= len(timestamps):
+            i_before, i_after = len(timestamps) - 2, len(timestamps) - 1   # after trajectory -> last segment
+        else:
+            i_before, i_after = idx - 1, idx                  # bracketing segment
+
+        pos_before = points[i_before]
+        pos_after = points[i_after]
+        if pos_before == pos_after:
+            return None                                       # degenerate segment
+
+        lat_before, lon_before = pos_before
+        lat_after, lon_after = pos_after
+        x_before, y_before, z_before = pymap3d.geodetic2ecef(lat_before, lon_before, 0.0)
+        x_after, y_after, z_after = pymap3d.geodetic2ecef(lat_after, lon_after, 0.0)
+        heading_ecef = np.array([x_after - x_before, y_after - y_before, z_after - z_before], dtype=float)
+        mag = np.linalg.norm(heading_ecef)
+        if mag < 1.0:                                         # less than 1 m segment -> degenerate
+            return None
+        heading_ecef /= mag
+
+        # ECEF and ECI share the Earth's centre as origin, so ecef2eci is a pure rotation —
+        # applied to a unit direction it returns the rotated unit direction.
+        hx, hy, hz = pymap3d.ecef2eci(
+            np.array([heading_ecef[0]]),
+            np.array([heading_ecef[1]]),
+            np.array([heading_ecef[2]]),
+            [detection_time],
+        )
+        return np.array([float(hx[0]), float(hy[0]), float(hz[0])])
+
+    def _compute_ship_pr_at_event(
+        self,
+        refl_obj: Reflection | Backscatter,
+        reflection_index: int,
+        gnss_name: str,
+        detection_time: dt.datetime,
+    ) -> tuple[float, float]:
+        """
+        Compute the ship's contribution to received power at one detection event.
+
+        Builds a single-sample BistaticGeometry from the cached Tx/Rx/surface positions in
+        `refl_obj`, instantiates a ShipTarget with the ship's instantaneous heading, and runs
+        the bistatic link budget re-using the cached Rx gain and ranges from the ocean-target
+        computation. Returns (pr_ship_w, rcs_ship_m2); NaN/NaN if heading is unavailable or
+        geometry is invalid.
+        """
+        nan_pair = (float("nan"), float("nan"))
+        if self.ship_dimensions is None:
+            return nan_pair
+
+        heading_eci = self._compute_ship_heading_eci(detection_time)
+        if heading_eci is None:
+            return nan_pair
+
+        # Per-sample slices from the cached reflection object.
+        tx_pos = refl_obj.gnss_pos_vec[:, reflection_index:reflection_index + 1]      # (3, 1)
+        rx_pos = refl_obj.sat_pos_vec[:, reflection_index:reflection_index + 1]       # (3, 1)
+        surf_pos = refl_obj.refl_ECI_vec[reflection_index:reflection_index + 1, :]    # (1, 3)
+        if not (np.isfinite(tx_pos).all() and np.isfinite(rx_pos).all() and np.isfinite(surf_pos).all()):
+            return nan_pair
+
+        # Geocentric surface normal (sufficient for ship-RCS angular accuracy).
+        surf_norm_mag = np.linalg.norm(surf_pos, axis=1, keepdims=True)
+        if not np.all(surf_norm_mag > 0.0):
+            return nan_pair
+        surf_normal = surf_pos / surf_norm_mag
+
+        geometry = lb.build_bistatic_geometry(tx_pos, rx_pos, surf_pos, surf_normal)
+        wavelength_m = Constants.SPEED_OF_LIGHT / self.link_budget_frequency_hz
+
+        ship_target = ShipTarget.from_dict(self.ship_dimensions, heading_eci=heading_eci[np.newaxis, :])
+        rcs_result = ship_target.compute_rcs(geometry, wavelength_m)
+        rcs_ship_m2 = float(rcs_result.rcs_m2[0])
+        if not np.isfinite(rcs_ship_m2):
+            return nan_pair
+
+        # Reuse cached Rx gain and ranges from the ocean link budget at this index.
+        cached = refl_obj.link_budget
+        link_budget = lb.compute_bistatic_link_budget(
+            range_tx_m=np.array([cached["tx_to_surface_range_m"][reflection_index]]),
+            range_rx_m=np.array([cached["surface_to_rx_range_m"][reflection_index]]),
+            rx_gain_dbi=np.array([cached["rx_gain_dbi"][reflection_index]]),
+            rcs_m2=np.array([rcs_ship_m2]),
+            frequency_hz=self.link_budget_frequency_hz,
+            tx_eirp_dbw=self.tx_eirp_dbw_per_constellation[gnss_name],
+            settings=self.link_budget_settings,
+        )
+        pr_ship_w = float(link_budget["received_power_w"][0])
+        return pr_ship_w, rcs_ship_m2
+
+    def show_link_budget_contributions(self, file_name: str | None = None, show_figure: bool = False) -> None:
+        """
+        =========================================================================================================
+        Visualise per-detection-event ocean clutter vs ship signal contributions to the link budget.
+
+        Two-panel figure:
+            - Left:  scatter of Pr_ship_dBm vs Pr_ocean_dBm, with the SCR = 0 dB diagonal. Points
+                     above the diagonal mean the ship dominates the received power.
+            - Right: histogram of SCR_dB per GNSS constellation.
+
+        Also prints a per-constellation summary (event counts, SCR min/median/max, ship-dominant vs
+        ocean-dominant counts) to stdout.
+
+        INPUTS:
+            file_name:   [str | None]   Output filename in Constants.output_folder_path; None => don't save
+            show_figure: [bool]         Display interactively (default: False)
+        =========================================================================================================
+        """
+        # Collect detection events that have a finite ship-Pr and ocean-Pr pair.
+        events_by_const: dict[str, list] = {}
+        for gnss_name, events in self.target_detect_dict.items():
+            kept = []
+            for e in events:
+                if (
+                    e.pr_ocean_w is not None and np.isfinite(e.pr_ocean_w) and e.pr_ocean_w > 0.0
+                    and e.pr_ship_w is not None and np.isfinite(e.pr_ship_w) and e.pr_ship_w > 0.0
+                ):
+                    kept.append(e)
+            events_by_const[gnss_name] = kept
+
+        if not any(events_by_const.values()):
+            logger.warning("No detection events with finite ship Pr -- skipping link budget contribution plot.")
+            return
+
+        color_cycle = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+        const_color = {
+            name: color_cycle[i % len(color_cycle)]
+            for i, name in enumerate(self.gnss_constellation.keys())
+        }
+
+        fig, (ax_scatter, ax_hist) = plt.subplots(1, 2, figsize=(14, 6))
+
+        # Scatter: Pr_ship_dBm vs Pr_ocean_dBm
+        all_dbm = []
+        for gnss_name, events in events_by_const.items():
+            if not events:
+                continue
+            pr_ocean_dbm = np.array([10.0 * np.log10(e.pr_ocean_w) + 30.0 for e in events])
+            pr_ship_dbm = np.array([10.0 * np.log10(e.pr_ship_w) + 30.0 for e in events])
+            ax_scatter.scatter(
+                pr_ocean_dbm, pr_ship_dbm,
+                color=const_color[gnss_name], label=gnss_name, alpha=0.7, s=60, edgecolors="black",
+            )
+            all_dbm.extend(pr_ocean_dbm.tolist() + pr_ship_dbm.tolist())
+
+        lo, hi = min(all_dbm), max(all_dbm)
+        ax_scatter.plot([lo, hi], [lo, hi], "k--", alpha=0.5, label="SCR = 0 dB")
+        ax_scatter.set_xlabel("Pr ocean clutter [dBm]")
+        ax_scatter.set_ylabel("Pr ship signal [dBm]")
+        ax_scatter.set_title("Ship vs Ocean Received Power per Detection Event")
+        ax_scatter.legend(loc="best")
+        ax_scatter.grid(True, alpha=0.3)
+        ax_scatter.set_aspect("equal", adjustable="datalim")
+
+        # SCR histogram
+        all_scrs = []
+        for events in events_by_const.values():
+            all_scrs.extend(e.scr_db for e in events if e.scr_db is not None and np.isfinite(e.scr_db))
+        scr_lo = min(all_scrs + [-5.0])
+        scr_hi = max(all_scrs + [5.0])
+        bin_count = max(10, min(30, len(all_scrs)))
+        bins = np.linspace(scr_lo - 5.0, scr_hi + 5.0, bin_count + 1)
+
+        for gnss_name, events in events_by_const.items():
+            scrs = np.array([e.scr_db for e in events if e.scr_db is not None and np.isfinite(e.scr_db)])
+            if scrs.size == 0:
+                continue
+            ax_hist.hist(
+                scrs, bins=bins, color=const_color[gnss_name], alpha=0.5,
+                label=f"{gnss_name} (n={scrs.size})", edgecolor="black",
+            )
+        ax_hist.axvline(0.0, color="k", linestyle="--", alpha=0.5, label="SCR = 0 dB")
+        ax_hist.set_xlabel("SCR = 10 log10(Pr_ship / Pr_ocean) [dB]")
+        ax_hist.set_ylabel("Number of detection events")
+        ax_hist.set_title("Signal-to-Clutter Ratio Distribution")
+        ax_hist.legend(loc="best")
+        ax_hist.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+
+        if file_name is not None:
+            file_path = os.path.join(Constants.output_folder_path, file_name)
+            plt.savefig(file_path, dpi=300, bbox_inches="tight")
+            logger.info(f"Figure saved as {file_name}")
+        if show_figure:
+            plt.show(block=True)
+        plt.close(fig)
+
+        # Console summary.
+        print()
+        print("=" * 64)
+        print("LINK BUDGET CONTRIBUTION SUMMARY (ship vs ocean per detection)")
+        print("=" * 64)
+        for gnss_name in self.gnss_constellation:
+            total = len(self.target_detect_dict.get(gnss_name, []))
+            kept = events_by_const.get(gnss_name, [])
+            n_finite = len(kept)
+            if n_finite == 0:
+                print(f"  {gnss_name:8s}: {total:4d} detections, 0 with finite ship Pr")
+                continue
+            scrs = np.array([e.scr_db for e in kept if e.scr_db is not None and np.isfinite(e.scr_db)])
+            ship_dominant = int(np.sum(scrs > 0))
+            ocean_dominant = int(np.sum(scrs <= 0))
+            print(f"  {gnss_name:8s}: {total:4d} detections, {n_finite:3d} with finite ship Pr")
+            if scrs.size > 0:
+                print(
+                    f"    SCR [dB]    min={scrs.min():7.2f}  median={np.median(scrs):7.2f}  max={scrs.max():7.2f}"
+                )
+                print(
+                    f"    ship-dominant (SCR > 0): {ship_dominant:3d} / {n_finite:<3d}    "
+                    f"ocean-dominant: {ocean_dominant:3d} / {n_finite:<3d}"
+                )
+        print("=" * 64)
 
     def show_reflections_and_target_position_at_time_i(
         self,
@@ -1397,3 +1656,10 @@ class MovingTargetDetectionStruct:
     footprint_shape: float = np.nan
     refl_obj: Reflection | Backscatter = None  # Reference to the reflection object that caused the detection
     frequency: float = np.nan
+    # Per-event link budget split (populated when ship_dimensions is supplied to MovingTargetDetection).
+    pr_ocean_w: float | None = None        # ocean clutter received power [W]
+    pr_ship_w: float | None = None         # ship signal received power [W]
+    pr_total_w: float | None = None        # pr_ocean_w + pr_ship_w [W]
+    scr_db: float | None = None            # signal-to-clutter ratio = 10 log10(pr_ship / pr_ocean) [dB]
+    rcs_ocean_m2: float | None = None      # ocean RCS at the reflection point [m^2]
+    rcs_ship_m2: float | None = None       # ship RCS (combined plates + dihedrals) [m^2]
