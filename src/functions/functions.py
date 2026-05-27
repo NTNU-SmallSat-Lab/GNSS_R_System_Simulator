@@ -607,45 +607,95 @@ def compute_footprint(sat_pos, sat_vel, refl_pos, time_i, antenna, frequency, q_
     # ========== VECTORIZED INTERSECTION ==========
     if earth_model == "spherical":
         earth_radius = Constants.R_EARTH_MEAN
+        a_quad = 1.0
+        b_quad = 2.0 * np.dot(sat_pos, beam_dirs_i)
+        c_quad = np.dot(sat_pos, sat_pos) - earth_radius**2
+
+        discriminant = b_quad**2 - 4 * a_quad * c_quad
+        valid_discriminant = discriminant >= 0
+
+        t_vals = np.full(no_footprint_points, np.nan)
+        t_vals[valid_discriminant] = (-b_quad[valid_discriminant] - np.sqrt(discriminant[valid_discriminant])) / 2.0
+
+        positive_t_mask = t_vals > 0
+        valid_mask = valid_discriminant & positive_t_mask
+
+        intersections_eci = sat_pos[np.newaxis, :] + t_vals[:, np.newaxis] * beam_dirs_i.T
+
+        # ========== VECTORIZED LAT/LON CONVERSION ==========
+        times = np.array([time_i] * no_footprint_points)
+        lat_lon_points = np.full((no_footprint_points, 2), np.nan)
+        if valid_mask.any():
+            try:
+                lat, lon, _alt = pymap3d.eci2geodetic(
+                    intersections_eci[valid_mask, 0],
+                    intersections_eci[valid_mask, 1],
+                    intersections_eci[valid_mask, 2],
+                    times[valid_mask],
+                )
+                lat_lon_points[valid_mask] = np.column_stack((lat, lon))
+            except Exception as e:
+                warnings.warn(f"Failed to convert some points to geodetic coordinates: {e}")
+                lat_lon_points[valid_mask] = np.nan
     else:
-        # Use radius at reflection point for all (faster than per-point calculation)
-        latitude_rad = np.arcsin(np.clip(refl_pos[2] / np.linalg.norm(refl_pos), -1, 1))
         a = Constants.RADIUS_EARTH_EQUAT
         f = Constants.EARTH_FLATTENING
         b = a * (1 - f)
-        # Geocentric radius: R(φ) = √(a²cos²φ + b²sin²φ)
-        earth_radius = np.sqrt((a**2 * np.cos(latitude_rad) ** 2) + (b**2 * np.sin(latitude_rad) ** 2))
 
-    a = 1.0
-    b = 2.0 * np.dot(sat_pos, beam_dirs_i)
-    c = np.dot(sat_pos, sat_pos) - earth_radius**2
-
-    discriminant = b**2 - 4 * a * c
-    valid_discriminant = discriminant >= 0
-
-    t_vals = np.full(no_footprint_points, np.nan)
-    t_vals[valid_discriminant] = (-b[valid_discriminant] - np.sqrt(discriminant[valid_discriminant])) / 2.0
-
-    positive_t_mask = t_vals > 0
-    valid_mask = valid_discriminant & positive_t_mask
-
-    intersections_eci = sat_pos[np.newaxis, :] + t_vals[:, np.newaxis] * beam_dirs_i.T
-
-    # ========== VECTORIZED LAT/LON CONVERSION ==========
-    times = np.array([time_i] * no_footprint_points)
-    lat_lon_points = np.full((no_footprint_points, 2), np.nan)
-    if valid_mask.size > 0:
-        try:
-            lat, lon, _alt = pymap3d.eci2geodetic(
-                intersections_eci[valid_mask, 0],
-                intersections_eci[valid_mask, 1],
-                intersections_eci[valid_mask, 2],
-                times[valid_mask],
+        sat_pos_ecef = np.array(pymap3d.eci2ecef(sat_pos[0], sat_pos[1], sat_pos[2], time_i), dtype=float)
+        ray_scale_m = 1000.0
+        ray_endpoints_eci = sat_pos[np.newaxis, :] + ray_scale_m * beam_dirs_i.T
+        ray_endpoints_ecef = np.column_stack(
+            pymap3d.eci2ecef(
+                ray_endpoints_eci[:, 0],
+                ray_endpoints_eci[:, 1],
+                ray_endpoints_eci[:, 2],
+                [time_i] * no_footprint_points,
             )
-            lat_lon_points[valid_mask] = np.column_stack((lat, lon))
-        except Exception as e:
-            warnings.warn(f"Failed to convert some points to geodetic coordinates: {e}")
-            lat_lon_points[valid_mask] = np.nan
+        )
+        beam_dirs_ecef = ray_endpoints_ecef - sat_pos_ecef[np.newaxis, :]
+        beam_dirs_ecef_norm = np.linalg.norm(beam_dirs_ecef, axis=1)
+        valid_dir = beam_dirs_ecef_norm > 0.0
+        beam_dirs_ecef[valid_dir] /= beam_dirs_ecef_norm[valid_dir, None]
+
+        x0, y0, z0 = sat_pos_ecef
+        ux = beam_dirs_ecef[:, 0]
+        uy = beam_dirs_ecef[:, 1]
+        uz = beam_dirs_ecef[:, 2]
+
+        a_quad = (ux**2 + uy**2) / a**2 + uz**2 / b**2
+        b_quad = 2.0 * ((x0 * ux + y0 * uy) / a**2 + (z0 * uz) / b**2)
+        c_quad = (x0**2 + y0**2) / a**2 + z0**2 / b**2 - 1.0
+
+        discriminant = b_quad**2 - 4.0 * a_quad * c_quad
+        valid_discriminant = valid_dir & (a_quad > 0.0) & (discriminant >= 0.0)
+
+        t_vals = np.full(no_footprint_points, np.nan)
+        sqrt_disc = np.sqrt(discriminant[valid_discriminant])
+        roots_1 = (-b_quad[valid_discriminant] - sqrt_disc) / (2.0 * a_quad[valid_discriminant])
+        roots_2 = (-b_quad[valid_discriminant] + sqrt_disc) / (2.0 * a_quad[valid_discriminant])
+        positive_roots = np.column_stack((roots_1, roots_2))
+        positive_roots = np.where(positive_roots > 0.0, positive_roots, np.nan)
+        has_positive_root = np.isfinite(positive_roots).any(axis=1)
+        root_values = np.full(positive_roots.shape[0], np.nan)
+        root_values[has_positive_root] = np.nanmin(positive_roots[has_positive_root], axis=1)
+        t_vals[valid_discriminant] = root_values
+
+        valid_mask = np.isfinite(t_vals)
+
+        intersections_ecef = sat_pos_ecef[np.newaxis, :] + t_vals[:, np.newaxis] * beam_dirs_ecef
+        lat_lon_points = np.full((no_footprint_points, 2), np.nan)
+        if valid_mask.any():
+            try:
+                lat, lon, _alt = pymap3d.ecef2geodetic(
+                    intersections_ecef[valid_mask, 0],
+                    intersections_ecef[valid_mask, 1],
+                    intersections_ecef[valid_mask, 2],
+                )
+                lat_lon_points[valid_mask] = np.column_stack((lat, lon))
+            except Exception as e:
+                warnings.warn(f"Failed to convert some points to geodetic coordinates: {e}")
+                lat_lon_points[valid_mask] = np.nan
 
     # ========== OUTPUTS ==========
     ellipse_points = np.column_stack((lat_lon_points[:, 0], lat_lon_points[:, 1]))

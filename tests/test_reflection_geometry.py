@@ -160,14 +160,14 @@ class TestGetRotation3DToPlaneCoords:
 
 class TestGetReflectionPoint2D:
     def test_returns_point_on_unit_circle_after_normalization(self):
-        # The function normalizes coords by R_EARTH_EQUAT internally, then returns
-        # the reflection point scaled back up by the same factor. The result must
-        # therefore lie on the Earth's surface (||N|| == R_EARTH_EQUAT).
+        # The function normalizes coords by `earth_radius` internally (default R_EARTH_MEAN),
+        # then returns the reflection point scaled back up by the same factor — so the
+        # result must lie on a sphere of that radius.
         sat = np.array([R_LEO, 0.0])
         gnss = np.array([R_GNSS * np.cos(np.pi / 4), R_GNSS * np.sin(np.pi / 4)])
         N, _, _ = Reflection.get_reflection_point2d(sat, gnss)
         assert N is not None
-        assert np.linalg.norm(N) == pytest.approx(Constants.RADIUS_EARTH_EQUAT, rel=1e-6)
+        assert np.linalg.norm(N) == pytest.approx(Constants.R_EARTH_MEAN, rel=1e-6)
 
     def test_symmetric_geometry_reflection_on_axis_of_symmetry(self):
         # Sat and gnss mirrored across the x-axis at the same radius — the
@@ -200,7 +200,7 @@ class TestGetReflectionPointFf:
         leo = np.array([R_LEO, 0.0, 0.0])
         gnss = np.array([R_GNSS * np.cos(np.pi / 4), R_GNSS * np.sin(np.pi / 4), 0.0])
         N, _, _ = refl.get_reflection_point_ff(gnss, leo)
-        assert np.linalg.norm(N) == pytest.approx(Constants.RADIUS_EARTH_EQUAT, rel=1e-6)
+        assert np.linalg.norm(N) == pytest.approx(Constants.R_EARTH_MEAN, rel=1e-6)
 
     def test_reflection_in_orbital_plane(self, refl):
         # Both satellites in z=0 → reflection must be in z=0 too.

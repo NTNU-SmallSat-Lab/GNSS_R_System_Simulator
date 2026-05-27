@@ -158,6 +158,11 @@ class BRP:
             tx_eirp_dbw=tx_eirp_dbw,
             settings=link_budget_settings,
             q_sat=q_sat,
+            surface_normals_eci=(
+                lb.ellipsoid_surface_normals_eci(brp_ECEF_vec, times)
+                if self.earth_model == "elliptical"
+                else None
+            ),
         )
         power = link_budget["received_power_w"]
 

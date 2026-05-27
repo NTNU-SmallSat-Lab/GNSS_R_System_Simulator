@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
+import pymap3d
 
 from functions.rotations import eci_to_antenna_rotation_from_state
 from object_definitions.Constants_def import Constants
@@ -181,6 +182,85 @@ def build_bistatic_geometry(
     )
 
 
+def ellipsoid_surface_normals_ecef(surface_positions_ecef: np.ndarray) -> np.ndarray:
+    """
+    =========================================================================================================
+    Compute outward WGS-84 ellipsoid surface normals in ECEF coordinates.
+
+    INPUTS:
+        surface_positions_ecef: [np.ndarray, shape (n, 3)]   Surface positions on/near the WGS-84 ellipsoid [m]
+
+    OUTPUT:
+        normals_ecef: [np.ndarray, shape (n, 3)]   Unit outward normal vectors in ECEF; invalid rows are NaN
+    =========================================================================================================
+    """
+    surface_positions_ecef = np.asarray(surface_positions_ecef, dtype=float)
+    if surface_positions_ecef.ndim != 2 or surface_positions_ecef.shape[1] != 3:
+        raise ValueError(f"surface_positions_ecef must have shape (n, 3); got {surface_positions_ecef.shape}")
+
+    a = Constants.RADIUS_EARTH_EQUAT
+    b = Constants.RADIUS_EARTH_EQUAT * (1.0 - Constants.EARTH_FLATTENING)
+
+    normals = np.full_like(surface_positions_ecef, np.nan, dtype=float)
+    valid_positions = np.isfinite(surface_positions_ecef).all(axis=1)
+    if not valid_positions.any():
+        return normals
+
+    normals_raw = np.column_stack(
+        (
+            surface_positions_ecef[valid_positions, 0] / a**2,
+            surface_positions_ecef[valid_positions, 1] / a**2,
+            surface_positions_ecef[valid_positions, 2] / b**2,
+        )
+    )
+    normal_mag = np.linalg.norm(normals_raw, axis=1)
+    valid_normals = normal_mag > 0.0
+
+    valid_indices = np.where(valid_positions)[0][valid_normals]
+    normals[valid_indices] = normals_raw[valid_normals] / normal_mag[valid_normals, None]
+    return normals
+
+
+def ellipsoid_surface_normals_eci(surface_positions_ecef: np.ndarray, times) -> np.ndarray:
+    """
+    =========================================================================================================
+    Compute outward WGS-84 ellipsoid surface normals and rotate them from ECEF to ECI.
+
+    INPUTS:
+        surface_positions_ecef: [np.ndarray, shape (n, 3)]   Surface positions on/near the WGS-84 ellipsoid [m]
+        times:                  [sequence[datetime]]         Timestamps matching the surface-position rows
+
+    OUTPUT:
+        normals_eci: [np.ndarray, shape (n, 3)]   Unit outward normal vectors in ECI; invalid rows are NaN
+    =========================================================================================================
+    """
+    surface_positions_ecef = np.asarray(surface_positions_ecef, dtype=float)
+    normals_ecef = ellipsoid_surface_normals_ecef(surface_positions_ecef)
+    normals_eci = np.full_like(normals_ecef, np.nan, dtype=float)
+
+    times_array = np.asarray(times, dtype=object)
+    if times_array.shape[0] != surface_positions_ecef.shape[0]:
+        raise ValueError(f"times length must match surface_positions_ecef rows; got {times_array.shape[0]} vs {surface_positions_ecef.shape[0]}")
+
+    valid = np.isfinite(normals_ecef).all(axis=1)
+    if not valid.any():
+        return normals_eci
+
+    normals_eci_valid = np.column_stack(
+        pymap3d.ecef2eci(
+            normals_ecef[valid, 0],
+            normals_ecef[valid, 1],
+            normals_ecef[valid, 2],
+            list(times_array[valid]),
+        )
+    )
+    normal_mag = np.linalg.norm(normals_eci_valid, axis=1)
+    valid_normals = normal_mag > 0.0
+    valid_indices = np.where(valid)[0][valid_normals]
+    normals_eci[valid_indices] = normals_eci_valid[valid_normals] / normal_mag[valid_normals, None]
+    return normals_eci
+
+
 def resolve_single_link_budget_frequency_hz(antenna) -> float:
     """
     =========================================================================================================
@@ -220,6 +300,7 @@ def compute_reflection_link_budget(
     settings: dict | BistaticLinkBudgetSettings | None = None,
     q_sat: np.ndarray | None = None,
     target: "Target | None" = None,
+    surface_normals_eci: np.ndarray | None = None,
 ) -> dict:
     """
     =========================================================================================================
@@ -240,6 +321,8 @@ def compute_reflection_link_budget(
         settings:                 [dict | BistaticLinkBudgetSettings | None]  Rx-system link-budget settings
         q_sat:                    [np.ndarray, shape (4,) | None]  Satellite attitude quaternion [w, x, y, z]
         target:                   [Target | None]             RCS model; defaults to OceanTarget.from_settings(settings)
+        surface_normals_eci:      [np.ndarray, shape (n, 3) | None]  Outward surface normals in ECI.
+                                  Defaults to geocentric normals, which are exact only for a sphere.
 
     OUTPUT:
         link_budget: [dict]   Link budget components and received power arrays
@@ -263,14 +346,16 @@ def compute_reflection_link_budget(
 
     num_positions = reflection_positions_eci.shape[0]
 
-    # Spherical surface normal (the position vector itself) is used by default;
-    # `scattering_angle_deg` and `bistatic_angle_deg` therefore carry up to ~0.19 deg residual
-    # error when the upstream geometry was solved on the ellipsoid.
+    if surface_normals_eci is None:
+        surface_normals_eci = reflection_positions_eci
+    else:
+        surface_normals_eci = np.asarray(surface_normals_eci, dtype=float)
+
     geometry = build_bistatic_geometry(
         tx_positions_eci,
         rx_positions_eci,
         reflection_positions_eci,
-        reflection_positions_eci,
+        surface_normals_eci,
     )
     # Override the incidence angle with the caller-supplied value to preserve elliptical-Earth accuracy.
     geometry = dataclasses.replace(geometry, incidence_angle_deg=incidence_deg)

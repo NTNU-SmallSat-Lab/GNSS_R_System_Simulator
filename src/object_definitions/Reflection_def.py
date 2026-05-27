@@ -96,7 +96,8 @@ class Reflection:
         theta = fn.angle_between_vectors(GNSS_state.positions_eci, Sat_state.positions_eci)
 
         # Precompute line-of-sight (LOS) and valid theta indices for efficiency
-        los_mask = np.array([self._check_los_satellites(Sat_state.positions_eci[:, i], GNSS_state.positions_eci[:, i]) for i in range(num_positions)])
+        los_radius = Constants.RADIUS_EARTH_EQUAT if self.earth_model == "elliptical" else Constants.R_EARTH_MEAN
+        los_mask = np.array([self._check_los_satellites(Sat_state.positions_eci[:, i], GNSS_state.positions_eci[:, i], earth_radius=los_radius) for i in range(num_positions)])
         valid_indices = (theta < self.max_central_angle_deg) & los_mask
         valid_index_array = np.where(valid_indices)[0]
 
@@ -214,6 +215,11 @@ class Reflection:
             tx_eirp_dbw=tx_eirp_dbw,
             settings=link_budget_settings,
             q_sat=q_sat,
+            surface_normals_eci=(
+                lb.ellipsoid_surface_normals_eci(specular_point_ecef_vec, times)
+                if self.earth_model == "elliptical" and specular_point_ecef_vec is not None
+                else None
+            ),
         )
         power = link_budget["received_power_w"]
 
@@ -234,7 +240,7 @@ class Reflection:
         self.link_budget = link_budget
         self.power = power  # Received reflection power [W]
 
-    def get_reflection_point_ff(self, gnssPos, satPos):
+    def get_reflection_point_ff(self, gnssPos, satPos, earth_radius=Constants.R_EARTH_MEAN):
         """
         =========================================================================================================
         Calculate the reflection point between a satellite and a GNSS satellite position for a
@@ -251,7 +257,7 @@ class Reflection:
                               - theta_degrees3:  Angle between reflection-to-GNSS and reflection-from-origin
         =========================================================================================================
         """
-        if not self._check_los_satellites(np.asarray(satPos).flatten(), np.asarray(gnssPos).flatten()):
+        if not self._check_los_satellites(np.asarray(satPos).flatten(), np.asarray(gnssPos).flatten(), earth_radius=earth_radius):
             return np.array([np.nan, np.nan, np.nan]), np.nan, np.nan
 
         # Convert positions to column vectors
@@ -266,7 +272,9 @@ class Reflection:
         GPSCoord1 = Rot @ GPSCoord
 
         # Find 2D reflection point
-        N, A, B = self.get_reflection_point2d(satCoord1.flatten(), GPSCoord1.flatten())
+        N, A, B = self.get_reflection_point2d(satCoord1.flatten(), GPSCoord1.flatten(), earth_radius=earth_radius)
+        if N is None:
+            return np.array([np.nan, np.nan, np.nan]), np.nan, np.nan
 
         # Transform reflection point to 3D (z = 0)
         N = np.array([N[0], N[1], 0])
@@ -343,9 +351,11 @@ class Reflection:
         if initial_guess_ecef is not None and np.isfinite(initial_guess_ecef).all():
             spec_init_guess = np.asarray(initial_guess_ecef, dtype=float)
         else:
-            # Initial guess from the spherical FF solution in the same ECEF frame.
+            # Initial guess from the spherical FF solution in the same ECEF frame; use the
+            # equatorial radius so the guess sits on the ellipsoid's largest dimension and
+            # rescaling to the ellipsoid below is a near-identity (helps SLSQP convergence).
             try:
-                spec_init_guess, _, _ = self.get_reflection_point_ff(Tx_solve, Rx_solve)
+                spec_init_guess, _, _ = self.get_reflection_point_ff(Tx_solve, Rx_solve, earth_radius=a)
                 if np.any(np.isnan(spec_init_guess)):
                     spec_init_guess = (Tx_solve + Rx_solve) / 2
             except Exception:
@@ -435,7 +445,7 @@ class Reflection:
         )
 
     @staticmethod
-    def get_reflection_point2d(satCoord1, GPSCoord1):
+    def get_reflection_point2d(satCoord1, GPSCoord1, earth_radius=Constants.R_EARTH_MEAN):
         """
         =========================================================================================================
         Calculate the reflection point in 2D coordinates (after rotation into the orbital plane).
@@ -452,8 +462,8 @@ class Reflection:
         =========================================================================================================
         """
         # Calculates the reflection point in 2D
-        A = satCoord1[:2] / Constants.RADIUS_EARTH_EQUAT
-        B = GPSCoord1[:2] / Constants.RADIUS_EARTH_EQUAT
+        A = satCoord1[:2] / earth_radius
+        B = GPSCoord1[:2] / earth_radius
 
         u = np.dot(A, A)
         v = np.dot(A, B)
@@ -474,11 +484,11 @@ class Reflection:
                 y = (1 + x - 2 * u * x**2) / (1 + 2 * v * x)
                 if y > 0:
                     N = x * A + y * B
-                    return Constants.RADIUS_EARTH_EQUAT * N, A, B
+                    return earth_radius * N, A, B
         return None, None, None
 
     @staticmethod
-    def _check_los_satellites(r1, r2) -> bool:
+    def _check_los_satellites(r1, r2, earth_radius=Constants.R_EARTH_MEAN) -> bool:
         """
         =========================================================================================================
         Check whether there is a clear Line Of Sight (LOS) between two points r1 and r2,
@@ -498,9 +508,7 @@ class Reflection:
         points_along_line = r1[np.newaxis, :] + t_values[:, np.newaxis] * d[np.newaxis, :]
         distances_to_center = np.linalg.norm(points_along_line, axis=1)
 
-        # RADIUS_EARTH_EQUAT (not R_EARTH_MEAN) is intentional: it's the largest Earth dimension,
-        # so any LOS reported as blocked here is also blocked under the elliptical model.
-        return not np.any(distances_to_center < Constants.RADIUS_EARTH_EQUAT)
+        return not np.any(distances_to_center < earth_radius)
 
     @staticmethod
     def _is_valid_earth_model(earth_model) -> bool:

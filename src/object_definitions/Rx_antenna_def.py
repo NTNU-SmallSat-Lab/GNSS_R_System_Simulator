@@ -588,9 +588,10 @@ class RxAntenna:
             return np.nan
 
         # Compute the steered array factor analytically and scale by the unsteered (boresight) directivity.
-        # Scan loss with steering angle is implicit in the AF magnitude.
+        # A planar aperture loses projected area when scanned away from boresight.
         unsteered_key = self._resolve_unsteered_footprint_lookup_key(frequency_mhz)
         directivity_linear = 10.0 ** (self.antenna_lookuptable[unsteered_key]["directivity_dB"] / 10.0)
+        scan_loss_linear = max(np.cos(np.deg2rad(steering_elevation_deg)), 0.0)
         af_db = self.compute_array_factor_db_on_demand(
             theta_deg=theta_deg,
             phi_deg=phi_deg,
@@ -598,7 +599,7 @@ class RxAntenna:
             steering_el_deg=steering_elevation_deg,
             freq_mhz=frequency_mhz,
         )
-        total_linear = directivity_linear * (10.0 ** (af_db / 10.0))
+        total_linear = directivity_linear * scan_loss_linear * (10.0 ** (af_db / 10.0))
 
         if total_linear <= 0.0:
             return np.nan
