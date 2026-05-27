@@ -156,6 +156,11 @@ def initialize(config_file_name="Configuration.ini"):
         See `BistaticLinkBudgetSettings` in `functions/link_budget.py` for the
         list of accepted keys, units and defaults. Any subset can be supplied;
         unspecified keys fall back to the dataclass defaults.
+
+        [SHIP] (required when [MOVING TARGET] is present)
+        length_m    = above-waterline length [m]   (> 0)
+        beam_m      = above-waterline width [m]    (> 0)
+        freeboard_m = above-waterline height [m]   (> 0)
     =========================================================================================================
     """
     _check_python_version()
@@ -436,6 +441,25 @@ def initialize(config_file_name="Configuration.ini"):
             f"keys {sorted(link_budget.keys())}. Update the loader and the dataclass together."
         )
 
+    # --- [SHIP] (REQUIRED with [MOVING TARGET]) ---
+    # Physical dimensions of the moving target, above waterline only. INI-strict.
+    ship = None
+    if "MOVING TARGET" in config:
+        if "SHIP" not in config:
+            raise ValueError("[SHIP] section is required when [MOVING TARGET] is present.")
+        section = config["SHIP"]
+        ship = {}
+        for key in ("length_m", "beam_m", "freeboard_m"):
+            if key not in section:
+                raise ValueError(f"[SHIP].{key} is required in the configuration file.")
+            try:
+                value = float(section[key])
+            except ValueError:
+                raise ValueError(f"Invalid value for '{key}' in [SHIP]: {section[key]}") from None
+            if not value > 0.0:
+                raise ValueError(f"[SHIP].{key} must be > 0; got {value}")
+            ship[key] = value
+
     # --- [PLOT] (OPTIONAL SECTION) ---
     detection_bbox_buffer_deg = 2.0
     if "PLOT" in config and "detection_bbox_buffer_deg" in config["PLOT"]:
@@ -467,6 +491,8 @@ def initialize(config_file_name="Configuration.ini"):
         "moving_target_speed": moving_tgt_speed,
         "start_coord_ll": start_coord_ll,
         "end_coord_ll": end_coord_ll,
+        #[SHIP]
+        "ship": ship,
         #[ANTENNA PATTERN]
         "antenna_pattern_settings": antenna_pattern_settings,
         #[ANTENNA]

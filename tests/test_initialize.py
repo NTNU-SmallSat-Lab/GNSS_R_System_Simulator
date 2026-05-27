@@ -74,6 +74,24 @@ MINIMAL_OCEAN = dedent(
     """
 )
 
+MINIMAL_SHIP = dedent(
+    """\
+    [SHIP]
+    length_m = 100.0
+    beam_m = 15.0
+    freeboard_m = 5.0
+    """
+)
+
+MINIMAL_MOVING_TARGET = dedent(
+    """\
+    [MOVING TARGET]
+    speed = 12.5
+    start_pos = (60.0, 5.0)
+    end_pos = (62.0, 8.0)
+    """
+)
+
 
 def write_config(tmp_path, body: str) -> str:
     """Write the given INI body to a temporary file and return its path."""
@@ -355,17 +373,10 @@ class TestOptionalSections:
         assert settings["moving_target_speed"] is None
         assert settings["start_coord_ll"] is None
         assert settings["end_coord_ll"] is None
+        assert settings["ship"] is None
 
     def test_moving_target_section_parses(self, tmp_path):
-        moving = dedent(
-            """\
-            [MOVING TARGET]
-            speed = 12.5
-            start_pos = (60.0, 5.0)
-            end_pos = (62.0, 8.0)
-            """
-        )
-        path = write_config(tmp_path, minimal_config_body(extra_sections=moving))
+        path = write_config(tmp_path, minimal_config_body(extra_sections=MINIMAL_MOVING_TARGET + MINIMAL_SHIP))
         _, settings = initialize(path)
         assert settings["moving_target_speed"] == 12.5
         assert settings["start_coord_ll"] == (60.0, 5.0)
@@ -482,6 +493,42 @@ class TestOptionalSections:
         )
         path = write_config(tmp_path, minimal_config_body(ocean_section=ocean))
         with pytest.raises(ValueError, match="ocean_wave_height_m"):
+            initialize(path)
+
+    def test_ship_section_parses(self, tmp_path):
+        path = write_config(tmp_path, minimal_config_body(extra_sections=MINIMAL_MOVING_TARGET + MINIMAL_SHIP))
+        _, settings = initialize(path)
+        assert settings["ship"] == {"length_m": 100.0, "beam_m": 15.0, "freeboard_m": 5.0}
+
+    def test_missing_ship_section_with_moving_target_raises(self, tmp_path):
+        path = write_config(tmp_path, minimal_config_body(extra_sections=MINIMAL_MOVING_TARGET))
+        with pytest.raises(ValueError, match=r"\[SHIP\] section is required"):
+            initialize(path)
+
+    def test_ship_missing_key_raises(self, tmp_path):
+        ship = dedent(
+            """\
+            [SHIP]
+            length_m = 100.0
+            beam_m = 15.0
+            """
+        )
+        # Missing freeboard_m.
+        path = write_config(tmp_path, minimal_config_body(extra_sections=MINIMAL_MOVING_TARGET + ship))
+        with pytest.raises(ValueError, match="freeboard_m is required"):
+            initialize(path)
+
+    def test_ship_non_positive_value_raises(self, tmp_path):
+        ship = dedent(
+            """\
+            [SHIP]
+            length_m = 100.0
+            beam_m = 0.0
+            freeboard_m = 5.0
+            """
+        )
+        path = write_config(tmp_path, minimal_config_body(extra_sections=MINIMAL_MOVING_TARGET + ship))
+        with pytest.raises(ValueError, match=r"\[SHIP\]\.beam_m must be > 0"):
             initialize(path)
 
     def test_no_reflection_section_raises(self, tmp_path):
