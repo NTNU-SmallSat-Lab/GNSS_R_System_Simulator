@@ -572,9 +572,9 @@ class RxAntenna:
         theta_1 = min(theta_0 + 1, n_theta - 1)
         theta_frac = theta_pos - theta_0
 
-        # Stored grid is np.linspace(0, 360, n_phi) with endpoint=True, so bin spacing is 360/(n_phi-1)
-        # and bin (n_phi-1) coincides with bin 0 by periodicity.
-        phi_pos = (phi_deg % 360.0) / 360.0 * (n_phi - 1) if n_phi > 1 else 0.0
+        # Stored grid is np.linspace(0, 360, n_phi, endpoint=False), so bin spacing is 360/n_phi.
+        # The sample after the last bin wraps periodically to bin 0.
+        phi_pos = (phi_deg % 360.0) / 360.0 * n_phi if n_phi > 1 else 0.0
         phi_0 = int(np.floor(phi_pos))
         phi_1 = (phi_0 + 1) % n_phi
         phi_frac = phi_pos - phi_0
