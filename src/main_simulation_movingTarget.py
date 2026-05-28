@@ -1,17 +1,14 @@
 import logging
 
 import matplotlib
-import numpy as np
-from datetime import timedelta
 
-import functions.functions as fn
 from __init__ import initialize
+import functions.functions as fn
 from object_definitions.MovingTargetDetection_def import MovingTargetDetection
 from object_definitions.Rx_antenna_def import RxAntenna as GNSS_R_antenna
 from object_definitions.SatConstellation_def import SatelliteConstellation
 from object_definitions.Satellite_def import Satellite
 from object_definitions.ShipTrajectory_def import ShipTrajectory
-from object_definitions.Static_classes_def import Plotting
 
 # Force non-interactive backend for server/headless environments
 matplotlib.use("Agg", force=True)
@@ -64,7 +61,7 @@ def run_moving_target_detection(settings: dict):
 
     # Initialize LEO satellites from settings
     sat_array = [
-        Satellite(i, orbit_n=settings["orbits"][i]) 
+        Satellite(i, orbit_n=settings["orbits"][i])
         for i in range(settings["No_satellites"])
     ]
     sat_const = SatelliteConstellation(
@@ -129,9 +126,9 @@ def run_moving_target_detection(settings: dict):
     # Optional: Animation (Set to True via settings if needed)
     if settings.get("create_animation", False):
         mtd.create_reflection_animation(
-            time_step_min=5, 
-            output_format="mp4", 
-            output_filename="Reflection_animation.mp4", 
+            time_step_min=5,
+            output_format="mp4",
+            output_filename="Reflection_animation.mp4",
             fps=2
         )
 

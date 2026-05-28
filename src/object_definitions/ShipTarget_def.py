@@ -13,6 +13,7 @@ The ship body frame is built per sample:
     starboard_hat = bow_hat x mast_hat   (right-hand rule)
 """
 from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -51,7 +52,7 @@ class ShipTarget(Target):
         self.heading_eci = heading_eci
 
     @classmethod
-    def from_dict(cls, ship_dict: dict, heading_eci: np.ndarray) -> "ShipTarget":
+    def from_dict(cls, ship_dict: dict, heading_eci: np.ndarray) -> ShipTarget:
         """Build a ShipTarget from the INI-parsed dimensions dict and a heading array."""
         return cls(
             length_m=ship_dict["length_m"],
@@ -60,7 +61,7 @@ class ShipTarget(Target):
             heading_eci=heading_eci,
         )
 
-    def compute_rcs(self, geometry: "BistaticGeometry", wavelength_m: float) -> TargetRcs:
+    def compute_rcs(self, geometry: BistaticGeometry, wavelength_m: float) -> TargetRcs:
         n_tx2s = geometry.n_tx2s
         n_s2rx = geometry.n_s2rx
         mast_hat = geometry.n_surface                                  # outward surface normal = up

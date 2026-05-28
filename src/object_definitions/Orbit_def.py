@@ -1,5 +1,5 @@
 #from datetime import UTC, datetime
-from datetime import timezone, datetime
+from datetime import UTC, datetime
 
 import numpy as np
 
@@ -40,7 +40,7 @@ class Orbit_specification:
     def conv_DateTime_to_Epoch(self, dt_epoch):
         # Convert datetime to TLE epoch_str format YYDDD.DDDDDDDD
         tle_year = dt_epoch.year % 100
-        start_of_year = datetime(dt_epoch.year, 1, 1, tzinfo=timezone.utc)
+        start_of_year = datetime(dt_epoch.year, 1, 1, tzinfo=UTC)
         days_since_start_of_year = (dt_epoch - start_of_year).total_seconds() / Constants.SEC_PER_DAY + 1  # Add 1 day to accont for the first day of the year
 
         # Format strings to TLE Epoch format
@@ -61,7 +61,7 @@ class Orbit_specification:
         if not isinstance(dt_start, datetime):
             raise ValueError("Invalid start time format. Please provide a datetime object")
         # Check if dt_start is timezone-aware and in UTC
-        if dt_start.tzinfo is None or dt_start.tzinfo != timezone.utc:
+        if dt_start.tzinfo is None or dt_start.tzinfo != UTC:
             raise ValueError("Start time must be a timezone-aware datetime object in UTC")
         self.dt_start = dt_start
         self.epoch_str = self.conv_DateTime_to_Epoch(dt_start)

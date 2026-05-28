@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import numpy as np
 
-
 EPS_0 = 8.854187817e-12  # vacuum permittivity [F/m]
 
 

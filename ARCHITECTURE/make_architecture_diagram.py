@@ -1,8 +1,7 @@
 """Generate a static software-architecture diagram (PNG + SVG)."""
-import matplotlib.pyplot as plt
-from matplotlib.patches import FancyArrowPatch, FancyBboxPatch, Rectangle
 from matplotlib.lines import Line2D
-
+from matplotlib.patches import FancyArrowPatch, FancyBboxPatch, Rectangle
+import matplotlib.pyplot as plt
 
 COLORS = {
     "entry":      "#1f6feb",

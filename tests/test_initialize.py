@@ -21,7 +21,6 @@ import pytest
 from __init__ import initialize
 from object_definitions.Constants_def import Constants
 
-
 # --------------------------------------------------------------------------- #
 # Helpers                                                                     #
 # --------------------------------------------------------------------------- #
@@ -138,7 +137,7 @@ class TestInitializeHappyPath:
     def test_start_time_parsed_to_utc_datetime(self, tmp_path):
         path = write_config(tmp_path, minimal_config_body())
         _, settings = initialize(path)
-        assert settings["start_time"] == dt.datetime(2025, 4, 2, 12, 0, 0, tzinfo=dt.timezone.utc)
+        assert settings["start_time"] == dt.datetime(2025, 4, 2, 12, 0, 0, tzinfo=dt.UTC)
 
     def test_step_size_parsed_as_int(self, tmp_path):
         path = write_config(tmp_path, minimal_config_body())

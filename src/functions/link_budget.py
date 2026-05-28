@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import dataclasses
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -299,7 +300,7 @@ def compute_reflection_link_budget(
     tx_eirp_dbw: float,
     settings: dict | BistaticLinkBudgetSettings | None = None,
     q_sat: np.ndarray | None = None,
-    target: "Target | None" = None,
+    target: Target | None = None,
     surface_normals_eci: np.ndarray | None = None,
 ) -> dict:
     """

@@ -36,7 +36,7 @@ class Target(ABC):
     """
 
     @abstractmethod
-    def compute_rcs(self, geometry: "BistaticGeometry", wavelength_m: float) -> TargetRcs:
+    def compute_rcs(self, geometry: BistaticGeometry, wavelength_m: float) -> TargetRcs:
         """
         Return per-sample RCS in m^2 for the given bistatic geometry and wavelength.
         """

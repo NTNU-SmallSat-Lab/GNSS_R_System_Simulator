@@ -1,18 +1,19 @@
 import json
+
 import matplotlib.pyplot as plt
 import numpy as np
 
 
 class SphericalToCartesian:
     def __init__(self, spherical_coordinates):
-        ''' 
+        '''
         Converts spherical coordinates to carthesian coordinates.
 
         Antenna radiation patterns use spherical coordinates when performing different calculations, but
         matplotlib must have carthesian coordinates to plot in 3D.
 
         Input: array object containing spherical coordinates of radiation pattern.
-        Output: array object containing radiation pattern in corresponding carthesian coordinates. 
+        Output: array object containing radiation pattern in corresponding carthesian coordinates.
         '''
 
 
@@ -66,7 +67,7 @@ class PlotRadiationPattern:
         plt.show()
 
 def read_radpat_file(path: str) -> dict:
-    with open(path, 'r') as f:
+    with open(path) as f:
         data = json.load(f)
     # mesh = np.array(data['data'])
     # freq = data['frequency']
