@@ -81,7 +81,7 @@ def main(config_file: str = "Configuration_ship.ini") -> None:
     _, settings = initialize(config_file)
 
     contour_levels = [-0.5, settings["footprint_dB"], -3.0]
-    contour_levels = sorted(set(float(level) for level in contour_levels), reverse=True)
+    contour_levels = sorted({float(level) for level in contour_levels}, reverse=True)
 
     contour_stats = {}
     for contour_db in contour_levels:

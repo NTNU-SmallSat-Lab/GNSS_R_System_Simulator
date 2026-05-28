@@ -110,9 +110,16 @@ select = [
 ]
 ignore = [
     "E501",  # line too long (Black handles this)
+    "W505",  # doc line too long (consistent with E501; long aligned docstring tables are intentional)
     "B008",  # do not perform function calls in argument defaults
-    "N806",  # variable name should be lowercase (for scientific variables)
+    "N801",  # class name CapWords (e.g. Orbit_specification is an established public name)
+    "N802",  # function name should be lowercase (scientific names: R_v, TLE, Bstar, satID, ...)
     "N803",  # argument name should be lowercase (for scientific variables)
+    "N806",  # variable name should be lowercase (for scientific variables)
+    "N811",  # constant imported as non-constant (acronym class alias, e.g. BRP as Backscatter)
+    "N812",  # lowercase imported as non-lowercase (clarifying alias, e.g. a as WGS84_A)
+    "N815",  # mixedCase class-scope variable (scientific names: tx_satID, rx_satID)
+    "N999",  # invalid module name (SRC package + entry-point scripts cannot be snake_case-renamed)
     "SIM108", # Use ternary operator instead of if-else-block (allow both styles)
     "SIM401", # Use ternary operator instead of if-else-block that returns (allow both styles)
 ]
@@ -120,8 +127,20 @@ ignore = [
 [tool.ruff.lint.isort]
 known-first-party = ["gnss_r_simulator"]
 force-sort-within-sections = true
-lines-between-types = 1
 combine-as-imports = true
+
+[tool.ruff.lint.per-file-ignores]
+# Imports intentionally placed after setup (matplotlib backend, sys.path, warnings filter,
+# the datetime.UTC monkeypatch). E402 is correct for normal files, so suppress it only here.
+"SRC/__init__.py" = ["E402"]
+"SRC/main_simulation_areaCoverage.py" = ["E402"]
+"SRC/test_footprint_calculation.py" = ["E402"]
+"SRC/object_definitions/ShipTrajectory_def.py" = ["E402"]
+"tests/golden/regenerate_gains.py" = ["E402"]
+"tests/golden/regenerate_link_budget.py" = ["E402"]
+# Disabled parameter-sweep harness: references functions deleted in the migration; it raises
+# NotImplementedError on import and is not run.
+"SRC/run_simulator_parallel.py" = ["F821"]
 
 [tool.ruff.lint.pycodestyle]
 max-doc-length = 160

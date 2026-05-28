@@ -221,7 +221,7 @@ def _solve_sgp4_mean_elements_from_osculating(satellite):
     mean_elements = _equinoctial_solver_vars_to_classical(result.x)
 
     if not result.success:
-        warnings.warn(f"SGP4 mean-element fit did not report convergence for satellite {satellite.satName}: {result.message}")
+        warnings.warn(f"SGP4 mean-element fit did not report convergence for satellite {satellite.satName}: {result.message}", stacklevel=2)
 
     return mean_elements
 
@@ -295,10 +295,10 @@ class ReadWriteSatData:
         =========================================================================================================
         """
         if satellite.orbit_n is None:
-            warnings.warn("Orbit was not specified when this Satellite was created. Insufficient information to generate a TLE.")
+            warnings.warn("Orbit was not specified when this Satellite was created. Insufficient information to generate a TLE.", stacklevel=2)
             return None
         if satellite.orbit_n.epoch_str is None:
-            warnings.warn("Epoch was not specified when this Orbit was created. Insufficient information to generate a TLE.")
+            warnings.warn("Epoch was not specified when this Orbit was created. Insufficient information to generate a TLE.", stacklevel=2)
             return None
 
         mean_elements = _solve_sgp4_mean_elements_from_osculating(satellite)
@@ -380,7 +380,7 @@ class ReadWriteSatData:
                             checksum_str1 = line_1[68:69]
                             calc_checksum1 = ReadWriteSatData._calc_checksum([line_1[:68]])
                             if not (calc_checksum1 == int(checksum_str1)):
-                                warnings.warn("Checksum error in TLE data line 1")
+                                warnings.warn("Checksum error in TLE data line 1", stacklevel=2)
                     else:
                         ValueError("Invalid TLE data format in line 1")
 
@@ -401,9 +401,9 @@ class ReadWriteSatData:
                         calc_checksum2 = ReadWriteSatData._calc_checksum([line_2[:68]])
 
                         if not (calc_checksum2 == int(checksum_str2)):
-                            warnings.warn("Checksum error in TLE data line 2")
+                            warnings.warn("Checksum error in TLE data line 2", stacklevel=2)
                         if not (satID_1_str == satID_2_str):
-                            warnings.warn("Satellite ID mismatch in line 1 and line 2")
+                            warnings.warn("Satellite ID mismatch in line 1 and line 2", stacklevel=2)
                     else:
                         ValueError("Invalid TLE data format in line 2")
 

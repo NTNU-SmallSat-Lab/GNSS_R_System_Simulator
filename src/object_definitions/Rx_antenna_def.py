@@ -743,7 +743,7 @@ class PlotRadiationPattern:
             alpha:         [float]                      Vector transparency (default: 0.7)
         =========================================================================================================
         """
-        for i, vector in enumerate(vector_bundle):
+        for _i, vector in enumerate(vector_bundle):
             self.ax.plot([0, vector[0]], [0, vector[1]], [0, vector[2]],
                 color=color, linewidth=linewidth, alpha=alpha)
 #            self.ax.quiver(0, 0, 0, vector[0], vector[1], vector[2],

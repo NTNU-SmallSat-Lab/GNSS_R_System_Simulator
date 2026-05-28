@@ -157,7 +157,7 @@ class Satellite:
         =========================================================================================================
         """
         if self.orbit_n is None:
-            warnings.warn("Orbit_specification is not specified for this satellite. Cannot set epoch.")
+            warnings.warn("Orbit_specification is not specified for this satellite. Cannot set epoch.", stacklevel=2)
             return
         self.orbit_n.set_start_time(epoch)
 
@@ -184,7 +184,7 @@ class Satellite:
         if self.tle_exists():
             return self.tle_file_path
         else:
-            warnings.warn("TLE has not yet been generated")
+            warnings.warn("TLE has not yet been generated", stacklevel=2)
             return None
 
     def get_orbit(self) -> Orbit_specification:

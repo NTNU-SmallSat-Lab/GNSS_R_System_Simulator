@@ -409,8 +409,8 @@ class MovingTargetDetection:
         # Iterate through each satellite constellation
         for gnss_name, _ in self.gnss_constellation.items():
             # Iterate through each position in the resampled moving target trajectory
-            for idx, (time_tgt_i, pos_tgt_i) in tqdm(
-                enumerate(zip(self.timestamps_resampled, self.ship_positions_resampled)),
+            for _idx, (time_tgt_i, pos_tgt_i) in tqdm(
+                enumerate(zip(self.timestamps_resampled, self.ship_positions_resampled, strict=False)),
                 desc=f"Detection of moving target using {gnss_name}",
                 unit=" time-step ",
                 total=len(self.timestamps_resampled),
@@ -1343,7 +1343,7 @@ class MovingTargetDetection:
                 # Check if unwrapped polygon is reasonable
                 if np.max(fixed_lons) - np.min(fixed_lons) < max_lon_span:
                     try:
-                        fixed_polygon = Polygon(zip(fixed_lons, lats))
+                        fixed_polygon = Polygon(zip(fixed_lons, lats, strict=False))
                         if fixed_polygon.is_valid:
                             return [fixed_polygon]
                     except Exception:
