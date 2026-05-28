@@ -261,58 +261,18 @@ class RxAntenna:
     def _get_antenna_footprint(self, refl_dir_antenna_frame, frequency):
         """
         =========================================================================================================
-        Get the antenna footprint contour rotated to point at the given reflection direction.
+        Get the fixed nadir-pointing antenna footprint contour.
 
         INPUTS:
-            refl_dir_antenna_frame: [np.ndarray, shape (3,)]   Reflection direction in antenna frame
+            refl_dir_antenna_frame: [np.ndarray, shape (3,)]   Retained for API compatibility; ignored
             frequency:              [float]                    Frequency [MHz] (used for lookup)
 
         OUTPUT:
-            footprint_vectors: [np.ndarray, shape (N, 3)]   Rotated footprint contour vectors
+            footprint_vectors: [np.ndarray, shape (N, 3)]   Fixed nadir footprint contour vectors
         =========================================================================================================
         """
-        boresight = np.array([0.0, 0.0, 1.0])  # Nadir-pointing boresight in antenna coordinates
-        refl_dir_antenna_frame = np.asarray(refl_dir_antenna_frame, dtype=float)
-        if refl_dir_antenna_frame.shape != (3,):
-            raise ValueError("Input 'refl_dir_antenna_frame' must be a 3-element vector.")
-        if not np.isfinite(refl_dir_antenna_frame).all():
-            raise ValueError("Input 'refl_dir_antenna_frame' must contain finite values.")
-
-        direction_norm = np.linalg.norm(refl_dir_antenna_frame)
-        if direction_norm <= 0.0:
-            raise ValueError("Input 'refl_dir_antenna_frame' must be non-zero.")
-        refl_dir_antenna_frame = refl_dir_antenna_frame / direction_norm
-
-        # Footprint projection starts from the fixed nadir contour and rotates it
-        # to the requested reflection direction for geometric footprint drawing only.
         footprint_lookup_key = self._resolve_unsteered_footprint_lookup_key(frequency)
-
-        # Check if the direction is the same as boresight (no rotation needed)
-        if np.allclose(refl_dir_antenna_frame, boresight):
-            return self.antenna_lookuptable[footprint_lookup_key]["vector_bundle"]
-
-        # Compute rotation axis and angle
-        axis = np.cross(boresight, refl_dir_antenna_frame)
-        axis_norm = np.linalg.norm(axis)
-
-        if axis_norm < 1e-8:
-            # refl_dir_antenna_frame is opposite to boresight, rotate 180 degrees around any perpendicular axis
-            axis = np.array([1.0, 0.0, 0.0])  # Arbitrary perpendicular axis
-            angle = np.pi
-        else:
-            axis = axis / axis_norm
-            angle = np.arccos(np.clip(np.dot(boresight, refl_dir_antenna_frame), -1.0, 1.0))
-
-        # Compute rotation matrix using Rodrigues' rotation formula
-        K = np.array([
-            [0, -axis[2], axis[1]],
-            [axis[2], 0, -axis[0]],
-            [-axis[1], axis[0], 0]
-        ])
-        R = np.eye(3) + np.sin(angle) * K + (1 - np.cos(angle)) * np.dot(K, K)
-
-        rotated_footprint_vectors = self.antenna_lookuptable[footprint_lookup_key]["vector_bundle"] @ R.T
-        return rotated_footprint_vectors
+        return self.antenna_lookuptable[footprint_lookup_key]["vector_bundle"]
 
     def _resolve_unsteered_footprint_lookup_key(self, frequency_mhz: float) -> float:
         """
