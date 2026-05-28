@@ -132,8 +132,8 @@ def _configured_cache_ship() -> ShipTrajectory:
     ship.interval_minutes = 10
     ship.fast_method = False
     ship.grid_resolution = 150_000.0
-    ship.mesh_connection_radius = 300_000.0
-    ship.water_buffer = 25_000.0
+    ship.mesh_connection_radius = 2_000_000.0
+    ship.water_buffer = 22_200.0
     ship.delta_m = 500_000.0
     ship.shapefile_path = {}
     return ship

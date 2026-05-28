@@ -63,7 +63,8 @@ class ShipTrajectory:
         grid_resolution_km: float = 50,
         delta_boudingBox_km: float = 500,
         fast_path_gen_method: bool = True,
-        water_buffer_km: float = 25.0,
+        mesh_connection_radius_km: float = 2_000,
+        water_buffer_km: float = 22.2,
         trajectory_type: list = None,
         save_graph: bool = False,
     ) -> None:
@@ -82,7 +83,7 @@ class ShipTrajectory:
         self.fast_method = (
             fast_path_gen_method  # Flag [boolean] to indicate if simplified path generation is used (faster computation / longer, more simple ship route)
         )
-        self.mesh_connection_radius = self.grid_resolution * 2  # Connection radius for grid points in meters
+        self.mesh_connection_radius = mesh_connection_radius_km * 1e3  # Connection radius for grid points in meters
         self.water_buffer = water_buffer_km * 1e3  # Safety distance from shore in meters (default: 22.2 km = 12 nm (Territorial Sea))
 
         self.ocean_polygons = None  # Loaded coastline data (geopandas object), will be loaded from shapefile
