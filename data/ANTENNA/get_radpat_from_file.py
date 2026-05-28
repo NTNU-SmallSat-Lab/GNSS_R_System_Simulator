@@ -1,9 +1,11 @@
-import os
 import json
+import os
+
 import numpy as np
 
+
 def read_radpat_file(path: str) -> dict:
-    with open(path, 'r') as f:
+    with open(path) as f:
         data = json.load(f)
     # mesh = np.array(data['data'])
     # freq = data['frequency']

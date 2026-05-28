@@ -18,7 +18,6 @@ from functions.link_budget import compute_reflection_link_budget
 from object_definitions.Constants_def import Constants
 from object_definitions.OceanTarget_def import OceanTarget
 
-
 R_EARTH_M = Constants.RADIUS_EARTH_EQUAT
 R_GPS_M = 26.5e6              # GPS MEO orbital radius [m]
 R_LEO_M = R_EARTH_M + 720e3   # 720 km LEO orbital radius [m]

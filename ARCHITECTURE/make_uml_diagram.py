@@ -15,7 +15,6 @@ from dataclasses import dataclass, field
 from html import escape
 from pathlib import Path
 
-
 # ---------------------------------------------------------------------------
 #  Drawio style strings - matches drawio's built-in "Class 2" template
 # ---------------------------------------------------------------------------

@@ -1,14 +1,13 @@
 """Tests for SatelliteConstellation. Migrated from testSatConstelation in SRC/test_main.py."""
 
-import os
 from datetime import UTC, datetime
+import os
 
 import pytest
 
 from object_definitions.Constants_def import Constants
 from object_definitions.SatConstellation_def import SatelliteConstellation
 from object_definitions.Satellite_def import Satellite
-
 
 START_TIME = datetime(2024, 10, 31, 5, 5, 57, tzinfo=UTC)
 

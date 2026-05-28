@@ -3,17 +3,16 @@
 in SRC/test_main.py."""
 
 import contextlib
+from datetime import UTC, datetime
 import io
 import os
 import warnings
-from datetime import UTC, datetime
 
 import pytest
 
 from object_definitions.Constants_def import Constants
 from object_definitions.Orbit_def import Orbit_specification
 from object_definitions.Satellite_def import Satellite
-
 
 APOGEE_M = 421e3 + Constants.R_EARTH_MEAN
 ORBIT_ARGS = (51.6374, 0.0009376, 1.5935, 121.8064, 341.7727, APOGEE_M)

@@ -11,8 +11,8 @@ tests target only the bits that don't need that state:
 import datetime as dt
 from types import SimpleNamespace
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 import pytest
 from shapely.geometry import MultiPolygon, Point, Polygon
 

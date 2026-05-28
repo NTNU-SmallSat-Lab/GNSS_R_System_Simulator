@@ -11,10 +11,9 @@ Source can also be pasted into:
 """
 from __future__ import annotations
 
+from pathlib import Path
 import urllib.request
 import zlib
-from pathlib import Path
-
 
 PUML = r"""@startuml
 !pragma layout smetana
@@ -317,8 +316,8 @@ def main() -> None:
             data = _fetch(url)
         except Exception as e:                                  # noqa: BLE001
             print(f"FAILED to fetch {fname}: {e}")
-            print(f"  Render manually by pasting architecture.puml into")
-            print(f"  https://www.plantuml.com/plantuml or https://kroki.io")
+            print("  Render manually by pasting architecture.puml into")
+            print("  https://www.plantuml.com/plantuml or https://kroki.io")
             continue
         Path(fname).write_bytes(data)
         print(f"Wrote {fname} ({len(data):,} bytes)")

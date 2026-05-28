@@ -744,9 +744,9 @@ class PlotRadiationPattern:
         =========================================================================================================
         """
         for i, vector in enumerate(vector_bundle):
-            self.ax.plot([0, vector[0]], [0, vector[1]], [0, vector[2]], 
+            self.ax.plot([0, vector[0]], [0, vector[1]], [0, vector[2]],
                 color=color, linewidth=linewidth, alpha=alpha)
-#            self.ax.quiver(0, 0, 0, vector[0], vector[1], vector[2], 
+#            self.ax.quiver(0, 0, 0, vector[0], vector[1], vector[2],
 #                          length=1, color=color, linewidth=linewidth, alpha=alpha)
 
     def add_single_vector(self, vector, color='green', linewidth=2, label=None):
@@ -761,7 +761,7 @@ class PlotRadiationPattern:
             label:     [str | None]                      Optional label for the legend
         =========================================================================================================
         """
-        self.ax.quiver(0, 0, 0, vector[0], vector[1], vector[2], 
+        self.ax.quiver(0, 0, 0, vector[0], vector[1], vector[2],
                       length=1, color=color, linewidth=linewidth, label=label)
 
     def save_plot(self, filename, dpi=300):
