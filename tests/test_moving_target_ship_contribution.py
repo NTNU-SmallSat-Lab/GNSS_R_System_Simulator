@@ -90,17 +90,26 @@ def _build_refl_obj_mock():
     surf = np.array([[6.371e6, 0.0, 0.0]])
     tx_pos = np.array([[6.371e6 + 2.0e7], [0.0], [0.0]])   # ~ GPS altitude
     rx_pos = np.array([[6.371e6 + 7.0e5], [0.0], [0.0]])   # ~ LEO altitude
+    rx_vel = np.array([[0.0], [7_500.0], [0.0]])
     return SimpleNamespace(
         gnss_pos_vec=tx_pos,
         sat_pos_vec=rx_pos,
+        sat_vel_vec=rx_vel,
         refl_ECI_vec=surf,
         link_budget={
-            "tx_to_surface_range_m": np.array([2.0e7]),
-            "surface_to_rx_range_m": np.array([7.0e5]),
-            "rx_gain_dbi": np.array([10.0]),
+            "tx_to_surface_range_m": np.array([np.nan]),
+            "surface_to_rx_range_m": np.array([np.nan]),
+            "rx_gain_dbi": np.array([np.nan]),
             "received_power_w": np.array([1.0e-15]),
             "rcs_m2": np.array([1.0e3]),
         },
+    )
+
+
+def _constant_gain_antenna():
+    return SimpleNamespace(
+        R_antenna_to_body=np.eye(3),
+        get_gain_dbi_for_direction=lambda direction, frequency_mhz: 10.0 if np.isfinite(direction).all() else np.nan,
     )
 
 
@@ -109,7 +118,7 @@ class TestComputeShipPrAtEvent:
         mtd.ship_dimensions = None
         mtd.moving_target_object = _trajectory([(60.0 + 0.1 * i, 5.0) for i in range(5)])
         refl_obj = _build_refl_obj_mock()
-        pr_ship_w, rcs_ship_m2 = mtd._compute_ship_pr_at_event(refl_obj, 0, "GPS", detection_time)
+        pr_ship_w, rcs_ship_m2 = mtd._compute_ship_pr_at_event(refl_obj, 0, "GPS", detection_time, (0.0, 0.0))
         assert np.isnan(pr_ship_w)
         assert np.isnan(rcs_ship_m2)
 
@@ -119,19 +128,21 @@ class TestComputeShipPrAtEvent:
         mtd.link_budget_frequency_hz = 1.57542e9
         mtd.tx_eirp_dbw_per_constellation = {"GPS": 27.0}
         mtd.link_budget_settings = None
+        mtd.sat_antenna = _constant_gain_antenna()
         refl_obj = _build_refl_obj_mock()
-        pr_ship_w, rcs_ship_m2 = mtd._compute_ship_pr_at_event(refl_obj, 0, "GPS", detection_time)
+        pr_ship_w, rcs_ship_m2 = mtd._compute_ship_pr_at_event(refl_obj, 0, "GPS", detection_time, (0.0, 0.0))
         assert np.isnan(pr_ship_w)
         assert np.isnan(rcs_ship_m2)
 
     def test_returns_finite_pr_for_well_formed_event(self, mtd, detection_time):
         mtd.ship_dimensions = {"length_m": 100.0, "beam_m": 15.0, "freeboard_m": 5.0}
-        mtd.moving_target_object = _trajectory([(60.0 + 0.1 * i, 5.0) for i in range(5)])
+        mtd.moving_target_object = _trajectory([(0.0, 0.1 * i) for i in range(5)])
         mtd.link_budget_frequency_hz = 1.57542e9
         mtd.tx_eirp_dbw_per_constellation = {"GPS": 27.0}
         mtd.link_budget_settings = None
+        mtd.sat_antenna = _constant_gain_antenna()
         refl_obj = _build_refl_obj_mock()
-        pr_ship_w, rcs_ship_m2 = mtd._compute_ship_pr_at_event(refl_obj, 0, "GPS", detection_time)
+        pr_ship_w, rcs_ship_m2 = mtd._compute_ship_pr_at_event(refl_obj, 0, "GPS", detection_time, (0.0, 0.0))
         # Geometry is near-zenith with a moving ship — deck plate dominates, RCS finite and positive.
         assert np.isfinite(rcs_ship_m2)
         assert rcs_ship_m2 > 0.0

@@ -479,8 +479,9 @@ class MovingTargetDetection:
                                     possible_target_detection.rcs_ocean_m2 = rcs_ocean_m2
 
                                     if self.ship_dimensions is not None:
+                                        ship_position_ll = (pos_tgt_i.y, pos_tgt_i.x)
                                         pr_ship_w, rcs_ship_m2 = self._compute_ship_pr_at_event(
-                                            refl_obj, reflection_index, gnss_name, time_tgt_i,
+                                            refl_obj, reflection_index, gnss_name, time_tgt_i, ship_position_ll,
                                         )
                                         possible_target_detection.pr_ship_w = pr_ship_w
                                         possible_target_detection.rcs_ship_m2 = rcs_ship_m2
@@ -561,15 +562,14 @@ class MovingTargetDetection:
         reflection_index: int,
         gnss_name: str,
         detection_time: dt.datetime,
+        ship_position_ll: tuple[float, float],
     ) -> tuple[float, float]:
         """
         Compute the ship's contribution to received power at one detection event.
 
-        Builds a single-sample BistaticGeometry from the cached Tx/Rx/surface positions in
-        `refl_obj`, instantiates a ShipTarget with the ship's instantaneous heading, and runs
-        the bistatic link budget re-using the cached Rx gain and ranges from the ocean-target
-        computation. Returns (pr_ship_w, rcs_ship_m2); NaN/NaN if heading is unavailable or
-        geometry is invalid.
+        Builds a single-sample BistaticGeometry at the detected ship position, instantiates
+        a ShipTarget with the ship's instantaneous heading, and runs the bistatic link budget.
+        Returns (pr_ship_w, rcs_ship_m2); NaN/NaN if heading is unavailable or geometry is invalid.
         """
         nan_pair = (float("nan"), float("nan"))
         if self.ship_dimensions is None:
@@ -579,20 +579,33 @@ class MovingTargetDetection:
         if heading_eci is None:
             return nan_pair
 
-        # Per-sample slices from the cached reflection object.
+        ship_lat, ship_lon = ship_position_ll
+        ship_x_ecef, ship_y_ecef, ship_z_ecef = pymap3d.geodetic2ecef(ship_lat, ship_lon, 0.0)
+        ship_pos_ecef = np.array([[ship_x_ecef, ship_y_ecef, ship_z_ecef]], dtype=float)
+        ship_pos_eci = np.column_stack(
+            pymap3d.ecef2eci(
+                np.array([ship_x_ecef]),
+                np.array([ship_y_ecef]),
+                np.array([ship_z_ecef]),
+                [detection_time],
+            )
+        )
+        ship_surface_normal_eci = lb.ellipsoid_surface_normals_eci(ship_pos_ecef, [detection_time])
+
+        # Per-sample slices from the cached reflection object, evaluated at the ship point.
         tx_pos = refl_obj.gnss_pos_vec[:, reflection_index:reflection_index + 1]      # (3, 1)
         rx_pos = refl_obj.sat_pos_vec[:, reflection_index:reflection_index + 1]       # (3, 1)
-        surf_pos = refl_obj.refl_ECI_vec[reflection_index:reflection_index + 1, :]    # (1, 3)
-        if not (np.isfinite(tx_pos).all() and np.isfinite(rx_pos).all() and np.isfinite(surf_pos).all()):
+        rx_vel = refl_obj.sat_vel_vec[:, reflection_index]
+        if not (
+            np.isfinite(tx_pos).all()
+            and np.isfinite(rx_pos).all()
+            and np.isfinite(rx_vel).all()
+            and np.isfinite(ship_pos_eci).all()
+            and np.isfinite(ship_surface_normal_eci).all()
+        ):
             return nan_pair
 
-        # Geocentric surface normal (sufficient for ship-RCS angular accuracy).
-        surf_norm_mag = np.linalg.norm(surf_pos, axis=1, keepdims=True)
-        if not np.all(surf_norm_mag > 0.0):
-            return nan_pair
-        surf_normal = surf_pos / surf_norm_mag
-
-        geometry = lb.build_bistatic_geometry(tx_pos, rx_pos, surf_pos, surf_normal)
+        geometry = lb.build_bistatic_geometry(tx_pos, rx_pos, ship_pos_eci, ship_surface_normal_eci)
         wavelength_m = Constants.SPEED_OF_LIGHT / self.link_budget_frequency_hz
 
         ship_target = ShipTarget.from_dict(self.ship_dimensions, heading_eci=heading_eci[np.newaxis, :])
@@ -601,12 +614,21 @@ class MovingTargetDetection:
         if not np.isfinite(rcs_ship_m2):
             return nan_pair
 
-        # Reuse cached Rx gain and ranges from the ocean link budget at this index.
-        cached = refl_obj.link_budget
+        look_dir_a = lb.compute_rx_look_direction_antenna_frame(
+            rx_pos[:, 0],
+            rx_vel,
+            ship_pos_eci[0],
+            self.sat_antenna,
+        )
+        rx_gain_dbi = self.sat_antenna.get_gain_dbi_for_direction(
+            look_dir_a,
+            self.link_budget_frequency_hz / 1e6,
+        )
+
         link_budget = lb.compute_bistatic_link_budget(
-            range_tx_m=np.array([cached["tx_to_surface_range_m"][reflection_index]]),
-            range_rx_m=np.array([cached["surface_to_rx_range_m"][reflection_index]]),
-            rx_gain_dbi=np.array([cached["rx_gain_dbi"][reflection_index]]),
+            range_tx_m=geometry.range_tx_m,
+            range_rx_m=geometry.range_rx_m,
+            rx_gain_dbi=np.array([rx_gain_dbi]),
             rcs_m2=np.array([rcs_ship_m2]),
             frequency_hz=self.link_budget_frequency_hz,
             tx_eirp_dbw=self.tx_eirp_dbw_per_constellation[gnss_name],
