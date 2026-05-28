@@ -22,7 +22,6 @@ import pytest
 from object_definitions.Constants_def import Constants
 from object_definitions.Reflection_def import Reflection
 
-
 # A LEO altitude (~500 km) and GNSS altitude (~MEO, ~20200 km) chosen so both
 # satellites are well above the Earth and produce a clear reflection geometry.
 R_LEO = Constants.RADIUS_EARTH_EQUAT + 500e3

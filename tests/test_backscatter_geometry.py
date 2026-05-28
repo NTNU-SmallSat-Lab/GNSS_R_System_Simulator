@@ -12,10 +12,10 @@ the Earth ellipsoid — i.e. the retroreflector geometry.
 import datetime as dt
 import types
 
+from antenna_fixture import make_test_antenna
 import numpy as np
 import pytest
 
-from antenna_fixture import make_test_antenna
 from object_definitions.BackScattPoint_def import (
     BRP,
     a as WGS84_A,
@@ -121,7 +121,7 @@ class TestAntennaFovPreGate:
         gnss_alt = WGS84_A + 20_200_000.0
         tx_pos = np.array([[gnss_alt], [tx_offset_along_y], [0.0]])
         tx_vel = np.array([[0.0], [3_900.0], [0.0]])
-        times = np.array([dt.datetime(2025, 4, 2, 12, 0, 0, tzinfo=dt.timezone.utc)])
+        times = np.array([dt.datetime(2025, 4, 2, 12, 0, 0, tzinfo=dt.UTC)])
         return tx_pos, tx_vel, rx_pos, rx_vel, times
 
     def test_nadir_brp_passes_fov_gate(self):

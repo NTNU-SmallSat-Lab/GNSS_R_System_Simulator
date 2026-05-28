@@ -5,15 +5,14 @@ refreshed (TLEs age), the snapshot values must be updated to match — this is t
 brittleness of testing parsed TLE content against ground truth.
 """
 
+from datetime import UTC, datetime
 import math
 import os
-from datetime import UTC, datetime
 
 import pytest
 
 from object_definitions.Constants_def import Constants
 from object_definitions.ReadWriteSatData import ReadWriteSatData
-
 
 GALILEO_PATH = os.path.join(Constants.tle_folderpath, "GALILEO.tle")
 ISS_PATH = os.path.join(Constants.tle_folderpath, "ISS.tle")

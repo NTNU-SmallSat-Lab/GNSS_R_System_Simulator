@@ -12,16 +12,15 @@ This script intentionally lives outside the pytest collection (no `test_` prefix
 runs as part of the test suite.
 """
 
-import sys
 from pathlib import Path
+import sys
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO_ROOT / "SRC"))
 sys.path.insert(0, str(_REPO_ROOT / "tests"))
 
-import numpy as np
-
 from antenna_fixture import compute_gain_grid, gain_sampling_grid, make_test_antenna
+import numpy as np
 
 
 def main() -> None:

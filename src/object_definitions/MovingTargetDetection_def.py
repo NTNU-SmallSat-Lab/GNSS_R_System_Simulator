@@ -11,6 +11,7 @@ import cartopy.feature as cfeature
 import geopandas as gpd
 import imageio
 import matplotlib
+
 matplotlib.use("Agg")  # Use Agg backend for off-screen rendering
 import matplotlib.pyplot as plt
 import numpy as np
@@ -24,9 +25,9 @@ from tqdm import tqdm
 
 import functions.functions as fn
 import functions.link_budget as lb
+from object_definitions.BackScattPoint_def import BRP as Backscatter
 from object_definitions.Constants_def import Constants
 from object_definitions.Reflection_def import Reflection
-from object_definitions.BackScattPoint_def import BRP as Backscatter
 from object_definitions.ShipTarget_def import ShipTarget
 from object_definitions.ShipTrajectory_def import ShipTrajectory
 
@@ -875,7 +876,7 @@ class MovingTargetDetection:
         # Plot the target position and the reflection points with footprints
         fig, ax = plt.subplots(figsize=(10, 6), subplot_kw={"projection": ccrs.PlateCarree()})
         # Set the map extent to your bounding box (order: west, east, south, north)
-        
+
         #ax.set_global()
         buffer_deg = self.bbox_buffer_deg
         min_lon, max_lon, min_lat, max_lat = self.bounding_box
@@ -1028,7 +1029,7 @@ class MovingTargetDetection:
             img_array = np.roll(buffer, -1, axis=2)[:, :, :3]
             plt.close(fig)
             return img_array
-        
+
     def create_reflection_animation(self, time_step_min=3, output_format="gif", output_filename=None, fps=3):
         """
         =========================================================================================================
@@ -1385,7 +1386,7 @@ class MovingTargetDetection:
         plotted_count = 0
         for poly in fixed_polygons:
             try:
-                ax.plot(*poly.exterior.xy, color=color, linewidth=linewidth, 
+                ax.plot(*poly.exterior.xy, color=color, linewidth=linewidth,
                        alpha=alpha, transform=transform)
                 plotted_count += 1
             except Exception:
@@ -1480,7 +1481,7 @@ class MovingTargetDetection:
                     is_problem = False
 
                     # 1. Check if polygon is way outside map bounds
-                    if (bounds[2] < min_lon - 10 or bounds[0] > max_lon + 10 or 
+                    if (bounds[2] < min_lon - 10 or bounds[0] > max_lon + 10 or
                         bounds[3] < min_lat - 10 or bounds[1] > max_lat + 10):
                         is_problem = True
 

@@ -6,8 +6,8 @@ geometry, OceanTarget physics or link equation flips this red until the baseline
 intentionally regenerated via `tests/golden/regenerate_link_budget.py`.
 """
 
-import sys
 from pathlib import Path
+import sys
 
 import numpy as np
 import pytest
@@ -19,7 +19,6 @@ sys.path.insert(0, str(_GOLDEN_DIR))
 from regenerate_link_budget import _fixture_scenario  # noqa: E402
 
 from functions.link_budget import compute_reflection_link_budget  # noqa: E402
-
 
 REFERENCE_NPZ = _GOLDEN_DIR / "reference_link_budget.npz"
 

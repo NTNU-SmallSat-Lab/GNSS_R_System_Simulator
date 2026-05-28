@@ -21,7 +21,6 @@ from shapely.geometry import Polygon
 
 from object_definitions.Coverage_def import Coverage
 
-
 # --------------------------------------------------------------------------- #
 # Fixtures                                                                    #
 # --------------------------------------------------------------------------- #

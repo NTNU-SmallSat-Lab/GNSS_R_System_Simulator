@@ -4,7 +4,6 @@ import pytest
 
 from object_definitions.Constants_def import Constants
 
-
 L1_FREQ_HZ = 1.57542e9
 L5_FREQ_HZ = 1.17645e9
 GLONASS_G1_FREQ_HZ = 1.602e9

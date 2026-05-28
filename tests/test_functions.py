@@ -16,7 +16,6 @@ import pytest
 import functions.functions as fn
 from object_definitions.Constants_def import Constants
 
-
 # --------------------------------------------------------------------------- #
 # ensure_utc_aware                                                            #
 # --------------------------------------------------------------------------- #

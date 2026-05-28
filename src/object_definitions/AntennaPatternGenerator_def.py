@@ -1,12 +1,10 @@
 import json
-import os
 from pathlib import Path
 import warnings
 
 import numpy as np
 
 from object_definitions.Constants_def import Constants
-
 
 # Metadata file written next to the generated JSONs. Used to invalidate the
 # cache when any pattern-affecting parameter changes (analogous to the

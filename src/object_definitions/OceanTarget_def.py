@@ -16,6 +16,7 @@ slope-driven Cox-Munk PDF carries the wind-dependent sea-state behaviour directl
 """
 
 from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -60,7 +61,7 @@ class OceanTarget(Target):
         self.salinity_psu = float(salinity_psu)
 
     @classmethod
-    def from_settings(cls, settings: "BistaticLinkBudgetSettings") -> "OceanTarget":
+    def from_settings(cls, settings: BistaticLinkBudgetSettings) -> OceanTarget:
         return cls(
             wave_height_m=settings.ocean_wave_height_m,
             wind_speed_m_s=settings.ocean_wind_speed_m_s,
@@ -69,7 +70,7 @@ class OceanTarget(Target):
             salinity_psu=settings.ocean_salinity_psu,
         )
 
-    def compute_rcs(self, geometry: "BistaticGeometry", wavelength_m: float) -> TargetRcs:
+    def compute_rcs(self, geometry: BistaticGeometry, wavelength_m: float) -> TargetRcs:
         n_surface = geometry.n_surface          # (n, 3) outward surface unit normal
         n_tx2s = geometry.n_tx2s                # (n, 3) Tx -> surface unit vector
         n_s2rx = geometry.n_s2rx                # (n, 3) surface -> Rx unit vector

@@ -10,7 +10,6 @@ import numpy as np
 
 from object_definitions.Rx_antenna_def import RxAntenna
 
-
 FREQUENCY_MHZ = 1575.42
 N_THETA = 36   # 5° steps
 N_PHI = 72     # 5° steps
