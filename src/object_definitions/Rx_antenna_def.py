@@ -145,7 +145,7 @@ class RxAntenna:
         rad_pattern_spherical_lin = 10**(rad_pattern_spherical_dB/10) # Convert radiation pattern to linear scale (assumption: Power Pattern)
 
         theta_rad = np.linspace(0, 180, rad_pattern_spherical_dB.shape[0]) * np.pi / 180 # 0-180°
-        phi_rad = np.linspace(0, 360, rad_pattern_spherical_dB.shape[1]) * np.pi / 180   # 0-360°
+        phi_rad = np.linspace(0, 360, rad_pattern_spherical_dB.shape[1], endpoint=False) * np.pi / 180   # 0-360° endpoint-exclusive
 
         theta_mesh, phi_mesh = np.meshgrid(theta_rad, phi_rad, indexing='ij')
 
