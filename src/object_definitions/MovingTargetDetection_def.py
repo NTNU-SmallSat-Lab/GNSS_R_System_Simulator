@@ -257,15 +257,19 @@ class MovingTargetDetection:
         ###########################################
         # 1: Calculate all the reflection points  #
         ###########################################
-        # Get the satellite constellation times in UTC format
-        # Reflection times are identical to the satellite constellation times
-        times_reflections = [t.utc_datetime() for t in self.sat_constellation.satellites[0].time_prop_vec]
+        # Reflection times are the all-visible timestamp grid produced by the visibility pre-pass.
+        times_reflections = self._get_reflection_times()
         times_refl_array = np.array(times_reflections)
         times_reflections_sec = np.array([t.timestamp() for t in times_reflections])
+        visible_rx_satellites = [
+            (sat_no, sat_rx)
+            for sat_no, sat_rx in enumerate(self.sat_constellation.satellites)
+            if self._satellite_has_visible_propagation(sat_rx, len(times_reflections))
+        ]
 
         # Calculate the total number of reflection points for all GNSS constellations (for the progress bar)
         total_comp_refl = sum(
-            len(self.sat_constellation.satellites) * len(gnss_const.satellites)
+            len(visible_rx_satellites) * len(gnss_const.satellites)
             for gnss_const in self.gnss_constellation.values()
         )
         reflection_dict = {}  # Dictionary to store the reflection points for each GNSS constellation
@@ -280,7 +284,7 @@ class MovingTargetDetection:
                 reflections_vec = []
 
                 # Loop through the GNSS-R satellites in the GNSS-R LEO constellation / Rx
-                for sat_no, sat_rx in enumerate(self.sat_constellation.satellites):
+                for sat_no, sat_rx in visible_rx_satellites:
                     # Update progress bar description (not advancing)
                     pbar.set_description(f"GNSS-R Sat-{sat_no + 1} with {gnss_name}")
 
@@ -507,6 +511,42 @@ class MovingTargetDetection:
         if total > 0:
             pct = rejected / total * 100.0
             logger.info(f"Footprint computations: {rejected}/{total} rejected as empty ({pct:.1f}%)")
+
+    def _get_reflection_times(self) -> list[dt.datetime]:
+        """
+        Return the visible timestamp grid used for reflection calculations.
+        """
+        timestamps_resampled = getattr(self, "timestamps_resampled", None)
+        if timestamps_resampled is not None and len(timestamps_resampled) > 0:
+            return [fn.ensure_utc_aware(t) for t in timestamps_resampled]
+
+        for sat in self.sat_constellation.satellites:
+            time_prop_vec = getattr(sat, "time_prop_vec", None)
+            if time_prop_vec is not None and len(time_prop_vec) > 0:
+                return [t.utc_datetime() for t in time_prop_vec]
+
+        return []
+
+    @staticmethod
+    def _satellite_has_visible_propagation(sat, expected_time_count: int) -> bool:
+        """
+        True when a LEO satellite has propagated state on the all-visible timestamp grid.
+        """
+        time_prop_vec = getattr(sat, "time_prop_vec", None)
+        positions_eci = getattr(sat, "positions_eci", None)
+        velocities_eci = getattr(sat, "velocities_eci", None)
+        if time_prop_vec is None or positions_eci is None or velocities_eci is None:
+            return False
+        if len(time_prop_vec) != expected_time_count:
+            return False
+
+        positions_eci = np.asarray(positions_eci, dtype=float)
+        velocities_eci = np.asarray(velocities_eci, dtype=float)
+        if positions_eci.shape != (3, expected_time_count) or velocities_eci.shape != (3, expected_time_count):
+            return False
+
+        valid_state = np.isfinite(positions_eci).all(axis=0) & np.isfinite(velocities_eci).all(axis=0)
+        return bool(np.any(valid_state))
 
     def _compute_ship_heading_eci(self, detection_time: dt.datetime) -> np.ndarray | None:
         """

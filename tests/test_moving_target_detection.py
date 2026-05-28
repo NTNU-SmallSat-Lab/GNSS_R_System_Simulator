@@ -9,6 +9,7 @@ tests target only the bits that don't need that state:
 """
 
 import datetime as dt
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -82,6 +83,39 @@ class TestFindClosestTime:
         idx, delta = mtd._find_closest_time(naive_target, times_sec)
         assert idx == 3  # 90 s / 30 s = sample 3
         assert delta == pytest.approx(0.0, abs=1e-9)
+
+
+# --------------------------------------------------------------------------- #
+# visible propagation selection                                               #
+# --------------------------------------------------------------------------- #
+
+class TestVisiblePropagationSelection:
+    def test_reflection_times_use_resampled_visible_times_not_satellite_zero(self, mtd):
+        visible_time = dt.datetime(2025, 1, 1, 12, 0, 0, tzinfo=dt.UTC)
+        mtd.timestamps_resampled = [visible_time]
+        mtd.sat_constellation = SimpleNamespace(satellites=[SimpleNamespace()])
+
+        assert mtd._get_reflection_times() == [visible_time]
+
+    def test_satellite_without_propagated_state_is_not_visible_propagated(self):
+        sat = SimpleNamespace()
+        assert not MovingTargetDetection._satellite_has_visible_propagation(sat, expected_time_count=2)
+
+    def test_satellite_with_only_nan_synced_state_is_not_visible_propagated(self):
+        sat = SimpleNamespace(
+            time_prop_vec=[object(), object()],
+            positions_eci=np.full((3, 2), np.nan),
+            velocities_eci=np.full((3, 2), np.nan),
+        )
+        assert not MovingTargetDetection._satellite_has_visible_propagation(sat, expected_time_count=2)
+
+    def test_satellite_with_one_finite_synced_state_is_visible_propagated(self):
+        sat = SimpleNamespace(
+            time_prop_vec=[object(), object()],
+            positions_eci=np.array([[1.0, np.nan], [2.0, np.nan], [3.0, np.nan]]),
+            velocities_eci=np.array([[4.0, np.nan], [5.0, np.nan], [6.0, np.nan]]),
+        )
+        assert MovingTargetDetection._satellite_has_visible_propagation(sat, expected_time_count=2)
 
 
 # --------------------------------------------------------------------------- #
