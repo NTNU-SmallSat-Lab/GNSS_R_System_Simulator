@@ -9,9 +9,9 @@ import pymap3d
 
 from functions.rotations import eci_to_antenna_rotation_from_state
 from object_definitions.Constants_def import Constants
-from object_definitions.Rx_antenna_def import RxAntenna
 
 if TYPE_CHECKING:
+    from object_definitions.Rx_antenna_def import RxAntenna
     from object_definitions.Target_def import Target
 
 

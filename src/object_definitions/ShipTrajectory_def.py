@@ -93,7 +93,7 @@ class ShipTrajectory:
         if Constants.earth_coastline_path and os.path.exists(Constants.earth_coastline_path):
             self.load_coastline_data()
         else:
-            warnings.warn("No valid coastline data provided. Update path in Constants_def.py [earth_coastline_path]")
+            warnings.warn("No valid coastline data provided. Update path in Constants_def.py [earth_coastline_path]", stacklevel=2)
 
         if self.ocean_polygons is None:
             raise ValueError("No valid coastline data loaded. Cannot proceed with land avoidance.")
@@ -344,7 +344,7 @@ class ShipTrajectory:
         =========================================================================================================
         """
         if self.ocean_polygons is None:
-            warnings.warn("No ocean data available")
+            warnings.warn("No ocean data available", stacklevel=2)
             return False  # No land data available
 
         # Create a line between the two points
@@ -378,7 +378,7 @@ class ShipTrajectory:
         =========================================================================================================
         """
         if self.ocean_polygons is None:
-            warnings.warn("No ocean data available")
+            warnings.warn("No ocean data available", stacklevel=2)
             return False  # No land data available
 
         # Create a Point (lon, lat order for shapely)
@@ -400,7 +400,7 @@ class ShipTrajectory:
         =========================================================================================================
         """
         if self.ocean_polygons is None:
-            warnings.warn("No ocean data available")
+            warnings.warn("No ocean data available", stacklevel=2)
             return None
 
         # Create a Point (lon, lat order for shapely)
@@ -451,7 +451,7 @@ class ShipTrajectory:
         """
         # If no land data, just return direct path
         if self.ocean_polygons is None:
-            warnings.warn("No ocean data available")
+            warnings.warn("No ocean data available", stacklevel=2)
 
         # Ensure start and end points are in water
         start_safe = self.get_safe_water_point(self.start_position)
@@ -758,7 +758,7 @@ class ShipTrajectory:
         end_connections = 0
 
         # First pass - try with normal radius
-        if self.fast_method == True:
+        if self.fast_method:
             radius_in_degrees = self.mesh_connection_radius / 111000
 
             # Find points within the connection radius
@@ -891,7 +891,7 @@ class ShipTrajectory:
         print("Added regular grid connections")
 
         # Save the graph
-        if save_graph == True:
+        if save_graph:
             print("Saving graph to file")
             if not os.path.exists(Constants.autogen_ship_shapefiles):
                 os.makedirs(Constants.autogen_ship_shapefiles)
@@ -942,7 +942,7 @@ class ShipTrajectory:
         """
         # Ensure valid interval (minimum 100 meters)
         if interval_meters <= 0:
-            warnings.warn("interval_meters must be positive. Using default value of 100 meters.")
+            warnings.warn("interval_meters must be positive. Using default value of 100 meters.", stacklevel=2)
             interval_meters = 100
 
         # Clear existing trajectory data
@@ -1032,7 +1032,7 @@ class ShipTrajectory:
             self.route_distance = self._calculate_haversine_distance(self.start_position, self.end_position)
 
         if self.interval_minutes == 0:
-            warnings.warn("interval_minutes must be positive. Using default value of 10 minutes.")
+            warnings.warn("interval_minutes must be positive. Using default value of 10 minutes.", stacklevel=2)
             self.interval_minutes = 10
 
         # Normal case with interpolation
@@ -1293,7 +1293,7 @@ class ShipTrajectory:
         plt.tight_layout()
 
         # Save if requested
-        if title == None:
+        if title is None:
             title_str = f"Ship Route: {self.ship_id}"
             file_name = f"ship_route_{self.ship_id}.png"
         else:
@@ -1306,7 +1306,7 @@ class ShipTrajectory:
             print(f"Route plot saved to {save_path}")
 
         # Show plot
-        if show == True:
+        if show:
             plt.show()
 
     def get_position_at_time(self, timestamp: datetime) -> tuple:

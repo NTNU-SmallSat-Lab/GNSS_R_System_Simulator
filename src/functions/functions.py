@@ -569,7 +569,7 @@ def compute_footprint(sat_pos, sat_vel, refl_pos, time_i, antenna, frequency, q_
     # ========== ECI → ANTENNA ROTATION (via VNC; degeneracy returns None) ==========
     R_eci_to_antenna = eci_to_antenna_rotation_from_state(sat_pos, sat_vel, antenna, q_sat)
     if R_eci_to_antenna is None:
-        warnings.warn("Invalid satellite state for VNC frame construction")
+        warnings.warn("Invalid satellite state for VNC frame construction", stacklevel=2)
         return Polygon(), np.array([])
 
     # ========== BEAM / RAY COORDINATE SYSTEM {r} ==========
@@ -635,7 +635,7 @@ def compute_footprint(sat_pos, sat_vel, refl_pos, time_i, antenna, frequency, q_
                 )
                 lat_lon_points[valid_mask] = np.column_stack((lat, lon))
             except Exception as e:
-                warnings.warn(f"Failed to convert some points to geodetic coordinates: {e}")
+                warnings.warn(f"Failed to convert some points to geodetic coordinates: {e}", stacklevel=2)
                 lat_lon_points[valid_mask] = np.nan
     else:
         a = Constants.RADIUS_EARTH_EQUAT
@@ -694,7 +694,7 @@ def compute_footprint(sat_pos, sat_vel, refl_pos, time_i, antenna, frequency, q_
                 )
                 lat_lon_points[valid_mask] = np.column_stack((lat, lon))
             except Exception as e:
-                warnings.warn(f"Failed to convert some points to geodetic coordinates: {e}")
+                warnings.warn(f"Failed to convert some points to geodetic coordinates: {e}", stacklevel=2)
                 lat_lon_points[valid_mask] = np.nan
 
     # ========== OUTPUTS ==========

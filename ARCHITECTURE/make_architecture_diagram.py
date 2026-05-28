@@ -28,11 +28,11 @@ def draw_box(ax, x, y, label, kind, fontsize=9):
 
 def edge(ax, src_xy, dst_xy, style="solid", color="#333", rad=0.0):
     if style == "thick":
-        kw = dict(linewidth=2.4, color=color, linestyle="-")
+        kw = {"linewidth": 2.4, "color": color, "linestyle": "-"}
     elif style == "dashed":
-        kw = dict(linewidth=1.0, color=color, linestyle=(0, (4, 3)))
+        kw = {"linewidth": 1.0, "color": color, "linestyle": (0, (4, 3))}
     else:
-        kw = dict(linewidth=1.4, color=color, linestyle="-")
+        kw = {"linewidth": 1.4, "color": color, "linestyle": "-"}
     src = _box_edge(src_xy, dst_xy, "out")
     dst = _box_edge(dst_xy, src_xy, "in")
     ax.add_patch(FancyArrowPatch(
