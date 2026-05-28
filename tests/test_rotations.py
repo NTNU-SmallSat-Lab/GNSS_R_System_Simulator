@@ -129,7 +129,6 @@ class TestEciToAntennaRotation:
 
     def test_attitude_appears_correctly_in_chain(self):
         # Verify that the attitude quaternion enters as R_attitude in R_vnc_to_body = R_attitude @ R_body_to_vnc.T
-        cz = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
         # 90° rotation about z as a quaternion
         c = np.cos(np.pi / 4)
         s = np.sin(np.pi / 4)

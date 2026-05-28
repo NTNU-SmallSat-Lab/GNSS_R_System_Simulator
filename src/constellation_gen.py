@@ -84,7 +84,7 @@ def define_orbit_vector(max_inputs, start_time_dt):
                 random_configs.append(config)
     # Evaluate each configuration
 
-    for idx, (Nsat, Nplane, f, incl, a, RAAN_0) in enumerate(random_configs, start=1):
+    for _idx, (Nsat, Nplane, f, incl, a, RAAN_0) in enumerate(random_configs, start=1):
         if len(results) >= max_inputs:
             # print("More than 30 results collected. Exiting loop.")
             break
