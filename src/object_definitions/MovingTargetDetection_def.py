@@ -827,16 +827,21 @@ class MovingTargetDetection:
         """
         if gnss_constellation_name is None:
             # If no constellation name is provided, show all constellations
-            gnss_constellation_name = list(self.reflection_dict_timeSorted.keys())
+            gnss_constellation_names = list(self.reflection_dict_timeSorted.keys())
+        elif isinstance(gnss_constellation_name, str):
+            gnss_constellation_names = [gnss_constellation_name]
         else:
+            gnss_constellation_names = list(gnss_constellation_name)
+
+        for gnss_const in gnss_constellation_names:
             # Check if the constellation name is valid
-            if gnss_constellation_name not in self.reflection_dict_timeSorted:
-                raise ValueError(f'ERROR: GNSS constellation "{gnss_constellation_name}" not found in reflection dictionary.')
+            if gnss_const not in self.reflection_dict_timeSorted:
+                raise ValueError(f'ERROR: GNSS constellation "{gnss_const}" not found in reflection dictionary.')
 
         # Get the reflection points for the given time
         # Find the closest time in the reflection trajectory matching the current time at the moving target position
         reflections_time_i = {}
-        for gnss_const in gnss_constellation_name:
+        for gnss_const in gnss_constellation_names:
             # Check if the time is in the reflection dictionary (tolerance of 1 second)
             if time_i not in self.reflection_dict_timeSorted[gnss_const]:
                 time_i_ = min(
@@ -874,7 +879,9 @@ class MovingTargetDetection:
         #ax.set_global()
         buffer_deg = self.bbox_buffer_deg
         min_lon, max_lon, min_lat, max_lat = self.bounding_box
-        ax.set_extent([min_lon - buffer_deg, max_lon + buffer_deg, min_lat - buffer_deg, max_lat + buffer_deg], crs=ccrs.PlateCarree())
+        west, east = min_lon - buffer_deg, max_lon + buffer_deg
+        south, north = min_lat - buffer_deg, max_lat + buffer_deg
+        ax.set_extent([west, east, south, north], crs=ccrs.PlateCarree())
 
         ax.set_title(f"Reflections and Target Position at {time_i}")
         ax.set_xlabel("Longitude")
