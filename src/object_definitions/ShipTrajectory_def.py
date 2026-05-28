@@ -63,7 +63,8 @@ class ShipTrajectory:
         grid_resolution_km: float = 50,
         delta_boudingBox_km: float = 500,
         fast_path_gen_method: bool = True,
-        water_buffer_km: float = 25.0,
+        mesh_connection_radius_km: float = 2_000,
+        water_buffer_km: float = 22.2,
         trajectory_type: list = None,
         save_graph: bool = False,
     ) -> None:
@@ -82,7 +83,7 @@ class ShipTrajectory:
         self.fast_method = (
             fast_path_gen_method  # Flag [boolean] to indicate if simplified path generation is used (faster computation / longer, more simple ship route)
         )
-        self.mesh_connection_radius = self.grid_resolution * 2  # Connection radius for grid points in meters
+        self.mesh_connection_radius = mesh_connection_radius_km * 1e3  # Connection radius for grid points in meters
         self.water_buffer = water_buffer_km * 1e3  # Safety distance from shore in meters (default: 22.2 km = 12 nm (Territorial Sea))
 
         self.ocean_polygons = None  # Loaded coastline data (geopandas object), will be loaded from shapefile
@@ -120,17 +121,15 @@ class ShipTrajectory:
             save_graph:      [bool]   If True, persist the navigation graph for inspection
         =========================================================================================================
         """
-        trajectory_type = trajectory_type or []
         trajectory_path = os.path.join(Constants.autogen_ship_shapefiles, f"{self.ship_id}_trajectory.shp")
         metadata_path = os.path.join(Constants.autogen_ship_shapefiles, f"{self.ship_id}_trajectory_metadata.json")
         cache_exists = os.path.exists(trajectory_path) and os.path.exists(metadata_path)
 
-        if cache_exists and self._trajectory_cache_matches_settings(metadata_path):
+        if cache_exists:
             # Load existing shapefile
             self.load_class_from_file()
         else:
-            if cache_exists:
-                print(f"Cached trajectory for ship {self.ship_id} does not match current settings; regenerating.")
+            trajectory_type = trajectory_type or []
             self.plan_route(save_graph)  # Default connection radius for grid points
             self.generate_trajectory_equal_time()
             self.create_trajectory_files()
@@ -140,62 +139,6 @@ class ShipTrajectory:
                 self.create_shapefile(trajectory_type="line")
             if "waypoints" in trajectory_type:
                 self.create_shapefile(trajectory_type="waypoints")
-
-    def _trajectory_cache_matches_settings(self, metadata_path: str) -> bool:
-        """
-        Return True when cached trajectory metadata was generated from the current constructor inputs.
-        """
-        try:
-            with open(metadata_path) as f:
-                metadata = json.load(f)
-        except (OSError, json.JSONDecodeError):
-            return False
-
-        expected = {
-            "ship_id": self.ship_id,
-            "start_position": self.start_position,
-            "end_position": self.end_position,
-            "start_time": self.start_time.strftime("%Y-%m-%d %H:%M:%S"),
-            "ship_speed_m_s": self.ship_speed,
-            "time_interval_minutes": self.interval_minutes,
-            "fast_method": self.fast_method,
-            "mesh_connection_radius": self.mesh_connection_radius,
-            "water_buffer": self.water_buffer,
-            "grid_resolution": self.grid_resolution,
-            "delta_m": self.delta_m,
-        }
-
-        if metadata.get("ship_id") != expected["ship_id"]:
-            return False
-        if metadata.get("start_time") != expected["start_time"]:
-            return False
-        if bool(metadata.get("fast_method")) != bool(expected["fast_method"]):
-            return False
-
-        for key in ("start_position", "end_position"):
-            try:
-                metadata_position = np.asarray(metadata[key], dtype=float)
-                expected_position = np.asarray(expected[key], dtype=float)
-                if not np.allclose(metadata_position, expected_position, rtol=0.0, atol=1e-6):
-                    return False
-            except (KeyError, TypeError, ValueError):
-                return False
-
-        for key in (
-            "ship_speed_m_s",
-            "time_interval_minutes",
-            "mesh_connection_radius",
-            "water_buffer",
-            "grid_resolution",
-            "delta_m",
-        ):
-            try:
-                if not np.isclose(float(metadata[key]), float(expected[key]), rtol=0.0, atol=1e-6):
-                    return False
-            except (KeyError, TypeError, ValueError):
-                return False
-
-        return True
 
     def get_travel_duration_hours(self) -> float:
         """

@@ -119,7 +119,7 @@ class TestCalculateBearing:
 
 
 # --------------------------------------------------------------------------- #
-# trajectory cache validation                                                 #
+# trajectory cache loading                                                    #
 # --------------------------------------------------------------------------- #
 
 def _configured_cache_ship() -> ShipTrajectory:
@@ -132,8 +132,8 @@ def _configured_cache_ship() -> ShipTrajectory:
     ship.interval_minutes = 10
     ship.fast_method = False
     ship.grid_resolution = 150_000.0
-    ship.mesh_connection_radius = 300_000.0
-    ship.water_buffer = 25_000.0
+    ship.mesh_connection_radius = 2_000_000.0
+    ship.water_buffer = 22_200.0
     ship.delta_m = 500_000.0
     ship.shapefile_path = {}
     return ship
@@ -155,7 +155,7 @@ def _matching_metadata(ship: ShipTrajectory) -> dict:
     }
 
 
-class TestTrajectoryCacheValidation:
+class TestTrajectoryCacheLoading:
     def test_matching_metadata_loads_cache(self, tmp_path, monkeypatch):
         ship = _configured_cache_ship()
         monkeypatch.setattr(Constants, "autogen_ship_shapefiles", str(tmp_path))
@@ -170,7 +170,7 @@ class TestTrajectoryCacheValidation:
 
         assert called["load"]
 
-    def test_changed_metadata_regenerates_without_trajectory_type(self, tmp_path, monkeypatch):
+    def test_changed_metadata_still_loads_existing_cache(self, tmp_path, monkeypatch):
         ship = _configured_cache_ship()
         monkeypatch.setattr(Constants, "autogen_ship_shapefiles", str(tmp_path))
         (tmp_path / "CacheShip_trajectory.shp").write_text("")
@@ -178,13 +178,10 @@ class TestTrajectoryCacheValidation:
         metadata["ship_speed_m_s"] = ship.ship_speed + 1.0
         (tmp_path / "CacheShip_trajectory_metadata.json").write_text(json.dumps(metadata))
 
-        called = {"plan": False, "generate": False, "create": False, "shapefile": False}
-        monkeypatch.setattr(ship, "load_class_from_file", lambda: pytest.fail("stale cache should not load"))
-        monkeypatch.setattr(ship, "plan_route", lambda _save_graph: called.__setitem__("plan", True))
-        monkeypatch.setattr(ship, "generate_trajectory_equal_time", lambda: called.__setitem__("generate", True))
-        monkeypatch.setattr(ship, "create_trajectory_files", lambda: called.__setitem__("create", True))
-        monkeypatch.setattr(ship, "create_shapefile", lambda trajectory_type: called.__setitem__("shapefile", True))
+        called = {"load": False}
+        monkeypatch.setattr(ship, "load_class_from_file", lambda: called.__setitem__("load", True))
+        monkeypatch.setattr(ship, "plan_route", lambda _save_graph: pytest.fail("existing cache should load, not regenerate"))
 
         ship.initialize(None, save_graph=False)
 
-        assert called == {"plan": True, "generate": True, "create": True, "shapefile": False}
+        assert called["load"]
