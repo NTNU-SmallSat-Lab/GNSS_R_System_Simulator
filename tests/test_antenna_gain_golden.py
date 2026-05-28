@@ -63,6 +63,16 @@ def test_fixed_nadir_gain_ignores_steering_arguments():
     np.testing.assert_allclose(current[finite], expected[finite], atol=1e-10, rtol=1e-10)
 
 
+def test_antenna_footprint_ignores_reflection_direction():
+    antenna = make_test_antenna()
+    expected = np.array([[0.0, 0.0, 1.0], [0.1, 0.0, 0.99]])
+    antenna.antenna_lookuptable[FREQUENCY_MHZ]["vector_bundle"] = expected
+
+    actual = antenna._get_antenna_footprint(np.array([1.0, 0.0, 0.0]), FREQUENCY_MHZ)
+
+    np.testing.assert_allclose(actual, expected)
+
+
 def test_radiation_pattern_sampler_uses_endpoint_exclusive_phi_grid():
     antenna = make_test_antenna()
     antenna.antenna_lookuptable[FREQUENCY_MHZ]["radiation_pattern_dB"] = np.array([[0.0, 10.0, 20.0, 30.0]])
