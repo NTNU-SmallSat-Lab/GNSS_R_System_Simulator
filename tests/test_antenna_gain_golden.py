@@ -13,11 +13,11 @@ and commit the updated tests/golden/reference_gains.npz.
 
 from pathlib import Path
 
+from antenna_fixture import FREQUENCY_MHZ, compute_gain_grid, make_test_antenna
 import numpy as np
 import pytest
 
-from antenna_fixture import FREQUENCY_MHZ, compute_gain_grid, make_test_antenna
-
+from object_definitions.Rx_antenna_def import RxAntenna
 
 GOLDEN_PATH = Path(__file__).parent / "golden" / "reference_gains.npz"
 
@@ -70,3 +70,20 @@ def test_radiation_pattern_sampler_uses_endpoint_exclusive_phi_grid():
     assert antenna._sample_radiation_pattern_db(FREQUENCY_MHZ, 0.0, 45.0) == pytest.approx(5.0)
     assert antenna._sample_radiation_pattern_db(FREQUENCY_MHZ, 0.0, 90.0) == pytest.approx(10.0)
     assert antenna._sample_radiation_pattern_db(FREQUENCY_MHZ, 0.0, 315.0) == pytest.approx(15.0)
+
+
+def test_antenna_footprint_directivity_uses_endpoint_exclusive_phi_grid():
+    antenna = make_test_antenna()
+    antenna.footprint_resolution = 4
+    pattern_db = np.zeros((181, 4), dtype=float)
+
+    directivity, _directivity_db, _contour_vectors = antenna._calc_antenna_footprint({"radiation_pattern_dB": pattern_db})
+
+    theta_rad = np.linspace(0, 180, pattern_db.shape[0]) * np.pi / 180
+    phi_rad = np.linspace(0, 360, pattern_db.shape[1], endpoint=False) * np.pi / 180
+    theta_mesh, _phi_mesh = np.meshgrid(theta_rad, phi_rad, indexing="ij")
+    expected_directivity, _expected_directivity_db = RxAntenna._calculate_directivity(
+        np.ones_like(pattern_db), theta_rad, phi_rad, theta_mesh
+    )
+
+    assert directivity == pytest.approx(expected_directivity)
