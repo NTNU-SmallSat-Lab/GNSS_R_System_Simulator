@@ -11,6 +11,9 @@ Tested:
   * calculate_bearing
 """
 
+import datetime as dt
+import json
+
 import numpy as np
 import pytest
 
@@ -113,3 +116,75 @@ class TestCalculateBearing:
         ]
         for b in bearings:
             assert 0.0 <= b < 360.0
+
+
+# --------------------------------------------------------------------------- #
+# trajectory cache validation                                                 #
+# --------------------------------------------------------------------------- #
+
+def _configured_cache_ship() -> ShipTrajectory:
+    ship = object.__new__(ShipTrajectory)
+    ship.ship_id = "CacheShip"
+    ship.start_position = [54.0, 7.0]
+    ship.end_position = [69.0, 33.0]
+    ship.start_time = dt.datetime(2025, 5, 17, 12, 0, 0, tzinfo=dt.UTC)
+    ship.ship_speed = 15.0 * 0.51444
+    ship.interval_minutes = 10
+    ship.fast_method = False
+    ship.grid_resolution = 150_000.0
+    ship.mesh_connection_radius = 300_000.0
+    ship.water_buffer = 25_000.0
+    ship.delta_m = 500_000.0
+    ship.shapefile_path = {}
+    return ship
+
+
+def _matching_metadata(ship: ShipTrajectory) -> dict:
+    return {
+        "ship_id": ship.ship_id,
+        "start_position": ship.start_position,
+        "end_position": ship.end_position,
+        "start_time": ship.start_time.strftime("%Y-%m-%d %H:%M:%S"),
+        "ship_speed_m_s": ship.ship_speed,
+        "time_interval_minutes": ship.interval_minutes,
+        "fast_method": ship.fast_method,
+        "mesh_connection_radius": ship.mesh_connection_radius,
+        "water_buffer": ship.water_buffer,
+        "grid_resolution": ship.grid_resolution,
+        "delta_m": ship.delta_m,
+    }
+
+
+class TestTrajectoryCacheValidation:
+    def test_matching_metadata_loads_cache(self, tmp_path, monkeypatch):
+        ship = _configured_cache_ship()
+        monkeypatch.setattr(Constants, "autogen_ship_shapefiles", str(tmp_path))
+        (tmp_path / "CacheShip_trajectory.shp").write_text("")
+        (tmp_path / "CacheShip_trajectory_metadata.json").write_text(json.dumps(_matching_metadata(ship)))
+
+        called = {"load": False}
+        monkeypatch.setattr(ship, "load_class_from_file", lambda: called.__setitem__("load", True))
+        monkeypatch.setattr(ship, "plan_route", lambda _save_graph: pytest.fail("matching cache should not regenerate"))
+
+        ship.initialize(None, save_graph=False)
+
+        assert called["load"]
+
+    def test_changed_metadata_regenerates_without_trajectory_type(self, tmp_path, monkeypatch):
+        ship = _configured_cache_ship()
+        monkeypatch.setattr(Constants, "autogen_ship_shapefiles", str(tmp_path))
+        (tmp_path / "CacheShip_trajectory.shp").write_text("")
+        metadata = _matching_metadata(ship)
+        metadata["ship_speed_m_s"] = ship.ship_speed + 1.0
+        (tmp_path / "CacheShip_trajectory_metadata.json").write_text(json.dumps(metadata))
+
+        called = {"plan": False, "generate": False, "create": False, "shapefile": False}
+        monkeypatch.setattr(ship, "load_class_from_file", lambda: pytest.fail("stale cache should not load"))
+        monkeypatch.setattr(ship, "plan_route", lambda _save_graph: called.__setitem__("plan", True))
+        monkeypatch.setattr(ship, "generate_trajectory_equal_time", lambda: called.__setitem__("generate", True))
+        monkeypatch.setattr(ship, "create_trajectory_files", lambda: called.__setitem__("create", True))
+        monkeypatch.setattr(ship, "create_shapefile", lambda trajectory_type: called.__setitem__("shapefile", True))
+
+        ship.initialize(None, save_graph=False)
+
+        assert called == {"plan": True, "generate": True, "create": True, "shapefile": False}
