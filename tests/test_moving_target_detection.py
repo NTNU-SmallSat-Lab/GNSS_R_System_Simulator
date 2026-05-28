@@ -11,10 +11,12 @@ tests target only the bits that don't need that state:
 import datetime as dt
 from types import SimpleNamespace
 
+import pandas as pd
 import numpy as np
 import pytest
-from shapely.geometry import MultiPolygon, Polygon
+from shapely.geometry import MultiPolygon, Point, Polygon
 
+import object_definitions.MovingTargetDetection_def as mtd_module
 from object_definitions.MovingTargetDetection_def import MovingTargetDetection
 
 
@@ -116,6 +118,78 @@ class TestVisiblePropagationSelection:
             velocities_eci=np.array([[4.0, np.nan], [5.0, np.nan], [6.0, np.nan]]),
         )
         assert MovingTargetDetection._satellite_has_visible_propagation(sat, expected_time_count=2)
+
+
+# --------------------------------------------------------------------------- #
+# reflection plotting bounds                                                  #
+# --------------------------------------------------------------------------- #
+
+class _FakeAxis:
+    def set_extent(self, *_args, **_kwargs):
+        pass
+
+    def set_title(self, *_args, **_kwargs):
+        pass
+
+    def set_xlabel(self, *_args, **_kwargs):
+        pass
+
+    def set_ylabel(self, *_args, **_kwargs):
+        pass
+
+    def add_feature(self, *_args, **_kwargs):
+        pass
+
+    def stock_img(self):
+        pass
+
+    def gridlines(self, *_args, **_kwargs):
+        return SimpleNamespace(top_labels=True, right_labels=True)
+
+    def plot(self, *_args, **_kwargs):
+        pass
+
+    def text(self, *_args, **_kwargs):
+        pass
+
+    def scatter(self, *_args, **_kwargs):
+        pass
+
+    def legend(self, *_args, **_kwargs):
+        pass
+
+
+class _FakeFigure:
+    canvas = SimpleNamespace(
+        draw=lambda: None,
+        tostring_argb=lambda: bytes([0, 0, 0, 255]),
+        get_width_height=lambda: (1, 1),
+    )
+
+
+class TestShowReflectionsAtTime:
+    def test_uses_buffered_bounds_without_undefined_names(self, mtd, monkeypatch):
+        time_i = dt.datetime(2025, 1, 1, 12, 0, 0, tzinfo=dt.UTC)
+        refl_obj = SimpleNamespace(
+            refl_ECI_vec=np.array([[1.0, 2.0, 3.0]]),
+            refl_LL_vec=np.array([[60.0, 5.0]]),
+            tx_satID=1,
+            rx_satID=2,
+        )
+        reflection = SimpleNamespace(refl_obj=refl_obj, time_index=0)
+        mtd.reflection_dict_timeSorted = {"GPS": {time_i: [reflection]}}
+        mtd.gdf_time_series = pd.DataFrame({"datetime_s": ["2025-01-01 12:00:00"], "geometry": [Point(5.0, 60.0)]})
+        mtd.bounding_box = (4.0, 6.0, 59.0, 61.0)
+        mtd.bbox_buffer_deg = 1.0
+        mtd.moving_target_object = SimpleNamespace(trajectory_points=[(60.0, 5.0)])
+        mtd.sat_antenna = SimpleNamespace(frequencies=[])
+
+        monkeypatch.setattr(mtd_module.plt, "subplots", lambda *args, **kwargs: (_FakeFigure(), _FakeAxis()))
+        monkeypatch.setattr(mtd_module.plt, "gca", lambda: SimpleNamespace(get_legend_handles_labels=lambda: ([], [])))
+        monkeypatch.setattr(mtd_module.plt, "tight_layout", lambda: None)
+        monkeypatch.setattr(mtd_module.plt, "close", lambda *_args, **_kwargs: None)
+
+        mtd.show_reflections_and_target_position_at_time_i(time_i, label_reflections=False)
 
 
 # --------------------------------------------------------------------------- #

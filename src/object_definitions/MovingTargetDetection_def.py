@@ -874,7 +874,9 @@ class MovingTargetDetection:
         #ax.set_global()
         buffer_deg = self.bbox_buffer_deg
         min_lon, max_lon, min_lat, max_lat = self.bounding_box
-        ax.set_extent([min_lon - buffer_deg, max_lon + buffer_deg, min_lat - buffer_deg, max_lat + buffer_deg], crs=ccrs.PlateCarree())
+        west, east = min_lon - buffer_deg, max_lon + buffer_deg
+        south, north = min_lat - buffer_deg, max_lat + buffer_deg
+        ax.set_extent([west, east, south, north], crs=ccrs.PlateCarree())
 
         ax.set_title(f"Reflections and Target Position at {time_i}")
         ax.set_xlabel("Longitude")
