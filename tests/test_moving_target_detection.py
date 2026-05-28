@@ -189,7 +189,7 @@ class TestShowReflectionsAtTime:
         monkeypatch.setattr(mtd_module.plt, "tight_layout", lambda: None)
         monkeypatch.setattr(mtd_module.plt, "close", lambda *_args, **_kwargs: None)
 
-        mtd.show_reflections_and_target_position_at_time_i(time_i, label_reflections=False)
+        mtd.show_reflections_and_target_position_at_time_i(time_i, gnss_constellation_name="GPS", label_reflections=False)
 
 
 # --------------------------------------------------------------------------- #
