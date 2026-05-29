@@ -59,12 +59,15 @@ def _check_python_version() -> None:
             stacklevel=2,
         )
 
-def _parse_antenna_frequency_mhz(filename: str) -> float:
-    """Extract the carrier frequency (MHz) from an array_factor_*MHz_*.json filename."""
-    match = re.search(r'array_factor_(\d+\.?\d*)MHz', filename)
-    if not match:
-        raise ValueError(f"Could not parse frequency from antenna pattern filename: {filename}")
-    return float(match.group(1))
+def parse_antenna_angles(filename: str) -> tuple[float, float, float]:
+    """Extract (steering-azimuth, steering-elevation, frequency) in (deg, deg, MHz) from an
+    array_factor_{freq}MHz_{az}az_{el}el.json filename."""
+    az_match = re.search(r'(\d+\.?\d*)az', filename)
+    el_match = re.search(r'(\d+\.?\d*)el', filename)
+    freq_match = re.search(r'(\d+\.?\d*)MHz', filename)
+    if not (az_match and el_match and freq_match):
+        raise ValueError(f"Could not parse azimuth/elevation/frequency from filename: {filename}")
+    return float(az_match.group(1)), float(el_match.group(1)), float(freq_match.group(1))
 
 
 def _normalize_path_for_compare(path):

@@ -597,8 +597,8 @@ def compute_footprint(sat_pos, sat_vel, refl_pos, time_i, antenna, frequency, q_
         # and is counted via MovingTargetDetection.footprint_stats.
         return Polygon(), np.array([])
 
-    # ========== FIXED NADIR-POINTING FOOTPRINT ==========
-    beam_dir_a = antenna._get_antenna_footprint(np.array([0.0, 0.0, 1.0]), frequency)
+    # ========== STEERED FOOTPRINT (contour rotated to the reflection direction) ==========
+    beam_dir_a = antenna._get_antenna_footprint(n_ar_a, frequency)
 
     # ========== VECTORIZED BEAM DIRECTIONS ==========
     beam_dirs_i = R_eci_to_antenna.T @ beam_dir_a.T
