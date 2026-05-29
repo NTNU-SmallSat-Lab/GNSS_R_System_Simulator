@@ -144,7 +144,7 @@ def initialize(config_file_name="Configuration.ini"):
         [ANTENNA]
         pattern_folder         = path/to/generated_or_precomputed_patterns                       (only needed for moving target analysis)
         antenna_beamwidth_3dB  = [x1, y1, x2, y2, ...] (from 0 to 90 degrees rotationally) (only needed for moving target analysis)
-        max_fov_angle_deg      = [azimuth, max_off_boresight] (degrees)                    (only needed for moving target analysis)
+        max_steering_angle_deg = [azimuth, max_off_boresight] (degrees)                    (only needed for moving target analysis)
         polarizations          = ["LHCP", "RHCP", "VP", "HP"]                              (only needed for moving target analysis)
         bands                  = ["L1", "L2", "L2", "L5"]                                        (only needed for moving target analysis)
 
@@ -251,9 +251,9 @@ def initialize(config_file_name="Configuration.ini"):
     #[ANTENNA]
     try:
         antenna_patterns = {}  # Initialize the dictionary here
-        max_fov_angle_deg = (
-            ast.literal_eval(config["ANTENNA"]["max_fov_angle_deg"])
-            if ("ANTENNA" in config and "max_fov_angle_deg" in config["ANTENNA"])
+        max_steering_angle_deg = (
+            ast.literal_eval(config["ANTENNA"]["max_steering_angle_deg"])
+            if ("ANTENNA" in config and "max_steering_angle_deg" in config["ANTENNA"])
             else None
         )
         bands = config["ANTENNA"]["bands"] if ("ANTENNA" in config and "bands" in config["ANTENNA"]) else None  # Antenna bands
@@ -289,13 +289,9 @@ def initialize(config_file_name="Configuration.ini"):
                 if not os.path.isfile(file):
                     raise FileNotFoundError(f"The specified antenna pattern file '{file}' does not exist. Please check the file path in the configuration file.")
 
-                freq = _parse_antenna_frequency_mhz(os.path.basename(file))
-                if freq in antenna_patterns:
-                    raise ValueError(
-                        f"Duplicate antenna pattern files for frequency {freq} MHz in '{antenna_pattern_folder}'. "
-                        "Only one unsteered pattern per frequency is supported."
-                    )
-                antenna_patterns[freq] = file
+                # Key each pattern by its (steering-azimuth, steering-elevation, frequency) parsed from the filename.
+                azimuth, elevation, freq = parse_antenna_angles(os.path.basename(file))
+                antenna_patterns[(azimuth, elevation, freq)] = file
             antenna_patterns = dict(sorted(antenna_patterns.items()))
             antenna_polarizations = ast.literal_eval(config["ANTENNA"]["polarizations"]) if "ANTENNA" in config else None  # Antenna polarizations (e.g., ["LHCP", "RHCP"])
         else:
@@ -310,7 +306,7 @@ def initialize(config_file_name="Configuration.ini"):
         if footprint_dB is not None and footprint_dB >= 0.0:
             raise ValueError("'footprint_dB' must be below 0 dB because antenna patterns are normalized to a 0 dB peak.")
     except KeyError:
-        raise KeyError("The 'pattern_folder', 'max_fov_angle_deg', 'polarizations' or 'bands' key is missing in the 'ANTENNA' section of the configuration file.") # noqa: B904
+        raise KeyError("The 'pattern_folder', 'max_steering_angle_deg', 'polarizations' or 'bands' key is missing in the 'ANTENNA' section of the configuration file.") # noqa: B904
 
     #[ORBITS]
     # Check how many orbits are specified in the configuration file
@@ -502,7 +498,7 @@ def initialize(config_file_name="Configuration.ini"):
         #[ANTENNA]
         "antenna_pattern_folder": antenna_pattern_folder,
         "antenna_pattern_files": antenna_patterns,
-        "max_fov_angle_deg": max_fov_angle_deg,
+        "max_steering_angle_deg": max_steering_angle_deg,
         "polarizations": antenna_polarizations,
         "bands": antenna_bands,
         "footprint_dB": float(footprint_dB) if footprint_dB is not None else None,
