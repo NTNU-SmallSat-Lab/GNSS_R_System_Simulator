@@ -56,23 +56,20 @@ def test_steered_gain_depends_on_steering_command():
     # With steering-dependent patterns, different steering commands at a fixed look direction
     # must produce different gains (otherwise the bracket/interpolation is not being applied).
     antenna = make_test_antenna()
-    direction = np.array([
-        np.sin(np.radians(15.0)) * np.cos(np.radians(45.0)),
-        np.sin(np.radians(15.0)) * np.sin(np.radians(45.0)),
-        np.cos(np.radians(15.0)),
-    ])
-    gain_aligned = antenna.get_gain_dbi_for_direction(direction, FREQUENCY_MHZ, azimuth_deg=45.0, elevation_deg=15.0)
-    gain_off = antenna.get_gain_dbi_for_direction(direction, FREQUENCY_MHZ, azimuth_deg=225.0, elevation_deg=15.0)
+    # Look direction 20 deg off boresight toward +x (steering azimuth ~20 deg, elevation 0).
+    direction = np.array([np.sin(np.radians(20.0)), 0.0, np.cos(np.radians(20.0))])
+    gain_aligned = antenna.get_gain_dbi_for_direction(direction, FREQUENCY_MHZ, azimuth_deg=20.0, elevation_deg=0.0)
+    gain_off = antenna.get_gain_dbi_for_direction(direction, FREQUENCY_MHZ, azimuth_deg=-40.0, elevation_deg=0.0)
     assert np.isfinite(gain_aligned) and np.isfinite(gain_off)
     # Steering toward the look direction yields higher gain than steering away from it.
     assert gain_aligned > gain_off
 
 
 def test_auto_steer_rejects_directions_beyond_max_steering():
-    antenna = make_test_antenna()  # max_steering_off_boresight_deg = 30
+    antenna = make_test_antenna()  # per-axis max steering = 40 deg
     off_boresight_deg = 60.0
     direction = np.array([np.sin(np.radians(off_boresight_deg)), 0.0, np.cos(np.radians(off_boresight_deg))])
-    # Auto-steer (no explicit steering) must reject a 60 deg off-boresight reflection.
+    # Auto-steer (no explicit steering) must reject a 60 deg azimuth-plane reflection (> 40 deg limit).
     assert np.isnan(antenna.get_gain_dbi_for_direction(direction, FREQUENCY_MHZ))
 
 
