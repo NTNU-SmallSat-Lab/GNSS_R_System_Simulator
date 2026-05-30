@@ -73,20 +73,25 @@ def test_auto_steer_rejects_directions_beyond_max_steering():
     assert np.isnan(antenna.get_gain_dbi_for_direction(direction, FREQUENCY_MHZ))
 
 
-def test_antenna_footprint_rotates_to_reflection_direction():
+def test_antenna_footprint_interpolates_steered_contours():
     antenna = make_test_antenna()
-    key = antenna._resolve_unsteered_footprint_lookup_key(FREQUENCY_MHZ)
-    contour = np.array([[0.0, 0.0, 1.0], [np.sin(np.radians(3.0)), 0.0, np.cos(np.radians(3.0))]])
-    antenna.antenna_lookuptable[key]["vector_bundle"] = contour
+    corner_bundles = {
+        (0.0, 0.0, FREQUENCY_MHZ): np.array([[0.0, 0.0, 1.0], [0.1, 0.0, 1.0]]),
+        (20.0, 0.0, FREQUENCY_MHZ): np.array([[1.0, 0.0, 0.0], [0.2, 0.0, 1.0]]),
+        (0.0, 20.0, FREQUENCY_MHZ): np.array([[0.0, 1.0, 0.0], [0.1, 0.1, 1.0]]),
+        (20.0, 20.0, FREQUENCY_MHZ): np.array([[1.0, 1.0, 1.0], [0.2, 0.1, 1.0]]),
+    }
+    for key, vector_bundle in corner_bundles.items():
+        antenna.antenna_lookuptable[key]["vector_bundle"] = vector_bundle
 
-    # Nadir reflection -> contour returned unchanged.
-    nadir = antenna._get_antenna_footprint(np.array([0.0, 0.0, 1.0]), FREQUENCY_MHZ)
-    np.testing.assert_allclose(nadir, contour, atol=1e-12)
+    u = np.sin(np.radians(10.0))
+    direction = np.array([u, u, np.sqrt(1.0 - 2.0 * u**2)])
 
-    # Reflection along +x -> boresight [0,0,1] rotates onto [1,0,0].
-    rotated = antenna._get_antenna_footprint(np.array([1.0, 0.0, 0.0]), FREQUENCY_MHZ)
-    assert rotated.shape == contour.shape
-    np.testing.assert_allclose(rotated[0], np.array([1.0, 0.0, 0.0]), atol=1e-12)
+    actual = antenna._get_antenna_footprint(direction, FREQUENCY_MHZ)
+    expected = 0.25 * sum(corner_bundles.values())
+    expected = expected / np.linalg.norm(expected, axis=1, keepdims=True)
+
+    np.testing.assert_allclose(actual, expected, atol=1e-12)
 
 
 def test_bilinear_pattern_sampler_uses_endpoint_exclusive_phi_grid_in_linear_units():

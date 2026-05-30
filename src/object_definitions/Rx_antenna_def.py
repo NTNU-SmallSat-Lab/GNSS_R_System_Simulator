@@ -125,7 +125,7 @@ class RxAntenna:
         self.max_azimuth_steering_deg = max(abs(key[0]) for key in self.antenna_lookuptable)
         self.max_elevation_steering_deg = max(abs(key[1]) for key in self.antenna_lookuptable)
         self._build_steering_grid()
-        self._validate_unsteered_footprint_patterns()
+        self._validate_boresight_steering_patterns()
 
     def _get_frequency_from_band(self):
         """
@@ -148,13 +148,13 @@ class RxAntenna:
 
         return frequencies
 
-    def _validate_unsteered_footprint_patterns(self) -> None:
+    def _validate_boresight_steering_patterns(self) -> None:
         """
         =========================================================================================================
         Validate that every configured antenna frequency has a boresight (azimuth=0, elevation=0) pattern.
 
-        Footprint projection starts from the boresight pattern and rotates that contour toward the reflection
-        direction. Without a boresight pattern the footprint would be based on an already-steered pattern.
+        The generated steering grid must include the true zero-steering command so nadir gain and footprint
+        interpolation have a physical reference point instead of being inferred only from tilted beams.
         =========================================================================================================
         """
         missing = []
@@ -217,127 +217,30 @@ class RxAntenna:
 
         directivity, directivity_dB = self._calculate_directivity(rad_pattern_spherical_lin, theta_rad, phi_rad, theta_mesh)
 
-        # Find angle with self.footprint_dB_contour
-        contur_vectors = self._find_contour_vectors(rad_pattern_spherical_dB, theta_rad, phi_rad, theta_mesh, phi_mesh)
+        # Peak-centred contour ring; already at footprint_resolution, no further resampling needed.
+        contur_vectors = self._find_contour_vectors(rad_pattern_spherical_dB, theta_rad, phi_rad)
 
-        # DEBUG, PLOT ANTENNA RADIATION PATTERN
         debug = False
         if debug:
             plotting_object = PlotRadiationPattern(spherical_coordinates=(rad_pattern_spherical_lin, theta_mesh, phi_mesh), arrow=(0.0, 0.0))
             plotting_object.add_vector_bundle_to_plot(contur_vectors)
             plotting_object.show()
 
-        # Do resampling of the footprint to a lower resolution (self.footprint_resolution)
-        contur_vectors = self._smooth_antenna_footprint(contur_vectors)
-
-        ##DEBUG Visualize the antenna footprint in 3D
-        # import matplotlib.pyplot as plt
-        # from mpl_toolkits.mplot3d import Axes3D
-        # fig = plt.figure()
-        # ax = fig.add_subplot(111, projection='3d')
-        # ax.quiver(0, 0, 0, contur_vectors[:, 0], contur_vectors[:, 1], contur_vectors[:, 2])
-        # plt.show(block=True)
-
         return directivity, directivity_dB, contur_vectors
-
-    def _smooth_antenna_footprint(self, contour_vectors):
-        """
-        =========================================================================================================
-        Smooth the antenna footprint by resampling on a 1m projection plane in front of the antenna.
-
-        INPUTS:
-            contour_vectors: [np.ndarray, shape (N, 3)]   Original contour unit vectors in antenna frame
-
-        OUTPUT:
-            resampled_vectors: [np.ndarray, shape (footprint_resolution, 3)]   Resampled contour vectors
-        =========================================================================================================
-        """
-        # Project the footprint onto a "plane" 1m in front of the antenna
-        nadir_n = np.array([0, 0, 1])  # Nadir pointing vector in antenna coordinate system
-
-        # Original azimuth angles for the contour vectors
-        num_original_points = len(contour_vectors)
-        original_azimuths = np.linspace(0, 2*np.pi, num_original_points, endpoint=False)
-
-        # Target azimuth angles for resampled footprint
-        target_azimuths = np.linspace(0, 2*np.pi, self.footprint_resolution, endpoint=False)
-
-        # Convert contour vectors to polar coordinates on the 1m plane
-        original_rhos = []
-
-        for vector in contour_vectors:
-            # Angle between nadir and vector
-            off_nadir_angle = np.arccos(np.clip(np.dot(nadir_n, vector), -1.0, 1.0))
-            # Radial distance on plane 1m in front of the antenna
-            rho = np.tan(off_nadir_angle)
-            original_rhos.append(rho)
-
-        original_rhos = np.array(original_rhos)
-
-        # Interpolate rho values at target azimuth angles (handle wraparound by extending the arrays)
-        extended_azimuths = np.concatenate([original_azimuths - 2*np.pi, original_azimuths, original_azimuths + 2*np.pi]) # Extend the azimuth range from -2π to +2π for interpolation
-        extended_rhos = np.concatenate([original_rhos, original_rhos, original_rhos])
-
-        # Interpolate rho values for target azimuths
-        resampled_rhos = np.interp(target_azimuths, extended_azimuths, extended_rhos)
-
-        # Convert back to 3D vectors
-        resampled_vectors = []
-        for _, (azimuth, rho) in enumerate(zip(target_azimuths, resampled_rhos, strict=True)):
-            # Cartesian coordinates on the plane
-            x = rho * np.cos(azimuth)
-            y = rho * np.sin(azimuth)
-            z = 1.0
-
-            # Convert to unit vector
-            vector_length = np.sqrt(x**2 + y**2 + z**2)
-            unit_vector = np.array([x, y, z]) / vector_length
-            resampled_vectors.append(unit_vector)
-
-        resampled_vectors = np.array(resampled_vectors)
-
-        return resampled_vectors
-        ## DEBUG SHOW THE SPLINE 1m IN FRONT OF THE ANTENNA
-        # fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-        # Plot original footprint
-        #original_x = original_rhos * np.cos(original_azimuths)
-        #original_y = original_rhos * np.sin(original_azimuths)
-        #ax1.plot(original_x, original_y, 'ro-', label=f'Original ({len(contour_vectors)} points)')
-        #ax1.set_xlabel('X (m)')
-        #ax1.set_ylabel('Y (m)')
-        #ax1.set_title('Original Antenna Footprint')
-        #ax1.legend()
-        #ax1.axis('equal')
-        #ax1.grid(True)
-
-        ## Plot resampled footprint
-        #resampled_x = resampled_rhos * np.cos(target_azimuths)
-        #resampled_y = resampled_rhos * np.sin(target_azimuths)
-        #ax2.plot(resampled_x, resampled_y, 'bo-', label=f'Resampled ({self.footprint_resolution} points)')
-        #ax2.set_xlabel('X (m)')
-        #ax2.set_ylabel('Y (m)')
-        #ax2.set_title('Resampled Antenna Footprint')
-        #ax2.legend()
-        #ax2.axis('equal')
-        #ax2.grid(True)
-
-        #plt.tight_layout()
-        #plt.show(block=True)
 
     def _get_antenna_footprint(self, refl_dir_antenna_frame, frequency):
         """
         =========================================================================================================
-        Get the antenna footprint contour rotated to point at the given reflection direction.
+        Get the steering-interpolated antenna footprint contour for the given reflection direction.
 
         INPUTS:
             refl_dir_antenna_frame: [np.ndarray, shape (3,)]   Reflection direction in antenna frame
             frequency:              [float]                    Frequency [MHz] (used for lookup)
 
         OUTPUT:
-            footprint_vectors: [np.ndarray, shape (N, 3)]   Rotated footprint contour vectors
+            footprint_vectors: [np.ndarray, shape (N, 3)]   Interpolated steered footprint contour vectors
         =========================================================================================================
         """
-        boresight = np.array([0.0, 0.0, 1.0])  # Nadir-pointing boresight in antenna coordinates
         refl_dir_antenna_frame = np.asarray(refl_dir_antenna_frame, dtype=float)
         if refl_dir_antenna_frame.shape != (3,):
             raise ValueError("Input 'refl_dir_antenna_frame' must be a 3-element vector.")
@@ -349,37 +252,34 @@ class RxAntenna:
             raise ValueError("Input 'refl_dir_antenna_frame' must be non-zero.")
         refl_dir_antenna_frame = refl_dir_antenna_frame / direction_norm
 
-        # Footprint projection starts from the unsteered (elevation=0) contour and rotates it
-        # to the requested reflection direction. The stored steered patterns are used for gain
-        # lookup; using them here would apply the steering twice.
-        footprint_lookup_key = self._resolve_unsteered_footprint_lookup_key(frequency)
+        steering_angles = self.resolve_steering_angles_for_direction(refl_dir_antenna_frame)
+        if steering_angles is None:
+            return np.empty((0, 3), dtype=float)
 
-        # Check if the direction is the same as boresight (no rotation needed)
-        if np.allclose(refl_dir_antenna_frame, boresight):
-            return self.antenna_lookuptable[footprint_lookup_key]["vector_bundle"]
+        steering_azimuth_deg, steering_elevation_deg = steering_angles
+        corners = self._steering_bracket_keys_and_weights(frequency, steering_azimuth_deg, steering_elevation_deg)
 
-        # Compute rotation axis and angle
-        axis = np.cross(boresight, refl_dir_antenna_frame)
-        axis_norm = np.linalg.norm(axis)
+        interpolated_vectors = None
+        expected_shape = None
+        for key, weight in corners:
+            if weight <= 0.0:
+                continue
+            contour_vectors = np.asarray(self.antenna_lookuptable[key]["vector_bundle"], dtype=float)
+            if expected_shape is None:
+                expected_shape = contour_vectors.shape
+                interpolated_vectors = np.zeros(expected_shape, dtype=float)
+            elif contour_vectors.shape != expected_shape:
+                raise ValueError("All steered footprint vector bundles must have the same shape.")
+            interpolated_vectors += weight * contour_vectors
 
-        if axis_norm < 1e-8:
-            # refl_dir_antenna_frame is opposite to boresight; rotate 180 deg about any perpendicular axis
-            axis = np.array([1.0, 0.0, 0.0])
-            angle = np.pi
-        else:
-            axis = axis / axis_norm
-            angle = np.arccos(np.clip(np.dot(boresight, refl_dir_antenna_frame), -1.0, 1.0))
+        if interpolated_vectors is None:
+            return np.empty((0, 3), dtype=float)
 
-        # Rodrigues rotation matrix
-        K = np.array([
-            [0, -axis[2], axis[1]],
-            [axis[2], 0, -axis[0]],
-            [-axis[1], axis[0], 0]
-        ])
-        R = np.eye(3) + np.sin(angle) * K + (1 - np.cos(angle)) * np.dot(K, K)
-
-        rotated_footprint_vectors = self.antenna_lookuptable[footprint_lookup_key]["vector_bundle"] @ R.T
-        return rotated_footprint_vectors
+        vector_norms = np.linalg.norm(interpolated_vectors, axis=1, keepdims=True)
+        valid_vectors = np.isfinite(interpolated_vectors).all(axis=1) & (vector_norms[:, 0] > 0.0)
+        if not valid_vectors.all():
+            raise ValueError("Interpolated footprint vector bundle contains invalid or zero-length vectors.")
+        return interpolated_vectors / vector_norms
 
     @staticmethod
     def _bracket_linear(sorted_vals: np.ndarray, target: float) -> tuple[int, int, float]:
@@ -440,40 +340,6 @@ class RxAntenna:
             (key_map[(az_lo, el_hi)], (1.0 - w_az) * w_el),
             (key_map[(az_hi, el_hi)], w_az * w_el),
         ]
-
-    def _resolve_unsteered_footprint_lookup_key(self, frequency_mhz: float) -> tuple:
-        """
-        =========================================================================================================
-        Resolve the boresight (azimuth=0, elevation=0) pattern key used as the base footprint contour.
-
-        The footprint contour is taken from the boresight pattern and rotated toward the reflection direction;
-        the steered patterns are reserved for the gain lookup.
-
-        INPUTS:
-            frequency_mhz: [float]   Target frequency [MHz]
-
-        OUTPUT:
-            key: [tuple]   (0.0, 0.0, frequency) footprint source pattern
-        =========================================================================================================
-        """
-        if not self.antenna_lookuptable:
-            raise ValueError("Antenna lookup table is empty.")
-
-        closest_frequency = min({key[2] for key in self.antenna_lookuptable}, key=lambda available_freq: abs(available_freq - float(frequency_mhz)))
-        boresight_keys = [
-            key
-            for key in self.antenna_lookuptable
-            if math.isclose(key[2], closest_frequency, abs_tol=1e-6)
-            and math.isclose(key[0], 0.0, abs_tol=1e-6)
-            and math.isclose(key[1], 0.0, abs_tol=1e-6)
-        ]
-        if not boresight_keys:
-            raise ValueError(
-                "Missing boresight antenna pattern (azimuth=0, elevation=0) for footprint calculation "
-                f"at {closest_frequency:.2f} MHz. Include 0 in both azimuth_steering and elevation_steering."
-            )
-
-        return boresight_keys[0]
 
     @staticmethod
     def _direction_to_steering_angles_deg(direction: np.ndarray) -> tuple[float, float] | None:
@@ -686,59 +552,93 @@ class RxAntenna:
 
         return directivity, directivity_dB
 
-    def _find_contour_vectors(self, rad_pattern_spherical_dB, theta_rad, phi_rad, theta_mesh, phi_mesh):
+    def _find_contour_vectors(self, rad_pattern_spherical_dB, theta_rad, phi_rad):
         """
         =========================================================================================================
-        Find unit vectors pointing from antenna center toward the target dB contour, with interpolation.
+        Build the -|footprint_dB_contour| ring in a peak-centred local frame.
 
-        Assumes normalized radiation pattern where peak = 0 dB and all other values <= 0 dB.
+        The pattern's global 0 dB peak defines an axis n_peak. We sweep an off-peak azimuth psi around
+        n_peak in a tangent basis whose psi=0 direction is the projection of antenna +x onto the
+        tangent plane, and for each psi walk the off-peak angle gamma outward from 0 until the
+        pattern (bilinearly sampled in antenna-frame theta/phi) drops below footprint_dB_contour.
+
+        For unsteered patterns (n_peak = +z) this collapses to the antenna-frame (theta, phi) walk;
+        for steered patterns it yields a ring centred on the steered beam axis instead of the
+        antenna-frame fan the previous per-phi-slice walk produced.
 
         INPUTS:
             rad_pattern_spherical_dB: [np.ndarray]   Radiation pattern [dB], shape (n_theta, n_phi)
             theta_rad:                [np.ndarray]   Polar angle samples [rad]
             phi_rad:                  [np.ndarray]   Azimuth angle samples [rad]
-            theta_mesh:               [np.ndarray]   Meshgrid of theta values
-            phi_mesh:                 [np.ndarray]   Meshgrid of phi values
 
         OUTPUT:
-            contour_vectors: [np.ndarray, shape (n_phi, 3)]   Unit vectors at the dB contour
+            contour_vectors: [np.ndarray, shape (footprint_resolution, 3)]   Peak-centred ring vectors
         =========================================================================================================
         """
-        contour_vectors = []
+        n_theta_pat = rad_pattern_spherical_dB.shape[0]
 
-        for phi_i, phi_val in enumerate(phi_rad):
-            pattern_slice = rad_pattern_spherical_dB[:, phi_i]
-            peak_idx = np.argmax(pattern_slice)  # Finds 0dB point
+        # Global 0 dB peak direction in antenna frame (patterns are normalized to a 0 dB max).
+        peak_t_idx, peak_p_idx = np.unravel_index(np.argmax(rad_pattern_spherical_dB), rad_pattern_spherical_dB.shape)
+        theta_p = theta_rad[peak_t_idx]
+        phi_p = phi_rad[peak_p_idx]
+        n_peak = np.array([
+            np.sin(theta_p) * np.cos(phi_p),
+            np.sin(theta_p) * np.sin(phi_p),
+            np.cos(theta_p),
+        ])
 
-            # Search outward from peak (0dB) toward self.footprint_dB_contour
-            theta = theta_rad[peak_idx]  # Default to peak
+        # Tangent basis at n_peak: psi=0 is the projection of antenna +x onto the tangent plane,
+        # so for n_peak = +z (unsteered) psi reduces to antenna-frame phi.
+        e_x = np.array([1.0, 0.0, 0.0])
+        tangent = e_x - np.dot(e_x, n_peak) * n_peak
+        if np.linalg.norm(tangent) < 1e-9:
+            # n_peak parallel to +x (would only happen at theta_p=90, phi_p=0); use +y as the reference.
+            e_y = np.array([0.0, 1.0, 0.0])
+            tangent = e_y - np.dot(e_y, n_peak) * n_peak
+        e_psi0 = tangent / np.linalg.norm(tangent)
+        e_psi90 = np.cross(n_peak, e_psi0)
 
-            for direction in [1, -1]:  # Forward, then backward
-                start_idx = peak_idx + direction
-                end_idx = len(pattern_slice) if direction == 1 else -1
+        # Off-peak radial walk uses the same theta-resolution as the stored pattern.
+        gamma_grid = np.linspace(0.0, np.pi, n_theta_pat)
+        n_out = self.footprint_resolution
+        psi_grid = np.linspace(0.0, 2.0 * np.pi, n_out, endpoint=False)
 
-                for i in range(start_idx, end_idx, direction):
-                    if pattern_slice[i] <= self.footprint_dB_contour:
-                        # Interpolate for sub-sample accuracy
-                        prev_i = i - direction
-                        if pattern_slice[prev_i] != pattern_slice[i]:
-                            t = (self.footprint_dB_contour - pattern_slice[prev_i]) / (pattern_slice[i] - pattern_slice[prev_i])
-                            theta = theta_rad[prev_i] + t * (theta_rad[i] - theta_rad[prev_i])
-                        else:
-                            theta = theta_rad[i]
-                        break
-                else:
-                    continue  # No crossing in this direction
-                break  # Found crossing, stop searching
+        contour_vectors = np.zeros((n_out, 3), dtype=float)
+        for j, psi in enumerate(psi_grid):
+            u_psi = np.cos(psi) * e_psi0 + np.sin(psi) * e_psi90
 
-            # Convert to unit vector
-            contour_vectors.append([
-                np.sin(theta) * np.cos(phi_val),
-                np.sin(theta) * np.sin(phi_val),
-                np.cos(theta)
-            ])
+            prev_dB = 0.0      # the walk starts at the 0 dB peak
+            prev_gamma = 0.0
+            gamma_c = gamma_grid[-1]  # default if no crossing (would mean pattern stays above threshold)
+            for gamma in gamma_grid[1:]:
+                d = np.cos(gamma) * n_peak + np.sin(gamma) * u_psi
+                theta_d_deg = float(np.degrees(np.arccos(np.clip(d[2], -1.0, 1.0))))
+                phi_d_deg = float((np.degrees(np.arctan2(d[1], d[0])) + 360.0) % 360.0)
+                val_lin = self._bilinear_pattern_sample_linear(rad_pattern_spherical_dB, theta_d_deg, phi_d_deg)
+                val_dB = 10.0 * np.log10(max(val_lin, 1e-30))
 
-        return np.array(contour_vectors)
+                if val_dB <= self.footprint_dB_contour:
+                    if prev_dB != val_dB:
+                        t = (self.footprint_dB_contour - prev_dB) / (val_dB - prev_dB)
+                        gamma_c = prev_gamma + t * (gamma - prev_gamma)
+                    else:
+                        gamma_c = gamma
+                    break
+                prev_dB = val_dB
+                prev_gamma = gamma
+
+            contour_vectors[j] = np.cos(gamma_c) * n_peak + np.sin(gamma_c) * u_psi
+
+        # Safety clamp: wide steered beams can put contour vectors below the antenna horizon,
+        # which would blow up the 1m-plane projection used downstream by compute_footprint.
+        z_min = 0.05  # ~2.9 deg above horizon
+        below_horizon = contour_vectors[:, 2] < z_min
+        if below_horizon.any():
+            contour_vectors[below_horizon, 2] = z_min
+            norms = np.linalg.norm(contour_vectors[below_horizon], axis=1, keepdims=True)
+            contour_vectors[below_horizon] = contour_vectors[below_horizon] / norms
+
+        return contour_vectors
 
 class PlotRadiationPattern:
     def __init__(self, spherical_coordinates, arrow = None):

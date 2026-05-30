@@ -705,8 +705,12 @@ def compute_footprint(sat_pos, sat_vel, refl_pos, time_i, antenna, frequency, q_
     footprint_points = ellipse_points[:, [1, 0]]
     if np.isnan(footprint_points).any():
         # Footprint partly tangenting earth — drop NaN rows
-        # TODO: handle this more gracefully than dropping points
         footprint_points = footprint_points[~np.isnan(footprint_points).any(axis=1)]
+
+    # Shapely's LinearRing needs >= 4 coordinates; a heavily steered beam with most rays missing
+    # Earth can leave fewer than that, in which case the footprint is geometrically undefined.
+    if footprint_points.shape[0] < 4:
+        return Polygon(), center_point
 
     polygon_footprint = Polygon(footprint_points)
 
