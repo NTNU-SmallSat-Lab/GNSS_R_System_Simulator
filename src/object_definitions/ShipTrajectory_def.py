@@ -124,21 +124,70 @@ class ShipTrajectory:
         trajectory_path = os.path.join(Constants.autogen_ship_shapefiles, f"{self.ship_id}_trajectory.shp")
         metadata_path = os.path.join(Constants.autogen_ship_shapefiles, f"{self.ship_id}_trajectory_metadata.json")
         cache_exists = os.path.exists(trajectory_path) and os.path.exists(metadata_path)
+        cache_is_valid = cache_exists and self._cache_matches_inputs(metadata_path)
 
-        if cache_exists:
-            # Load existing shapefile
+        if cache_is_valid:
             self.load_class_from_file()
-        else:
-            trajectory_type = trajectory_type or []
-            self.plan_route(save_graph)  # Default connection radius for grid points
-            self.generate_trajectory_equal_time()
-            self.create_trajectory_files()
-            if "points" in trajectory_type:
-                self.create_shapefile(trajectory_type="points")
-            if "line" in trajectory_type:
-                self.create_shapefile(trajectory_type="line")
-            if "waypoints" in trajectory_type:
-                self.create_shapefile(trajectory_type="waypoints")
+            return
+
+        trajectory_type = trajectory_type or []
+        self.plan_route(save_graph)  # Default connection radius for grid points
+        self.generate_trajectory_equal_time()
+        self.create_trajectory_files()
+        if "points" in trajectory_type:
+            self.create_shapefile(trajectory_type="points")
+        if "line" in trajectory_type:
+            self.create_shapefile(trajectory_type="line")
+        if "waypoints" in trajectory_type:
+            self.create_shapefile(trajectory_type="waypoints")
+
+    def _cache_matches_inputs(self, metadata_path: str) -> bool:
+        """Return True iff cached metadata matches current ctor inputs (positions, start_time, speed, interval)."""
+        try:
+            with open(metadata_path) as f:
+                cached = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            print(f"Cannot read trajectory cache metadata at {metadata_path}: {e}")
+            return False
+
+        mismatches = []
+
+        if not self._positions_close(cached.get("start_position"), self.start_position):
+            mismatches.append(f"start_position: cached={cached.get('start_position')} ini={list(self.start_position)}")
+        if not self._positions_close(cached.get("end_position"), self.end_position):
+            mismatches.append(f"end_position: cached={cached.get('end_position')} ini={list(self.end_position)}")
+
+        cached_speed = cached.get("ship_speed_m_s")
+        if cached_speed is None or not np.isclose(cached_speed, self.ship_speed, rtol=1e-6):
+            mismatches.append(f"ship_speed_m_s: cached={cached_speed} ini={self.ship_speed}")
+
+        if cached.get("time_interval_minutes") != self.interval_minutes:
+            mismatches.append(f"time_interval_minutes: cached={cached.get('time_interval_minutes')} ini={self.interval_minutes}")
+
+        cached_start_str = cached.get("start_time")
+        try:
+            cached_start = fn.ensure_utc_aware(datetime.strptime(cached_start_str, "%Y-%m-%d %H:%M:%S"))
+        except (TypeError, ValueError):
+            cached_start = None
+        if cached_start != self.start_time:
+            mismatches.append(f"start_time: cached={cached_start_str} ini={self.start_time}")
+
+        if mismatches:
+            print(f"Cached trajectory for ship {self.ship_id} is stale -- regenerating:")
+            for m in mismatches:
+                print(f"  - {m}")
+            return False
+        return True
+
+    @staticmethod
+    def _positions_close(cached_pos, current_pos) -> bool:
+        """Element-wise close-comparison for [lat, lon] positions."""
+        if cached_pos is None or current_pos is None:
+            return False
+        try:
+            return bool(np.isclose(cached_pos[0], current_pos[0], rtol=1e-9) and np.isclose(cached_pos[1], current_pos[1], rtol=1e-9))
+        except (TypeError, IndexError):
+            return False
 
     def get_travel_duration_hours(self) -> float:
         """

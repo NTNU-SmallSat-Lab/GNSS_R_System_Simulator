@@ -2,9 +2,12 @@ import json
 from pathlib import Path
 import warnings
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 from object_definitions.Constants_def import Constants
+
+BORESIGHT_PLOT_SUBDIR = "antennaRadiationPattern"
 
 # Metadata file written next to the generated JSONs. Used to invalidate the
 # cache when any pattern-affecting parameter changes (analogous to the
@@ -271,4 +274,82 @@ class AntennaPatternGenerator:
 
         self._write_metadata()
         self._warn_unexpected_pattern_files()
+        self._plot_boresight_pattern()
         print(f"[AntennaPatternGenerator] Done. Files written to '{self.output_folder.resolve()}'.")
+
+    # Floor below which the 3D dB surface collapses to the origin. Anything below this is
+    # considered "no signal" for visualization; values above scale linearly between floor and peak.
+    _PLOT_DB_FLOOR = -40.0
+
+    def _plot_boresight_pattern(self):
+        """Render the boresight (az=0, el=0) array factor as a dB radiation pattern plot per frequency.
+
+        For each configured frequency, writes one PNG to OUTPUT/antennaRadiationPattern/:
+          - <freq>MHz.png — 2D polar cut in dB (phi=0 and phi=90) + 3D dB surface (clipped at floor)
+        Power and voltage are numerically identical in dB (10*log10(|AF|^2) == 20*log10(|AF|)),
+        so a single dB figure covers both. Called only when patterns are actually regenerated.
+        """
+        plot_dir = Path(Constants.output_folder_path) / BORESIGHT_PLOT_SUBDIR
+        plot_dir.mkdir(parents=True, exist_ok=True)
+
+        theta_1d = np.linspace(0.0, np.pi, self.theta_resolution)
+        phi_1d = np.linspace(0.0, 2.0 * np.pi, self.phi_resolution, endpoint=False)
+        theta_mesh, phi_mesh = np.meshgrid(theta_1d, phi_1d, indexing="ij")
+        phi0_idx = 0
+        phi90_idx = self.phi_resolution // 4
+
+        for freq in self.freqs:
+            freq_hz = freq * 1e6
+            af = ArrayFactor(self.elements_x, self.elements_y, freq_hz, self.d_x, self.d_y, 0.0, 0.0)
+            pattern_dB = af.calculate_array_factor(theta_1d.reshape(-1, 1), phi_1d.reshape(1, -1))
+
+            self._render_pattern_figure(
+                path=plot_dir / f"{freq}MHz.png",
+                title=f"Boresight radiation pattern @ {freq} MHz",
+                theta_1d=theta_1d,
+                theta_mesh=theta_mesh,
+                phi_mesh=phi_mesh,
+                pattern_dB=pattern_dB,
+                floor_dB=self._PLOT_DB_FLOOR,
+                phi0_idx=phi0_idx,
+                phi90_idx=phi90_idx,
+            )
+        print(f"[AntennaPatternGenerator] Boresight radiation plots written to '{plot_dir.resolve()}'.")
+
+    @staticmethod
+    def _render_pattern_figure(*, path, title, theta_1d, theta_mesh, phi_mesh, pattern_dB, floor_dB, phi0_idx, phi90_idx):
+        """One 2-panel figure: polar cut and 3D surface, both in dB, with a shared floor."""
+        fig = plt.figure(figsize=(14, 6))
+
+        # 2D polar cut in dB: phi=0 (solid), phi=90 (dashed). Boresight at top, theta sweeps clockwise.
+        ax1 = fig.add_subplot(1, 2, 1, projection="polar")
+        ax1.plot(theta_1d, pattern_dB[:, phi0_idx], label="phi=0 deg")
+        ax1.plot(theta_1d, pattern_dB[:, phi90_idx], "--", label="phi=90 deg")
+        ax1.set_theta_zero_location("N")
+        ax1.set_theta_direction(-1)
+        ax1.set_thetamin(0)
+        ax1.set_thetamax(180)
+        ax1.set_ylim(floor_dB, 0.0)
+        ax1.set_title("Radiation pattern [dB]")
+        ax1.legend(loc="lower right", bbox_to_anchor=(1.15, -0.05))
+        ax1.grid(True)
+
+        # 3D surface in dB: clip below the floor, then map [floor_dB, 0 dB] -> [0, 1] for the radius
+        # so the surface visually represents the dB pattern. Face colour also encodes dB level.
+        pattern_dB_clipped = np.maximum(pattern_dB, floor_dB)
+        radius_3d = (pattern_dB_clipped - floor_dB) / (-floor_dB)
+        x = radius_3d * np.sin(theta_mesh) * np.cos(phi_mesh)
+        y = radius_3d * np.sin(theta_mesh) * np.sin(phi_mesh)
+        z = radius_3d * np.cos(theta_mesh)
+        face_colors = plt.cm.viridis(radius_3d)
+        ax2 = fig.add_subplot(1, 2, 2, projection="3d")
+        ax2.plot_surface(x, y, z, facecolors=face_colors, linewidth=0, antialiased=True, shade=False)
+        ax2.set_xlabel("x (antenna frame)")
+        ax2.set_ylabel("y (antenna frame)")
+        ax2.set_zlabel("z (boresight)")
+        ax2.set_title(f"Radiation pattern [dB], floor {floor_dB:g} dB")
+
+        fig.suptitle(title)
+        fig.tight_layout()
+        fig.savefig(path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
