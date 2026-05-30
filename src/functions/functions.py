@@ -597,8 +597,13 @@ def compute_footprint(sat_pos, sat_vel, refl_pos, time_i, antenna, frequency, q_
         # and is counted via MovingTargetDetection.footprint_stats.
         return Polygon(), np.array([])
 
-    # ========== STEERED FOOTPRINT (contour rotated to the reflection direction) ==========
+    lat_center, lon_center, _ = pymap3d.eci2geodetic(refl_pos[0], refl_pos[1], refl_pos[2], time_i)
+    center_point = np.array([lat_center, lon_center])
+
+    # ========== STEERED FOOTPRINT CONTOUR ==========
     beam_dir_a = antenna._get_antenna_footprint(n_ar_a, frequency)
+    if beam_dir_a.size == 0 or np.any(beam_dir_a[:, 2] <= 0.0):
+        return Polygon(), center_point
 
     # ========== VECTORIZED BEAM DIRECTIONS ==========
     beam_dirs_i = R_eci_to_antenna.T @ beam_dir_a.T
@@ -699,13 +704,11 @@ def compute_footprint(sat_pos, sat_vel, refl_pos, time_i, antenna, frequency, q_
 
     # ========== OUTPUTS ==========
     ellipse_points = np.column_stack((lat_lon_points[:, 0], lat_lon_points[:, 1]))
-    lat_center, lon_center, _ = pymap3d.eci2geodetic(refl_pos[0], refl_pos[1], refl_pos[2], time_i)
-    center_point = np.array([lat_center, lon_center])
 
     footprint_points = ellipse_points[:, [1, 0]]
     if np.isnan(footprint_points).any():
-        # Footprint partly tangenting earth — drop NaN rows
-        footprint_points = footprint_points[~np.isnan(footprint_points).any(axis=1)]
+        # The contour only partly intersects Earth, so it is not a closed footprint polygon.
+        return Polygon(), center_point
 
     # Shapely's LinearRing needs >= 4 coordinates; a heavily steered beam with most rays missing
     # Earth can leave fewer than that, in which case the footprint is geometrically undefined.

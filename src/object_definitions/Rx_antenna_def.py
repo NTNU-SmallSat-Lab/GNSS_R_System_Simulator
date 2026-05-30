@@ -217,8 +217,12 @@ class RxAntenna:
 
         directivity, directivity_dB = self._calculate_directivity(rad_pattern_spherical_lin, theta_rad, phi_rad, theta_mesh)
 
-        # Peak-centred contour ring; already at footprint_resolution, no further resampling needed.
-        contur_vectors = self._find_contour_vectors(rad_pattern_spherical_dB, theta_rad, phi_rad)
+        # Steering-command-centred contour ring; already at footprint_resolution, no further resampling needed.
+        contur_vectors = self._find_contour_vectors(
+            rad_pattern_spherical_dB,
+            antenna_pattern.get("azimuth", 0.0),
+            antenna_pattern.get("elevation", 0.0),
+        )
 
         debug = False
         if debug:
@@ -552,39 +556,42 @@ class RxAntenna:
 
         return directivity, directivity_dB
 
-    def _find_contour_vectors(self, rad_pattern_spherical_dB, theta_rad, phi_rad):
+    def _find_contour_vectors(self, rad_pattern_spherical_dB, steering_azimuth_deg, steering_elevation_deg):
         """
         =========================================================================================================
-        Build the -|footprint_dB_contour| ring in a peak-centred local frame.
+        Build the -|footprint_dB_contour| ring in a steering-command-centred local frame.
 
-        The pattern's global 0 dB peak defines an axis n_peak. We sweep an off-peak azimuth psi around
+        The commanded front-lobe direction defines the axis n_peak. We sweep an off-peak azimuth psi around
         n_peak in a tangent basis whose psi=0 direction is the projection of antenna +x onto the
         tangent plane, and for each psi walk the off-peak angle gamma outward from 0 until the
         pattern (bilinearly sampled in antenna-frame theta/phi) drops below footprint_dB_contour.
 
         For unsteered patterns (n_peak = +z) this collapses to the antenna-frame (theta, phi) walk;
         for steered patterns it yields a ring centred on the steered beam axis instead of the
-        antenna-frame fan the previous per-phi-slice walk produced.
+        antenna-frame fan the previous per-phi-slice walk produced. The global pattern maximum is
+        deliberately ignored because the pure array factor can have an equally strong back lobe.
 
         INPUTS:
             rad_pattern_spherical_dB: [np.ndarray]   Radiation pattern [dB], shape (n_theta, n_phi)
-            theta_rad:                [np.ndarray]   Polar angle samples [rad]
-            phi_rad:                  [np.ndarray]   Azimuth angle samples [rad]
+            steering_azimuth_deg:     [float]        Commanded x-axis steering angle [deg]
+            steering_elevation_deg:   [float]        Commanded y-axis steering angle [deg]
 
         OUTPUT:
-            contour_vectors: [np.ndarray, shape (footprint_resolution, 3)]   Peak-centred ring vectors
+            contour_vectors: [np.ndarray, shape (footprint_resolution, 3)]   Main-lobe-centred ring vectors
         =========================================================================================================
         """
         n_theta_pat = rad_pattern_spherical_dB.shape[0]
 
-        # Global 0 dB peak direction in antenna frame (patterns are normalized to a 0 dB max).
-        peak_t_idx, peak_p_idx = np.unravel_index(np.argmax(rad_pattern_spherical_dB), rad_pattern_spherical_dB.shape)
-        theta_p = theta_rad[peak_t_idx]
-        phi_p = phi_rad[peak_p_idx]
+        sin_az = np.sin(np.radians(float(steering_azimuth_deg)))
+        sin_el = np.sin(np.radians(float(steering_elevation_deg)))
+        z_squared = 1.0 - sin_az**2 - sin_el**2
+        if z_squared <= 0.0:
+            raise ValueError("Steering command points outside the antenna front hemisphere.")
+
         n_peak = np.array([
-            np.sin(theta_p) * np.cos(phi_p),
-            np.sin(theta_p) * np.sin(phi_p),
-            np.cos(theta_p),
+            sin_az,
+            sin_el,
+            np.sqrt(z_squared),
         ])
 
         # Tangent basis at n_peak: psi=0 is the projection of antenna +x onto the tangent plane,
@@ -602,12 +609,16 @@ class RxAntenna:
         gamma_grid = np.linspace(0.0, np.pi, n_theta_pat)
         n_out = self.footprint_resolution
         psi_grid = np.linspace(0.0, 2.0 * np.pi, n_out, endpoint=False)
+        theta_peak_deg = float(np.degrees(np.arccos(np.clip(n_peak[2], -1.0, 1.0))))
+        phi_peak_deg = float((np.degrees(np.arctan2(n_peak[1], n_peak[0])) + 360.0) % 360.0)
+        peak_lin = self._bilinear_pattern_sample_linear(rad_pattern_spherical_dB, theta_peak_deg, phi_peak_deg)
+        peak_dB = 10.0 * np.log10(max(peak_lin, 1e-30))
 
         contour_vectors = np.zeros((n_out, 3), dtype=float)
         for j, psi in enumerate(psi_grid):
             u_psi = np.cos(psi) * e_psi0 + np.sin(psi) * e_psi90
 
-            prev_dB = 0.0      # the walk starts at the 0 dB peak
+            prev_dB = peak_dB
             prev_gamma = 0.0
             gamma_c = gamma_grid[-1]  # default if no crossing (would mean pattern stays above threshold)
             for gamma in gamma_grid[1:]:
@@ -628,15 +639,6 @@ class RxAntenna:
                 prev_gamma = gamma
 
             contour_vectors[j] = np.cos(gamma_c) * n_peak + np.sin(gamma_c) * u_psi
-
-        # Safety clamp: wide steered beams can put contour vectors below the antenna horizon,
-        # which would blow up the 1m-plane projection used downstream by compute_footprint.
-        z_min = 0.05  # ~2.9 deg above horizon
-        below_horizon = contour_vectors[:, 2] < z_min
-        if below_horizon.any():
-            contour_vectors[below_horizon, 2] = z_min
-            norms = np.linalg.norm(contour_vectors[below_horizon], axis=1, keepdims=True)
-            contour_vectors[below_horizon] = contour_vectors[below_horizon] / norms
 
         return contour_vectors
 

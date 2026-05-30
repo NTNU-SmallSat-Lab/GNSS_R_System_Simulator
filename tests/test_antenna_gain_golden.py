@@ -94,6 +94,37 @@ def test_antenna_footprint_interpolates_steered_contours():
     np.testing.assert_allclose(actual, expected, atol=1e-12)
 
 
+def test_antenna_footprint_uses_commanded_front_lobe_when_back_lobe_is_stronger():
+    antenna = make_test_antenna()
+    antenna.footprint_dB_contour = -3.0
+    antenna.footprint_resolution = 32
+
+    theta = np.linspace(0.0, 180.0, 181) * np.pi / 180.0
+    phi = np.linspace(0.0, 360.0, 360, endpoint=False) * np.pi / 180.0
+    theta_mesh, phi_mesh = np.meshgrid(theta, phi, indexing="ij")
+    directions = np.stack(
+        [
+            np.sin(theta_mesh) * np.cos(phi_mesh),
+            np.sin(theta_mesh) * np.sin(phi_mesh),
+            np.cos(theta_mesh),
+        ],
+        axis=-1,
+    )
+
+    front_axis = np.array([0.0, np.sin(np.radians(20.0)), np.cos(np.radians(20.0))])
+    back_axis = np.array([0.0, np.sin(np.radians(20.0)), -np.cos(np.radians(20.0))])
+    front_sep = np.degrees(np.arccos(np.clip(directions @ front_axis, -1.0, 1.0)))
+    back_sep = np.degrees(np.arccos(np.clip(directions @ back_axis, -1.0, 1.0)))
+    pattern_db = np.maximum(-0.1 - 0.3 * front_sep, -0.3 * back_sep)
+
+    bundle = antenna._find_contour_vectors(pattern_db, 0.0, 20.0)
+    mean_axis = np.mean(bundle, axis=0)
+    mean_axis = mean_axis / np.linalg.norm(mean_axis)
+
+    assert np.dot(mean_axis, front_axis) > 0.98
+    assert np.dot(mean_axis, back_axis) < 0.0
+
+
 def test_bilinear_pattern_sampler_uses_endpoint_exclusive_phi_grid_in_linear_units():
     # Single theta row, 4 phi bins at 0, 90, 180, 270 deg (endpoint-exclusive).
     pattern_db = np.array([[0.0, 10.0, 20.0, 30.0]])
