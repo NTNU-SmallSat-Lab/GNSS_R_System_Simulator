@@ -30,7 +30,7 @@ def testObjReflection() -> bool:
 
 def testObjOrbit() -> bool:
     passed = 1
-    start_time = datetime(2024, 10, 31, 12, 0, 0, tzinfo=UTC)  # Start time in UTC (YYYY:MM:DD HH:mm:ss)
+    start_time = datetime(2024, 10, 31, 5, 5, 57, tzinfo=UTC)  # Start time in UTC (YYYY:MM:DD HH:mm:ss)
     apogee = 520e3 + Constants.R_EARTH_MEAN  # Apogee in [m]
 
     orbit_noEpoch = Orbit_specification(
@@ -60,61 +60,23 @@ def testObjOrbit() -> bool:
 
 def testObjSatellite() -> bool:
     passed = 1
-    start_time = datetime(2024, 10, 31, 12, 0, 0, tzinfo=UTC)
-    apogee = 525e3 + Constants.R_EARTH_MEAN
+    start_time = datetime(2024, 10, 31, 5, 5, 57, tzinfo=UTC)
+    apogee = 510e3 + Constants.R_EARTH_MEAN
 
     
     #this is where i work now
-
     celeste_constellation = Satellite(1,  # Satellite ID        [number]
             [
-                97,  # inclination         [°]
-                0.0001,  # eccentricity        [-]
-                0,    # RAAN                [°]
-                0,  # argument of perigee [°]
-                0,  # Mean anomaly        [°]
-                apogee,  # apogee              [m]
-                start_time,  # epoch               [YYYY:MM:DD HH:mm:ss UTC]
-            ]
-    )
-    celeste_constellation2 = Satellite(2,  # Satellite ID        [number]
-            [
                 97.4,  # inclination         [°]
                 0.0001,  # eccentricity        [-]
-                255,     # RAAN                [°]
-                0,  # argument of perigee [°]
-                30,  # Mean anomaly        [°]
+                33,  # RAAN                [°]
+                60,  # argument of perigee [°]
+                300,  # Mean anomaly        [°]
                 apogee,  # apogee              [m]
                 start_time,  # epoch               [YYYY:MM:DD HH:mm:ss UTC]
             ],
-    )
-    celeste_constellation3 = Satellite(3,  # Satellite ID        [number]
-            [
-                97.4,  # inclination         [°]
-                0.0001,  # eccentricity        [-]
-                223,     # RAAN                [°]
-                0,  # argument of perigee [°]
-                15,  # Mean anomaly        [°]
-                apogee,  # apogee              [m]
-                start_time,  # epoch               [YYYY:MM:DD HH:mm:ss UTC]
-            ],
-    )
-    celeste_constellation4 = Satellite(4,  # Satellite ID        [number]
-            [
-                97.4,  # inclination         [°]
-                0.0001,  # eccentricity        [-]
-                223,     # RAAN                [°]
-                0,  # argument of perigee [°]
-                45,  # Mean anomaly        [°]
-                apogee,  # apogee              [m]
-                start_time,  # epoch               [YYYY:MM:DD HH:mm:ss UTC]
-            ],
-    )
-
+        )
     celeste_constellation.write_tle_file()
-    celeste_constellation2.write_tle_file()
-    celeste_constellation3.write_tle_file()
-    celeste_constellation4.write_tle_file()
     return passed
     """
     for i in range(10):
@@ -135,6 +97,7 @@ def testObjSatellite() -> bool:
     #this is where my work ends
     # Calculate the TLE for the satellite | This should not work as the epoch is not set
     return passed
+    """
     """
 def testReadWriteData() -> bool:
     passed = 1
@@ -281,10 +244,14 @@ if __name__ == "__main__":
     passed = 1
 
     #passed = passed & testClassOrFunction(testSatConstelation)
+    #passed = passed & testClassOrFunction(testSatConstelation)
 
+    #passed = passed & testClassOrFunction(testObjReflection)
     #passed = passed & testClassOrFunction(testObjReflection)
     passed = passed & testClassOrFunction(testObjOrbit)
     passed = passed & testClassOrFunction(testObjSatellite)
+    #passed = passed & testClassOrFunction(testReadWriteData)
+    #passed = passed & testClassOrFunction(testFreeFlyerConnection)
     #passed = passed & testClassOrFunction(testReadWriteData)
     #passed = passed & testClassOrFunction(testFreeFlyerConnection)
 
