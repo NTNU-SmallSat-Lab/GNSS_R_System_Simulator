@@ -1,18 +1,28 @@
-"""Bistatic ocean RCS using geometric-optics scattering from a Cox-Munk slope PDF.
+"""Bistatic ocean RCS as a coherent (specular) plus incoherent (diffuse) contribution.
 
-Per sample, the model evaluates:
-    sigma = pi * |R_pol(theta_local)|^2 * (|q| / q_z)^4 * P_slope(s_u, s_c) * A_eff
-where:
+    Per sample the model returns sigma = sigma_coherent + sigma_incoherent, each an effective
+    cross-section for the simulator's bistatic radar equation.
+
+    Incoherent (rough-surface, geometric-optics over a Cox-Munk slope PDF):
+    sigma_incoherent = pi * |R_pol(theta_local)|^2 * (|q| / q_z)^4 * P_slope(s_u, s_c) * A_glistening
+    where:
     - q = k_hat_out - k_hat_in (scattering vector in surface frame)
     - theta_local = bistatic_angle / 2 (local incidence on the facet that mirrors Tx -> Rx)
     - (s_u, s_c) is the required facet slope in the wind-aligned frame
-    - P_slope is the Cox-Munk 2-D Gaussian over the slope PDF
-    - |R_pol|^2 is the RHCP -> LHCP power reflectivity at the carrier frequency, derived from
-      a Klein-Swift seawater permittivity at the configured temperature and salinity
-    - A_eff is the first-Fresnel-zone area (pi * lambda * R_t * R_r / (R_t + R_r))
+    - P_slope is the Cox-Munk 2-D Gaussian slope PDF
+    - |R_pol|^2 is the RHCP -> LHCP power reflectivity at the carrier frequency, from a
+      Klein-Swift seawater permittivity at the configured temperature and salinity
+    - A_glistening is the effective glistening-zone area at the specular peak
 
-`wave_height_m` is reported as a Rayleigh roughness diagnostic only in this revision; the
-slope-driven Cox-Munk PDF carries the wind-dependent sea-state behaviour directly.
+    Coherent (smooth-surface specular reflection from the mean surface):
+    sigma_coherent = 4 * pi * |R_pol|^2 * (R_t R_r / (R_t + R_r))^2 * exp(-kappa)
+    - the flat-mirror cross-section that reproduces the two-ray coherent power
+      Pr = Pt Gt Gr (lambda / (4 pi (R_t + R_r)))^2 |R|^2 through the bistatic radar equation
+    - kappa = (4 pi sigma_h cos(theta_local) / lambda)^2 is the Rayleigh roughness attenuation
+    - gated to specular geometry (required facet slope ~ 0); zero off-specular
+
+    For typical sea state (sigma_h >> lambda) kappa is large and the coherent term collapses, leaving
+    the incoherent glistening-zone return; for very calm water the coherent term dominates.
 """
 
 from __future__ import annotations
@@ -133,8 +143,9 @@ class OceanTarget(Target):
         # Effective areas
         range_sum = range_tx + range_rx
         denom = np.where(range_sum > 0.0, range_sum, np.nan)
-        fresnel_radius_sq = wavelength_m * range_tx * range_rx / denom    # r_F^2 = lambda * R_t * R_r / (R_t + R_r)
-        fresnel_area = np.pi * fresnel_radius_sq                          # A_F: first Fresnel zone (coherent regime)
+        reduced_range = range_tx * range_rx / denom                      # R_t R_r / (R_t + R_r)
+        fresnel_radius_sq = wavelength_m * reduced_range                 # r_F^2 = lambda * R_t * R_r / (R_t + R_r)
+        fresnel_area = np.pi * fresnel_radius_sq                         # A_F: first Fresnel zone footprint (diagnostic)
 
         # Glistening-zone area for the incoherent regime: integration of the slope PDF
         # over the surface, expressed as an effective area at the specular peak. The
@@ -155,17 +166,20 @@ class OceanTarget(Target):
         # Incoherent contribution: NRCS integrated over the glistening zone.
         sigma_incoherent = nrcs * glistening_area                         # rough-surface diffuse return
 
-        # Coherent contribution: smooth-surface specular reflection, suppressed by Rayleigh
-        # roughness exp(-kappa) and gated to geometries where the required facet slope is
+        # Coherent contribution: smooth-surface specular reflection from the mean surface, suppressed
+        # by Rayleigh roughness exp(-kappa) and gated to geometries where the required facet slope is
         # zero (the macroscopic surface IS the mirror). Off-specular geometries get sigma_coh = 0.
+        # sigma_coh is the flat-mirror cross-section that reproduces the two-ray coherent power
+        # Pr = Pt Gt Gr (lambda / (4 pi (R_t + R_r)))^2 |R|^2 through the bistatic radar equation.
         rayleigh_kappa = (
             4.0 * np.pi * self.wave_height_m * np.cos(theta_local_rad) / wavelength_m
         ) ** 2                                                            # kappa = (4 pi sigma_h cos theta_local / lambda)^2
+        coherent_mirror_rcs = 4.0 * np.pi * reduced_range ** 2           # 4 pi (R_t R_r / (R_t + R_r))^2
         slope_mag_sq = s_u ** 2 + s_c ** 2
         at_specular = np.isfinite(slope_mag_sq) & (slope_mag_sq < 1.0e-6) # required facet slope ~ 0
         sigma_coherent = np.where(
             at_specular,
-            R_RL_sq * fresnel_area * np.exp(-rayleigh_kappa),
+            R_RL_sq * coherent_mirror_rcs * np.exp(-rayleigh_kappa),
             0.0,
         )
 
