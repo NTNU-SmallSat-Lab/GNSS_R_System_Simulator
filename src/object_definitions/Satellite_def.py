@@ -232,7 +232,11 @@ class Satellite:
             self.satName += f"_{incrementing_no}"
             filePath = os.path.join(Constants.tle_eph_folder_path, self.satName + ".tle")
             incrementing_no += 1
+            # THIS WAS MISSING:
+        with open(filePath, 'w') as f:
+            f.write(tle_str)
         self.tle_file_path = filePath
+        print(f"Writing TLE file for satellite {self.satName} at: {filePath}")
         return None
 
     def propagate_orbit(self, startTime, duration, deltaT) -> np.array:

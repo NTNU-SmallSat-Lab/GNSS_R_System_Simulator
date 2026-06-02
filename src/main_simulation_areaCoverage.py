@@ -89,10 +89,10 @@ def run_area_coverage_simulation(sim_settings):
     # 7. Plot reflection points
     ####################################
     coverage.plot_reflection_points()
-    coverage.plot_coverage_shapefile(gnss_constellation="CELESTE", file_name="Coverage.png")
+    coverage.plot_coverage_shapefile(gnss_constellation="CELESTE_TEST", file_name="Coverage.png")
     coverage.plot_coverage_shapefile(file_name="Coverage_all_configurations.png")
-    coverage.plot_coverage_gridded_shapefile(gnss_constellation="CELESTE", file_name="Coverage_grid_CELESTE.png")
-    coverage.plot_coverage_gridded_shapefile(file_name="Coverage_grid_CELESTE.png")
+    coverage.plot_coverage_gridded_shapefile(gnss_constellation="CELESTE_TEST", file_name="Coverage_grid_CELESTE_TEST.png")
+    coverage.plot_coverage_gridded_shapefile(file_name="Coverage_grid_CELESTE_TEST.png")
 
     ####################################
     # 9. Plot orbits

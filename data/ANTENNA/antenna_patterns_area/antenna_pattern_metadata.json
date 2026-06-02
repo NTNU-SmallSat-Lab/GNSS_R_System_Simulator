@@ -1,0 +1,22 @@
+{
+  "elements_along_x": 3,
+  "elements_along_y": 4,
+  "d_x": 0.1,
+  "d_y": 0.1,
+  "freqs": [
+    1176.45,
+    1575.42
+  ],
+  "elevation_directivity": [
+    0,
+    20,
+    5
+  ],
+  "azimuth_directivity": [
+    0,
+    358,
+    5
+  ],
+  "elevation_resolution": 180,
+  "azimuth_resolution": 360
+}

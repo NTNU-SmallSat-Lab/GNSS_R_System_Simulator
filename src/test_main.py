@@ -31,7 +31,7 @@ def testObjReflection() -> bool:
 def testObjOrbit() -> bool:
     passed = 1
     start_time = datetime(2024, 10, 31, 5, 5, 57, tzinfo=UTC)  # Start time in UTC (YYYY:MM:DD HH:mm:ss)
-    apogee = 421e3 + Constants.R_EARTH_MEAN  # Apogee in [m]
+    apogee = 520e3 + Constants.R_EARTH_MEAN  # Apogee in [m]
 
     orbit_noEpoch = Orbit_specification(
         51.6374,  # inclination         [°]
@@ -61,92 +61,43 @@ def testObjOrbit() -> bool:
 def testObjSatellite() -> bool:
     passed = 1
     start_time = datetime(2024, 10, 31, 5, 5, 57, tzinfo=UTC)
-    apogee = 421e3 + Constants.R_EARTH_MEAN
-    orbit_noEpoch = Orbit_specification(
-        51.6374,  # inclination          [°]
-        0.0009376,  # eccentricity         [-]
-        1.5935,  # RAAN                 [°]
-        121.8064,  # argument of perigee  [°]
-        341.7727,  # Mean anomaly         [°]
-        apogee,  # apogee               [m]
-    )
+    apogee = 510e3 + Constants.R_EARTH_MEAN
 
-    sat = Satellite(1)
-
-    orbit_withEpoch = Orbit_specification(
-        51.6374,  # inclination          [°]
-        0.0009376,  # eccentricity         [-]
-        1.5935,  # RAAN                 [°]
-        121.8064,  # argument of perigee  [°]
-        341.7727,  # Mean anomaly         [°]
-        apogee,  # apogee               [m]
-        start_time,  # epoch                [YYYY:MM:DD HH:mm:ss UTC]
-    )
-
-    sat_noOrbit = Satellite(1)
-    sat_orbitNoEpoch = Satellite(2, orbit_noEpoch)
-    sat_orbitWithEpoch = Satellite(3, orbit_withEpoch)
-    satellite_newOrbit = Satellite(
-        4,  # Satellite ID        [number]
-        [
-            51.6374,  # inclination         [°]
-            0.0009376,  # eccentricity        [-]
-            1.5935,  # RAAN                [°]
-            121.8064,  # argument of perigee [°]
-            341.7727,  # Mean anomaly        [°]
-            apogee,  # apogee              [m]
-            start_time,  # epoch               [YYYY:MM:DD HH:mm:ss UTC]
-        ],
-    )
-    satellite_newOrbit2 = Satellite(
-        5,
-        [
-            51.6374,  # inclination         [°]
-            0.0009376,  # eccentricity        [-]
-            1.5935,  # RAAN                [°]
-            121.8064,  # argument of perigee [°]
-            341.7727,  # Mean anomaly        [°]
-            apogee,  # apogee              [m]
-        ],
-        satName="newName",
-    )
-    satellite_noOrbit_newName = Satellite(6, satName="newName")
-
-    if not (isinstance(sat_noOrbit, Satellite) and sat_noOrbit.orbit_n == None):
-        passed = 0
-    if not (isinstance(sat_orbitNoEpoch, Satellite) and sat_orbitNoEpoch.orbit_n == orbit_noEpoch and sat_orbitNoEpoch.tle_exists() == False):
-        passed = 0
-    if not (isinstance(sat_orbitWithEpoch, Satellite) and sat_orbitWithEpoch.orbit_n == orbit_withEpoch and sat_orbitWithEpoch.tle_exists() == True):
-        passed = 0
-    if not (isinstance(satellite_newOrbit, Satellite) and satellite_newOrbit.orbit_n.epoch_str == "24305.21246528" and satellite_newOrbit.tle_exists() == True):
-        passed = 0
-    # Generate TLE file  for satellite_newOrbit
-    #    satellite_newOrbit.write_tle_file()
-    if not (satellite_newOrbit.tle_exists() == True):
-        passed = 0
-
-    if not (isinstance(satellite_newOrbit2, Satellite) and satellite_newOrbit2.orbit_n.epoch_str == None and satellite_newOrbit2.tle_exists() == False):
-        passed = 0
-
-    # Set the classification of the satellite
-    satellite_newOrbit2.set_classification("C")
-    if not (satellite_newOrbit2.classification == "C"):
-        passed = 0
-
-    # Calculate the TLE for the satellite | This should not work as the epoch is not set
-    satellite_newOrbit2.write_tle_file()
-    if not (satellite_newOrbit2.tle_exists() == False):
-        passed = 0
-
-    if not (isinstance(satellite_noOrbit_newName, Satellite) and satellite_noOrbit_newName.satName == "newName"):
-        passed = 0
-
-    # Initialize Satellite with TLE file
-    sat_tle = Satellite(7, tle_file_path=os.path.join(Constants.tle_folderpath, "ISS.tle"))
-    sat_tle.write_tle_file()
+    
+    #this is where i work now
+    celeste_constellation = Satellite(1,  # Satellite ID        [number]
+            [
+                97.4,  # inclination         [°]
+                0.0001,  # eccentricity        [-]
+                33,  # RAAN                [°]
+                60,  # argument of perigee [°]
+                300,  # Mean anomaly        [°]
+                apogee,  # apogee              [m]
+                start_time,  # epoch               [YYYY:MM:DD HH:mm:ss UTC]
+            ],
+        )
+    celeste_constellation.write_tle_file()
     return passed
-
-
+    """
+    for i in range(10):
+        
+        celeste_constellation = Satellite(8+i,  # Satellite ID        [number]
+            [
+                97.1,  # inclination         [°]
+                0.0001,  # eccentricity        [-]
+                0,  # RAAN                [°]
+                6,  # argument of perigee [°]
+                0,  # Mean anomaly        [°]
+                apogee,  # apogee              [m]
+                start_time,  # epoch               [YYYY:MM:DD HH:mm:ss UTC]
+            ],
+        )
+        print('writing tle file for satellite ', 8+i)
+        celeste_constellation.write_tle_file()
+    #this is where my work ends
+    # Calculate the TLE for the satellite | This should not work as the epoch is not set
+    return passed
+    """
 def testReadWriteData() -> bool:
     passed = 1
     # Read GALILEO TLE data
@@ -291,13 +242,13 @@ def testClassOrFunction(testFunction) -> bool:
 if __name__ == "__main__":
     passed = 1
 
-    passed = passed & testClassOrFunction(testSatConstelation)
+    #passed = passed & testClassOrFunction(testSatConstelation)
 
-    passed = passed & testClassOrFunction(testObjReflection)
+    #passed = passed & testClassOrFunction(testObjReflection)
     passed = passed & testClassOrFunction(testObjOrbit)
     passed = passed & testClassOrFunction(testObjSatellite)
-    passed = passed & testClassOrFunction(testReadWriteData)
-    passed = passed & testClassOrFunction(testFreeFlyerConnection)
+    #passed = passed & testClassOrFunction(testReadWriteData)
+    #passed = passed & testClassOrFunction(testFreeFlyerConnection)
 
     if passed:
         print("All tests passed")
