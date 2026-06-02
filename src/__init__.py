@@ -59,12 +59,15 @@ def _check_python_version() -> None:
             stacklevel=2,
         )
 
-def _parse_antenna_frequency_mhz(filename: str) -> float:
-    """Extract the carrier frequency (MHz) from an array_factor_*MHz_*.json filename."""
-    match = re.search(r'array_factor_(\d+\.?\d*)MHz', filename)
-    if not match:
-        raise ValueError(f"Could not parse frequency from antenna pattern filename: {filename}")
-    return float(match.group(1))
+def parse_antenna_angles(filename: str) -> tuple[float, float, float]:
+    """Extract (steering-azimuth, steering-elevation, frequency) in (deg, deg, MHz) from an
+    array_factor_{freq}MHz_{az}az_{el}el.json filename. Azimuth/elevation may be negative."""
+    az_match = re.search(r'(-?\d+\.?\d*)az', filename)
+    el_match = re.search(r'(-?\d+\.?\d*)el', filename)
+    freq_match = re.search(r'(\d+\.?\d*)MHz', filename)
+    if not (az_match and el_match and freq_match):
+        raise ValueError(f"Could not parse azimuth/elevation/frequency from filename: {filename}")
+    return float(az_match.group(1)), float(el_match.group(1)), float(freq_match.group(1))
 
 
 def _normalize_path_for_compare(path):
@@ -141,7 +144,6 @@ def initialize(config_file_name="Configuration.ini"):
         [ANTENNA]
         pattern_folder         = path/to/generated_or_precomputed_patterns                       (only needed for moving target analysis)
         antenna_beamwidth_3dB  = [x1, y1, x2, y2, ...] (from 0 to 90 degrees rotationally) (only needed for moving target analysis)
-        max_fov_angle_deg      = [azimuth, max_off_boresight] (degrees)                    (only needed for moving target analysis)
         polarizations          = ["LHCP", "RHCP", "VP", "HP"]                              (only needed for moving target analysis)
         bands                  = ["L1", "L2", "L2", "L5"]                                        (only needed for moving target analysis)
 
@@ -216,7 +218,7 @@ def initialize(config_file_name="Configuration.ini"):
     expected_antenna_pattern_files = None
     if "ANTENNA PATTERN" in config:
         section = config["ANTENNA PATTERN"]
-        required_keys = ("elements_along_x", "elements_along_y", "d_x", "d_y", "freqs", "elevation_directivity", "azimuth_directivity")
+        required_keys = ("elements_along_x", "elements_along_y", "d_x", "d_y", "freqs", "azimuth_steering", "elevation_steering")
         missing = [k for k in required_keys if k not in section]
         if missing:
             raise KeyError(f"Missing required key(s) in [ANTENNA PATTERN] section: {missing}")
@@ -229,8 +231,8 @@ def initialize(config_file_name="Configuration.ini"):
                 "d_x": float(section["d_x"]),
                 "d_y": float(section["d_y"]),
                 "freqs": [float(f) for f in ast.literal_eval(section["freqs"])],
-                "elevation_directivity": ast.literal_eval(section["elevation_directivity"]),
-                "azimuth_directivity": ast.literal_eval(section["azimuth_directivity"]),
+                "azimuth_steering": ast.literal_eval(section["azimuth_steering"]),
+                "elevation_steering": ast.literal_eval(section["elevation_steering"]),
                 "theta_resolution": int(section.get("theta_resolution", "180")),
                 "phi_resolution": int(section.get("phi_resolution", "360")),
                 "output_folder": antenna_pattern_folder,
@@ -248,11 +250,6 @@ def initialize(config_file_name="Configuration.ini"):
     #[ANTENNA]
     try:
         antenna_patterns = {}  # Initialize the dictionary here
-        max_fov_angle_deg = (
-            ast.literal_eval(config["ANTENNA"]["max_fov_angle_deg"])
-            if ("ANTENNA" in config and "max_fov_angle_deg" in config["ANTENNA"])
-            else None
-        )
         bands = config["ANTENNA"]["bands"] if ("ANTENNA" in config and "bands" in config["ANTENNA"]) else None  # Antenna bands
         if bands is None:
             bands = []
@@ -286,13 +283,9 @@ def initialize(config_file_name="Configuration.ini"):
                 if not os.path.isfile(file):
                     raise FileNotFoundError(f"The specified antenna pattern file '{file}' does not exist. Please check the file path in the configuration file.")
 
-                freq = _parse_antenna_frequency_mhz(os.path.basename(file))
-                if freq in antenna_patterns:
-                    raise ValueError(
-                        f"Duplicate antenna pattern files for frequency {freq} MHz in '{antenna_pattern_folder}'. "
-                        "Only one unsteered pattern per frequency is supported."
-                    )
-                antenna_patterns[freq] = file
+                # Key each pattern by its (steering-azimuth, steering-elevation, frequency) parsed from the filename.
+                azimuth, elevation, freq = parse_antenna_angles(os.path.basename(file))
+                antenna_patterns[(azimuth, elevation, freq)] = file
             antenna_patterns = dict(sorted(antenna_patterns.items()))
             antenna_polarizations = ast.literal_eval(config["ANTENNA"]["polarizations"]) if "ANTENNA" in config else None  # Antenna polarizations (e.g., ["LHCP", "RHCP"])
         else:
@@ -307,7 +300,7 @@ def initialize(config_file_name="Configuration.ini"):
         if footprint_dB is not None and footprint_dB >= 0.0:
             raise ValueError("'footprint_dB' must be below 0 dB because antenna patterns are normalized to a 0 dB peak.")
     except KeyError:
-        raise KeyError("The 'pattern_folder', 'max_fov_angle_deg', 'polarizations' or 'bands' key is missing in the 'ANTENNA' section of the configuration file.") # noqa: B904
+        raise KeyError("The 'pattern_folder', 'polarizations' or 'bands' key is missing in the 'ANTENNA' section of the configuration file.") # noqa: B904
 
     #[ORBITS]
     # Check how many orbits are specified in the configuration file
@@ -471,6 +464,34 @@ def initialize(config_file_name="Configuration.ini"):
                 f"Invalid value for 'detection_bbox_buffer_deg' in [PLOT]: {config['PLOT']['detection_bbox_buffer_deg']}"
             ) from None
 
+    # --- [PLOT] animation knobs (moving-target only) ---
+    # Animation only applies when [MOVING TARGET] is present. INI-strict:
+    # create_animation must be set; its sub-knobs are required when it is True.
+    create_animation = False
+    animation_settings = None
+    if "MOVING TARGET" in config:
+        if "PLOT" not in config or "create_animation" not in config["PLOT"]:
+            raise ValueError("[PLOT].create_animation is required when [MOVING TARGET] is present.")
+        plot_section = config["PLOT"]
+        try:
+            create_animation = plot_section.getboolean("create_animation")
+        except ValueError:
+            raise ValueError(
+                f"Invalid boolean for [PLOT].create_animation: {plot_section['create_animation']}"
+            ) from None
+        if create_animation:
+            required_anim_keys = ("animation_filename", "animation_fps")
+            missing_anim = [k for k in required_anim_keys if k not in plot_section]
+            if missing_anim:
+                raise ValueError(f"[PLOT] keys required when create_animation = True: {missing_anim}")
+            try:
+                animation_settings = {
+                    "output_filename": plot_section["animation_filename"].strip().strip('"').strip("'"),
+                    "fps": int(plot_section["animation_fps"]),
+                }
+            except ValueError as e:
+                raise ValueError(f"Invalid value in [PLOT] animation settings: {e}") from None
+
 
     simulation_settings = {
         #[SIMULATION SETTINGS]
@@ -499,7 +520,6 @@ def initialize(config_file_name="Configuration.ini"):
         #[ANTENNA]
         "antenna_pattern_folder": antenna_pattern_folder,
         "antenna_pattern_files": antenna_patterns,
-        "max_fov_angle_deg": max_fov_angle_deg,
         "polarizations": antenna_polarizations,
         "bands": antenna_bands,
         "footprint_dB": float(footprint_dB) if footprint_dB is not None else None,
@@ -507,6 +527,8 @@ def initialize(config_file_name="Configuration.ini"):
         "link_budget": link_budget,
         #[PLOT]
         "detection_bbox_buffer_deg": detection_bbox_buffer_deg,
+        "create_animation": create_animation,
+        "animation_settings": animation_settings,
     }
     return config, simulation_settings
 

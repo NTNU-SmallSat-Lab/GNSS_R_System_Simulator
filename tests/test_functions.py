@@ -306,10 +306,36 @@ class _RecordingFootprintAntenna:
         return vector_bundle / np.linalg.norm(vector_bundle, axis=1, keepdims=True)
 
 
+class _HorizonCrossingFootprintAntenna(_RecordingFootprintAntenna):
+    def _get_antenna_footprint(self, refl_dir_antenna_frame, frequency):
+        self.requested_dirs.append(np.asarray(refl_dir_antenna_frame, dtype=float))
+        vector_bundle = np.array([
+            [0.02, 0.0, 1.0],
+            [0.0, 0.02, 1.0],
+            [-0.02, 0.0, 1.0],
+            [0.0, -0.02, -1.0],
+        ])
+        return vector_bundle / np.linalg.norm(vector_bundle, axis=1, keepdims=True)
+
+
+class _PartialEarthIntersectionFootprintAntenna(_RecordingFootprintAntenna):
+    def _get_antenna_footprint(self, refl_dir_antenna_frame, frequency):
+        self.requested_dirs.append(np.asarray(refl_dir_antenna_frame, dtype=float))
+        vector_bundle = np.array([
+            [0.02, 0.0, 1.0],
+            [0.0, 0.02, 1.0],
+            [-0.02, 0.0, 1.0],
+            [0.0, -0.02, 1.0],
+            [1.0, 0.0, 0.01],
+        ])
+        return vector_bundle / np.linalg.norm(vector_bundle, axis=1, keepdims=True)
+
+
 class TestComputeFootprint:
-    def test_uses_fixed_nadir_contour_for_off_nadir_reflection(self, monkeypatch):
+    def test_uses_reflection_direction_contour_for_off_nadir_reflection(self, monkeypatch):
         antenna = _RecordingFootprintAntenna()
-        monkeypatch.setattr(fn, "eci_to_antenna_rotation_from_state", lambda *_args, **_kwargs: np.diag([1.0, 1.0, -1.0]))
+        R_eci_to_antenna = np.diag([1.0, 1.0, -1.0])
+        monkeypatch.setattr(fn, "eci_to_antenna_rotation_from_state", lambda *_args, **_kwargs: R_eci_to_antenna)
 
         sat_pos = np.array([0.0, 0.0, Constants.R_EARTH_MEAN + 500_000.0])
         sat_vel = np.array([7_500.0, 0.0, 0.0])
@@ -324,9 +350,54 @@ class TestComputeFootprint:
             frequency=1575.42,
         )
 
+        # The footprint contour is requested for the steered reflection direction (in antenna frame),
+        # not the fixed nadir direction.
+        n_ar_eci = (refl_pos - sat_pos) / np.linalg.norm(refl_pos - sat_pos)
+        expected_dir = R_eci_to_antenna @ n_ar_eci
+
         assert len(antenna.requested_dirs) == 1
-        np.testing.assert_allclose(antenna.requested_dirs[0], np.array([0.0, 0.0, 1.0]), atol=1e-12)
+        np.testing.assert_allclose(antenna.requested_dirs[0], expected_dir, atol=1e-12)
         assert not polygon.is_empty
+
+    def test_rejects_contours_crossing_antenna_horizon(self, monkeypatch):
+        antenna = _HorizonCrossingFootprintAntenna()
+        monkeypatch.setattr(fn, "eci_to_antenna_rotation_from_state", lambda *_args, **_kwargs: np.diag([1.0, 1.0, -1.0]))
+
+        sat_pos = np.array([0.0, 0.0, Constants.R_EARTH_MEAN + 500_000.0])
+        sat_vel = np.array([7_500.0, 0.0, 0.0])
+        refl_pos = np.array([100_000.0, 0.0, Constants.R_EARTH_MEAN])
+
+        polygon, center = fn.compute_footprint(
+            sat_pos,
+            sat_vel,
+            refl_pos,
+            dt.datetime(2025, 1, 1, tzinfo=dt.UTC),
+            antenna,
+            frequency=1575.42,
+        )
+
+        assert polygon.is_empty
+        assert center.shape == (2,)
+
+    def test_rejects_partial_earth_intersection_contours(self, monkeypatch):
+        antenna = _PartialEarthIntersectionFootprintAntenna()
+        monkeypatch.setattr(fn, "eci_to_antenna_rotation_from_state", lambda *_args, **_kwargs: np.diag([1.0, 1.0, -1.0]))
+
+        sat_pos = np.array([0.0, 0.0, Constants.R_EARTH_MEAN + 500_000.0])
+        sat_vel = np.array([7_500.0, 0.0, 0.0])
+        refl_pos = np.array([100_000.0, 0.0, Constants.R_EARTH_MEAN])
+
+        polygon, center = fn.compute_footprint(
+            sat_pos,
+            sat_vel,
+            refl_pos,
+            dt.datetime(2025, 1, 1, tzinfo=dt.UTC),
+            antenna,
+            frequency=1575.42,
+        )
+
+        assert polygon.is_empty
+        assert center.shape == (2,)
 
 
 # --------------------------------------------------------------------------- #

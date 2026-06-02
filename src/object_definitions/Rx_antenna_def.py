@@ -1,4 +1,3 @@
-import ast
 import json
 import math
 
@@ -18,31 +17,40 @@ class RxAntenna:
 
             INPUTS:
                 settings: [dict]   Antenna configuration with keys:
-                                       antenna_pattern_files: dict {frequency_mhz -> json filepath}.
-                                                              Each JSON is an unsteered (boresight) pattern
-                                                              used for the footprint contour and as the
-                                                              boresight directivity baseline.
+                                       antenna_pattern_files: dict {(azimuth, elevation, frequency_mhz) -> json filepath}.
+                                                              One steered pattern per grid steering direction; the
+                                                              elevation=0 patterns also serve as the unsteered
+                                                              footprint contour / boresight directivity baseline.
                                        polarizations:         list (e.g. ["LHCP", "RHCP"])
                                        bands:                 list (e.g. ["L1", "L5"])
                                        footprint_dB:          float, dB contour for the footprint
-                                       array_geometry:        optional diagnostic-only dict with keys
-                                                              elements_along_x, elements_along_y, d_x, d_y.
-                                                              Fixed-nadir gain queries use only the JSON pattern.
+
+            Per-axis max steering angles are derived from the generated steering grid (max |azimuth|,
+            max |elevation|), not configured directly.
         =========================================================================================================
         """
         if settings is None:
             raise ValueError("Settings dictionary must be provided.")
         self.antenna_lookuptable = {}
+        self.steering_azimuth = []
+        self.steering_elevation = []
+        self.frequencies_radi_pattern = []
         self.footprint_dB_contour = settings.get("footprint_dB")
         if self.footprint_dB_contour is None:
             self.footprint_dB_contour = -3.0
         if self.footprint_dB_contour >= 0.0:
             raise ValueError("footprint_dB must be below 0 dB because antenna patterns are normalized to a 0 dB peak.")
-        self.max_fov_off_boresight_deg = self._parse_max_fov_off_boresight(settings.get("max_fov_angle_deg"))
+        # Per-axis max steering angles are derived from the generated steering grid in _initialize.
+        self.max_azimuth_steering_deg = None
+        self.max_elevation_steering_deg = None
 
         antenna_patterns_temp = {}
         pattern_files = settings.get("antenna_pattern_files") or {}
-        for frequency, filepath in pattern_files.items():
+        for antenna_az_el_fr, filepath in pattern_files.items():
+            azimuth = antenna_az_el_fr[0]
+            elevation = antenna_az_el_fr[1]
+            frequency = antenna_az_el_fr[2]
+
             with open(filepath) as f:
                 antenna_data = json.load(f)
 
@@ -59,20 +67,27 @@ class RxAntenna:
             ]
             for condition, message in checks:
                 if condition:
-                    raise ValueError(f"{message} for {frequency} MHz pattern.")
+                    raise ValueError(f"{message} for {antenna_az_el_fr}.")
 
             if not math.isclose(freq, frequency, abs_tol=1e-6):
-                raise ValueError(f"Frequency mismatch for pattern at {frequency} MHz: file content reports {freq} MHz.")
-            if not (math.isclose(beta_m, 0.0, abs_tol=0.01) and math.isclose(beta_n, 0.0, abs_tol=0.01)):
-                raise ValueError(
-                    f"Pattern for {frequency} MHz must be unsteered (azimuth_pointing = elevation_pointing = 0); "
-                    f"got ({beta_m}, {beta_n})."
-                )
+                raise ValueError(f"Frequency mismatch for {antenna_az_el_fr}: file content reports {freq} MHz.")
+            if not math.isclose(beta_n, elevation, abs_tol=0.01):
+                raise ValueError(f"Elevation pointing mismatch for {antenna_az_el_fr}: file content reports {beta_n} deg.")
+            if not math.isclose(beta_m, azimuth, abs_tol=0.01):
+                raise ValueError(f"Azimuth pointing mismatch for {antenna_az_el_fr}: file content reports {beta_m} deg.")
 
-            antenna_patterns_temp[frequency] = {
+            antenna_patterns_temp[antenna_az_el_fr] = {
+                "azimuth": azimuth,
+                "elevation": elevation,
                 "frequency": frequency,
                 "radiation_pattern_dB": mesh,
             }
+            if frequency not in self.frequencies_radi_pattern:
+                self.frequencies_radi_pattern.append(frequency)
+            if elevation not in self.steering_elevation:
+                self.steering_elevation.append(elevation)
+            if azimuth not in self.steering_azimuth:
+                self.steering_azimuth.append(azimuth)
         self.polarizations = settings.get("polarizations")
         self.bands = settings.get("bands")
         self.footprint_resolution = 64
@@ -81,30 +96,36 @@ class RxAntenna:
             [-1, 0, 0],
             [0, 0, 1]
         ])
-        self._array_geometry = settings.get("array_geometry")
 
         self._initialize(antenna_patterns_temp)
 
     def _initialize(self, antenna_patterns_temp):
         """
         =========================================================================================================
-        Initialize antenna properties (per-frequency directivity, footprint contour, frequency list).
+        Initialize antenna properties (per-pattern directivity, footprint contour, frequency list, steering grid).
 
         INPUTS:
-            antenna_patterns_temp: [dict]   {frequency_mhz -> {frequency, radiation_pattern_dB}}
+            antenna_patterns_temp: [dict]   {(az, el, freq) -> {azimuth, elevation, frequency, radiation_pattern_dB}}
         =========================================================================================================
         """
-        for frequency, antenna_pattern in antenna_patterns_temp.items():
+        for antenna_key, antenna_pattern in antenna_patterns_temp.items():
             directivity, directivity_dB, contour_vectors = self._calc_antenna_footprint(antenna_pattern)
-            self.antenna_lookuptable[frequency] = {
+            self.antenna_lookuptable[antenna_key] = {
                 'directivity': directivity,
                 'directivity_dB': directivity_dB,
                 'vector_bundle': contour_vectors,
-                'frequency': frequency,
+                'frequency': antenna_pattern["frequency"],
+                'elevation': antenna_pattern["elevation"],
+                'azimuth': antenna_pattern["azimuth"],
                 'radiation_pattern_dB': antenna_pattern["radiation_pattern_dB"],
             }
 
         self.frequencies = self._get_frequency_from_band()
+        # The reachable steering range is exactly the generated grid extent, per axis.
+        self.max_azimuth_steering_deg = max(abs(key[0]) for key in self.antenna_lookuptable)
+        self.max_elevation_steering_deg = max(abs(key[1]) for key in self.antenna_lookuptable)
+        self._build_steering_grid()
+        self._validate_boresight_steering_patterns()
 
     def _get_frequency_from_band(self):
         """
@@ -120,12 +141,57 @@ class RxAntenna:
         for band in self.bands:
             if band in Constants.BANDS_CENTER_FREQUENCIES_Hz:
                 freq_Mz = Constants.BANDS_CENTER_FREQUENCIES_Hz[band] / 1e6  # Convert Hz to MHz
-                if any(math.isclose(key, freq_Mz, abs_tol=1e-6) for key in self.antenna_lookuptable.keys()):
+                if any(math.isclose(key[2], freq_Mz, abs_tol=1e-6) for key in self.antenna_lookuptable.keys()):
                     frequencies.append(freq_Mz)
                 else:
                     raise ValueError(f"No radiation pattern available for frequency {freq_Mz} MHz (band {band}).")
 
         return frequencies
+
+    def _validate_boresight_steering_patterns(self) -> None:
+        """
+        =========================================================================================================
+        Validate that every configured antenna frequency has a boresight (azimuth=0, elevation=0) pattern.
+
+        The generated steering grid must include the true zero-steering command so nadir gain and footprint
+        interpolation have a physical reference point instead of being inferred only from tilted beams.
+        =========================================================================================================
+        """
+        missing = []
+        for frequency_mhz in self.frequencies:
+            has_boresight_pattern = any(
+                math.isclose(key[2], frequency_mhz, abs_tol=1e-6)
+                and math.isclose(key[0], 0.0, abs_tol=1e-6)
+                and math.isclose(key[1], 0.0, abs_tol=1e-6)
+                for key in self.antenna_lookuptable
+            )
+            if not has_boresight_pattern:
+                missing.append(frequency_mhz)
+
+        if missing:
+            missing_str = ", ".join(f"{frequency:.2f} MHz" for frequency in missing)
+            raise ValueError(
+                "Missing boresight antenna pattern (azimuth=0, elevation=0) for footprint calculation "
+                f"at {missing_str}. Include 0 in both azimuth_steering and elevation_steering."
+            )
+
+    def _build_steering_grid(self) -> None:
+        """
+        =========================================================================================================
+        Pre-compute, per available frequency, sorted azimuth/elevation steering grids and a (az, el) -> key map.
+        Consumed by _steering_bracket_keys_and_weights to bracket a target steering direction in O(log N).
+
+        Stored on self._steering_grids: dict {freq_mhz: {"az_sorted", "el_sorted", "key_map"}}.
+        =========================================================================================================
+        """
+        self._steering_grids = {}
+        for freq in sorted({key[2] for key in self.antenna_lookuptable}):
+            freq_keys = [k for k in self.antenna_lookuptable if math.isclose(k[2], freq, abs_tol=1e-6)]
+            self._steering_grids[freq] = {
+                "az_sorted": np.array(sorted({k[0] for k in freq_keys})),
+                "el_sorted": np.array(sorted({k[1] for k in freq_keys})),
+                "key_map": {(k[0], k[1]): k for k in freq_keys},
+            }
 
     def _calc_antenna_footprint(self, antenna_pattern):
         """
@@ -151,193 +217,147 @@ class RxAntenna:
 
         directivity, directivity_dB = self._calculate_directivity(rad_pattern_spherical_lin, theta_rad, phi_rad, theta_mesh)
 
-        # Find angle with self.footprint_dB_contour
-        contur_vectors = self._find_contour_vectors(rad_pattern_spherical_dB, theta_rad, phi_rad, theta_mesh, phi_mesh)
+        # Steering-command-centred contour ring; already at footprint_resolution, no further resampling needed.
+        contur_vectors = self._find_contour_vectors(
+            rad_pattern_spherical_dB,
+            antenna_pattern.get("azimuth", 0.0),
+            antenna_pattern.get("elevation", 0.0),
+        )
 
-        # DEBUG, PLOT ANTENNA RADIATION PATTERN
         debug = False
         if debug:
             plotting_object = PlotRadiationPattern(spherical_coordinates=(rad_pattern_spherical_lin, theta_mesh, phi_mesh), arrow=(0.0, 0.0))
             plotting_object.add_vector_bundle_to_plot(contur_vectors)
             plotting_object.show()
 
-        # Do resampling of the footprint to a lower resolution (self.footprint_resolution)
-        contur_vectors = self._smooth_antenna_footprint(contur_vectors)
-
-        ##DEBUG Visualize the antenna footprint in 3D
-        # import matplotlib.pyplot as plt
-        # from mpl_toolkits.mplot3d import Axes3D
-        # fig = plt.figure()
-        # ax = fig.add_subplot(111, projection='3d')
-        # ax.quiver(0, 0, 0, contur_vectors[:, 0], contur_vectors[:, 1], contur_vectors[:, 2])
-        # plt.show(block=True)
-
         return directivity, directivity_dB, contur_vectors
-
-    def _smooth_antenna_footprint(self, contour_vectors):
-        """
-        =========================================================================================================
-        Smooth the antenna footprint by resampling on a 1m projection plane in front of the antenna.
-
-        INPUTS:
-            contour_vectors: [np.ndarray, shape (N, 3)]   Original contour unit vectors in antenna frame
-
-        OUTPUT:
-            resampled_vectors: [np.ndarray, shape (footprint_resolution, 3)]   Resampled contour vectors
-        =========================================================================================================
-        """
-        # Project the footprint onto a "plane" 1m in front of the antenna
-        nadir_n = np.array([0, 0, 1])  # Nadir pointing vector in antenna coordinate system
-
-        # Original azimuth angles for the contour vectors
-        num_original_points = len(contour_vectors)
-        original_azimuths = np.linspace(0, 2*np.pi, num_original_points, endpoint=False)
-
-        # Target azimuth angles for resampled footprint
-        target_azimuths = np.linspace(0, 2*np.pi, self.footprint_resolution, endpoint=False)
-
-        # Convert contour vectors to polar coordinates on the 1m plane
-        original_rhos = []
-
-        for vector in contour_vectors:
-            # Angle between nadir and vector
-            off_nadir_angle = np.arccos(np.clip(np.dot(nadir_n, vector), -1.0, 1.0))
-            # Radial distance on plane 1m in front of the antenna
-            rho = np.tan(off_nadir_angle)
-            original_rhos.append(rho)
-
-        original_rhos = np.array(original_rhos)
-
-        # Interpolate rho values at target azimuth angles (handle wraparound by extending the arrays)
-        extended_azimuths = np.concatenate([original_azimuths - 2*np.pi, original_azimuths, original_azimuths + 2*np.pi]) # Extend the azimuth range from -2π to +2π for interpolation
-        extended_rhos = np.concatenate([original_rhos, original_rhos, original_rhos])
-
-        # Interpolate rho values for target azimuths
-        resampled_rhos = np.interp(target_azimuths, extended_azimuths, extended_rhos)
-
-        # Convert back to 3D vectors
-        resampled_vectors = []
-        for _, (azimuth, rho) in enumerate(zip(target_azimuths, resampled_rhos, strict=True)):
-            # Cartesian coordinates on the plane
-            x = rho * np.cos(azimuth)
-            y = rho * np.sin(azimuth)
-            z = 1.0
-
-            # Convert to unit vector
-            vector_length = np.sqrt(x**2 + y**2 + z**2)
-            unit_vector = np.array([x, y, z]) / vector_length
-            resampled_vectors.append(unit_vector)
-
-        resampled_vectors = np.array(resampled_vectors)
-
-        return resampled_vectors
-        ## DEBUG SHOW THE SPLINE 1m IN FRONT OF THE ANTENNA
-        # fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-        # Plot original footprint
-        #original_x = original_rhos * np.cos(original_azimuths)
-        #original_y = original_rhos * np.sin(original_azimuths)
-        #ax1.plot(original_x, original_y, 'ro-', label=f'Original ({len(contour_vectors)} points)')
-        #ax1.set_xlabel('X (m)')
-        #ax1.set_ylabel('Y (m)')
-        #ax1.set_title('Original Antenna Footprint')
-        #ax1.legend()
-        #ax1.axis('equal')
-        #ax1.grid(True)
-
-        ## Plot resampled footprint
-        #resampled_x = resampled_rhos * np.cos(target_azimuths)
-        #resampled_y = resampled_rhos * np.sin(target_azimuths)
-        #ax2.plot(resampled_x, resampled_y, 'bo-', label=f'Resampled ({self.footprint_resolution} points)')
-        #ax2.set_xlabel('X (m)')
-        #ax2.set_ylabel('Y (m)')
-        #ax2.set_title('Resampled Antenna Footprint')
-        #ax2.legend()
-        #ax2.axis('equal')
-        #ax2.grid(True)
-
-        #plt.tight_layout()
-        #plt.show(block=True)
 
     def _get_antenna_footprint(self, refl_dir_antenna_frame, frequency):
         """
         =========================================================================================================
-        Get the fixed nadir-pointing antenna footprint contour.
+        Get the steering-interpolated antenna footprint contour for the given reflection direction.
 
         INPUTS:
-            refl_dir_antenna_frame: [np.ndarray, shape (3,)]   Retained for API compatibility; ignored
+            refl_dir_antenna_frame: [np.ndarray, shape (3,)]   Reflection direction in antenna frame
             frequency:              [float]                    Frequency [MHz] (used for lookup)
 
         OUTPUT:
-            footprint_vectors: [np.ndarray, shape (N, 3)]   Fixed nadir footprint contour vectors
+            footprint_vectors: [np.ndarray, shape (N, 3)]   Interpolated steered footprint contour vectors
         =========================================================================================================
         """
-        footprint_lookup_key = self._resolve_unsteered_footprint_lookup_key(frequency)
-        return self.antenna_lookuptable[footprint_lookup_key]["vector_bundle"]
+        refl_dir_antenna_frame = np.asarray(refl_dir_antenna_frame, dtype=float)
+        if refl_dir_antenna_frame.shape != (3,):
+            raise ValueError("Input 'refl_dir_antenna_frame' must be a 3-element vector.")
+        if not np.isfinite(refl_dir_antenna_frame).all():
+            raise ValueError("Input 'refl_dir_antenna_frame' must contain finite values.")
 
-    def _resolve_unsteered_footprint_lookup_key(self, frequency_mhz: float) -> float:
-        """
-        =========================================================================================================
-        Resolve the (single) unsteered pattern key for the requested frequency.
+        direction_norm = np.linalg.norm(refl_dir_antenna_frame)
+        if direction_norm <= 0.0:
+            raise ValueError("Input 'refl_dir_antenna_frame' must be non-zero.")
+        refl_dir_antenna_frame = refl_dir_antenna_frame / direction_norm
 
-        Each frequency has exactly one stored pattern (boresight, unsteered). When the requested frequency does
-        not exactly match, the closest available frequency is used.
+        steering_angles = self.resolve_steering_angles_for_direction(refl_dir_antenna_frame)
+        if steering_angles is None:
+            return np.empty((0, 3), dtype=float)
 
-        INPUTS:
-            frequency_mhz: [float]   Target frequency [MHz]
+        steering_azimuth_deg, steering_elevation_deg = steering_angles
+        corners = self._steering_bracket_keys_and_weights(frequency, steering_azimuth_deg, steering_elevation_deg)
 
-        OUTPUT:
-            key: [float]   Frequency [MHz] of the matched lookup entry
-        =========================================================================================================
-        """
-        if not self.antenna_lookuptable:
-            raise ValueError("Antenna lookup table is empty.")
-        return min(self.antenna_lookuptable, key=lambda available_freq: abs(available_freq - float(frequency_mhz)))
+        interpolated_vectors = None
+        expected_shape = None
+        for key, weight in corners:
+            if weight <= 0.0:
+                continue
+            contour_vectors = np.asarray(self.antenna_lookuptable[key]["vector_bundle"], dtype=float)
+            if expected_shape is None:
+                expected_shape = contour_vectors.shape
+                interpolated_vectors = np.zeros(expected_shape, dtype=float)
+            elif contour_vectors.shape != expected_shape:
+                raise ValueError("All steered footprint vector bundles must have the same shape.")
+            interpolated_vectors += weight * contour_vectors
+
+        if interpolated_vectors is None:
+            return np.empty((0, 3), dtype=float)
+
+        vector_norms = np.linalg.norm(interpolated_vectors, axis=1, keepdims=True)
+        valid_vectors = np.isfinite(interpolated_vectors).all(axis=1) & (vector_norms[:, 0] > 0.0)
+        if not valid_vectors.all():
+            raise ValueError("Interpolated footprint vector bundle contains invalid or zero-length vectors.")
+        return interpolated_vectors / vector_norms
 
     @staticmethod
-    def _parse_max_fov_off_boresight(value) -> float | None:
+    def _bracket_linear(sorted_vals: np.ndarray, target: float) -> tuple[int, int, float]:
+        """
+        Bracket a target value within a sorted 1-D grid axis, clamping at the edges.
+
+        Returns (lo_idx, hi_idx, weight) where the interpolated value is
+        (1 - weight) * sorted_vals[lo_idx] + weight * sorted_vals[hi_idx]. Targets outside the grid
+        clamp to the nearest edge (weight 0).
+        """
+        n = sorted_vals.size
+        if n == 1:
+            return 0, 0, 0.0
+        clamped = float(np.clip(target, sorted_vals[0], sorted_vals[-1]))
+        if clamped <= sorted_vals[0]:
+            return 0, 0, 0.0
+        if clamped >= sorted_vals[-1]:
+            return n - 1, n - 1, 0.0
+        hi_idx = int(np.searchsorted(sorted_vals, clamped, side="right"))
+        lo_idx = hi_idx - 1
+        weight = (clamped - sorted_vals[lo_idx]) / (sorted_vals[hi_idx] - sorted_vals[lo_idx])
+        return lo_idx, hi_idx, weight
+
+    def _steering_bracket_keys_and_weights(self, frequency_mhz: float, az_target: float, el_target: float) -> list:
         """
         =========================================================================================================
-        Parse the fixed-antenna field-of-view limit.
-
-        The INI accepts ``max_fov_angle_deg = [azimuth, max_off_boresight]`` (two-element list, the
-        first element is currently ignored) or a scalar; the value used is the off-boresight half-angle.
+        Return the four steering pattern keys + bilinear weights bracketing (az_target, el_target) for the
+        closest available frequency. Both axes are plain bounded linear axes (two-plane scan), clamped at the
+        grid edges. Some weights may be 0 when the target sits on a grid line or outside the grid.
 
         INPUTS:
-            value: [float | list | tuple | str | None]   Configured FOV limit
+            frequency_mhz: [float]   Target frequency [MHz] (snapped to closest available)
+            az_target:     [float]   Target steering azimuth (x-axis tilt) [deg]
+            el_target:     [float]   Target steering elevation (y-axis tilt) [deg]
 
         OUTPUT:
-            limit: [float | None]   Maximum off-boresight angle in degrees, or None if unlimited
+            corners: [list[tuple]]   [(pattern_key, weight), ...] of length 4; weights sum to 1.
         =========================================================================================================
         """
-        if value is None:
-            return None
-        if isinstance(value, str):
-            if value.strip() == "":
-                return None
-            try:
-                value = ast.literal_eval(value)
-            except (ValueError, SyntaxError) as exc:
-                raise ValueError(f"Invalid max_fov_angle_deg value: {value}") from exc
+        if not self._steering_grids:
+            raise ValueError("Antenna steering grid is empty.")
 
-        values = np.asarray(value, dtype=float).reshape(-1)
-        if values.size == 0:
-            return None
-        limit = values[1] if values.size >= 2 else values[0]
-        if limit < 0:
-            raise ValueError("max_fov_angle_deg must not contain a negative off-boresight limit.")
-        return float(limit)
+        closest_freq = min(self._steering_grids.keys(), key=lambda f: abs(f - float(frequency_mhz)))
+        grid = self._steering_grids[closest_freq]
+        az_sorted = grid["az_sorted"]
+        el_sorted = grid["el_sorted"]
+        key_map = grid["key_map"]
+
+        az_lo_idx, az_hi_idx, w_az = self._bracket_linear(az_sorted, az_target)
+        el_lo_idx, el_hi_idx, w_el = self._bracket_linear(el_sorted, el_target)
+
+        az_lo, az_hi = az_sorted[az_lo_idx], az_sorted[az_hi_idx]
+        el_lo, el_hi = el_sorted[el_lo_idx], el_sorted[el_hi_idx]
+
+        return [
+            (key_map[(az_lo, el_lo)], (1.0 - w_az) * (1.0 - w_el)),
+            (key_map[(az_hi, el_lo)], w_az * (1.0 - w_el)),
+            (key_map[(az_lo, el_hi)], (1.0 - w_az) * w_el),
+            (key_map[(az_hi, el_hi)], w_az * w_el),
+        ]
 
     @staticmethod
-    def _direction_to_spherical_angles_deg(direction: np.ndarray) -> tuple[float, float] | None:
+    def _direction_to_steering_angles_deg(direction: np.ndarray) -> tuple[float, float] | None:
         """
         =========================================================================================================
-        Convert a unit look direction in antenna coordinates to pattern angles.
+        Convert a unit look direction in antenna coordinates to two-plane steering angles.
+
+        Sine-space: azimuth = asin(x-component), elevation = asin(y-component); boresight is +z.
 
         INPUTS:
             direction: [np.ndarray, shape (3,)]   Look direction in antenna frame
 
         OUTPUT:
-            angles: [tuple | None]   (theta_deg, phi_deg) or None if invalid/behind antenna
+            angles: [tuple | None]   (azimuth_deg, elevation_deg) or None if invalid / behind the antenna
         =========================================================================================================
         """
         direction = np.asarray(direction, dtype=float)
@@ -352,124 +372,78 @@ class RxAntenna:
         if direction[2] <= 0.0:
             return None
 
-        theta_deg = float(np.degrees(np.arccos(np.clip(direction[2], -1.0, 1.0))))
-        phi_deg = float((np.degrees(np.arctan2(direction[1], direction[0])) + 360.0) % 360.0)
-        return theta_deg, phi_deg
+        azimuth_deg = float(np.degrees(np.arcsin(np.clip(direction[0], -1.0, 1.0))))
+        elevation_deg = float(np.degrees(np.arcsin(np.clip(direction[1], -1.0, 1.0))))
+        return azimuth_deg, elevation_deg
+
+    def resolve_steering_angles_for_direction(self, direction_antenna_frame: np.ndarray) -> tuple[float, float] | None:
+        """
+        =========================================================================================================
+        Resolve the automatic two-plane steering command for a look direction in antenna coordinates.
+
+        The beam steers to point at the reflection direction; requests beyond the per-axis max steering angle
+        are rejected.
+
+        INPUTS:
+            direction_antenna_frame: [np.ndarray, shape (3,)]   Look direction in antenna frame
+
+        OUTPUT:
+            angles: [tuple | None]   (azimuth_deg, elevation_deg) used to select / interpolate steered patterns,
+                                     or None if the direction is invalid or outside the steering limits
+        =========================================================================================================
+        """
+        angles = self._direction_to_steering_angles_deg(direction_antenna_frame)
+        if angles is None:
+            return None
+
+        azimuth_deg, elevation_deg = angles
+        # 1e-9 deg tolerance so a direction exactly at the limit is not rejected by float round-off
+        # (e.g. degrees(asin(sin(40 deg))) can come back as 40.0000000001).
+        if self.max_azimuth_steering_deg is not None and abs(azimuth_deg) > self.max_azimuth_steering_deg + 1e-9:
+            return None
+        if self.max_elevation_steering_deg is not None and abs(elevation_deg) > self.max_elevation_steering_deg + 1e-9:
+            return None
+        return azimuth_deg, elevation_deg
 
     @staticmethod
-    def _array_factor_db_at_direction(
-        elements_along_x: int,
-        elements_along_y: int,
-        d_x: float,
-        d_y: float,
-        freq_hz: float,
-        beta_x: float,
-        beta_y: float,
-        theta_rad,
-        phi_rad,
-    ):
+    def _bilinear_pattern_sample_linear(pattern_db: np.ndarray, theta_deg: float, phi_deg: float) -> float:
         """
         =========================================================================================================
-        Closed-form uniform planar-array factor in dB, normalized by the analytic peak (N_x * N_y).
+        Bilinear-interpolated pattern sample at (theta, phi), returned in linear (not dB) units.
 
-        |sum_{n=0..N-1} exp(j n psi)| = |sin(N psi / 2) / sin(psi / 2)|, with the limit value N when psi -> 0.
+        Theta grid: endpoint-inclusive [0, 180], step = 180 / (n_theta - 1).
+        Phi grid: endpoint-exclusive [0, 360), step = 360 / n_phi, with wraparound across the seam (matches the
+        AntennaPatternGenerator convention). Interpolation is in linear power so values near pattern nulls are
+        not biased upward by log-space averaging.
 
         INPUTS:
-            elements_along_x: [int]              Number of array elements along x
-            elements_along_y: [int]              Number of array elements along y
-            d_x:              [float]            Element spacing along x [m]
-            d_y:              [float]            Element spacing along y [m]
-            freq_hz:          [float]            Carrier frequency [Hz]
-            beta_x:           [float]            Phase shift between adjacent x elements [rad]
-            beta_y:           [float]            Phase shift between adjacent y elements [rad]
-            theta_rad:        [float|np.ndarray] Polar angle from boresight [rad]
-            phi_rad:          [float|np.ndarray] Azimuth angle [rad]
+            pattern_db: [np.ndarray, shape (n_theta, n_phi)]   Radiation pattern [dB]
+            theta_deg:  [float]                                Polar angle [deg], 0..180
+            phi_deg:    [float]                                Azimuth angle [deg], any (wraps mod 360)
 
         OUTPUT:
-            af_db: [float|np.ndarray]   Array-factor magnitude in dB, normalized to a 0 dB analytic peak
+            value: [float]   Bilinear-interpolated pattern value in linear units (peak == 1.0)
         =========================================================================================================
         """
-        wavelength_m = Constants.SPEED_OF_LIGHT / freq_hz
-        k = 2 * np.pi / wavelength_m
+        n_theta, n_phi = pattern_db.shape
 
-        theta_rad = np.asarray(theta_rad, dtype=float)
-        phi_rad = np.asarray(phi_rad, dtype=float)
+        theta_clamped = float(np.clip(theta_deg, 0.0, 180.0))
+        theta_pos = theta_clamped * (n_theta - 1) / 180.0
+        t_lo = int(np.floor(theta_pos))
+        t_hi = min(t_lo + 1, n_theta - 1)
+        wt = theta_pos - t_lo
 
-        psi_x = k * d_x * np.sin(theta_rad) * np.cos(phi_rad) + beta_x
-        psi_y = k * d_y * np.sin(theta_rad) * np.sin(phi_rad) + beta_y
+        phi_pos = (float(phi_deg) % 360.0) * n_phi / 360.0
+        phi_floor = np.floor(phi_pos)
+        p_lo = int(phi_floor) % n_phi
+        p_hi = (p_lo + 1) % n_phi
+        wp = phi_pos - phi_floor
 
-        # Use the closed-form ratio away from psi -> 0; substitute the limit value N at the peak.
-        sin_half_x = np.sin(psi_x / 2.0)
-        sin_half_y = np.sin(psi_y / 2.0)
-        peak_tol = 1e-12
-        af_x = np.where(
-            np.abs(sin_half_x) < peak_tol,
-            float(elements_along_x),
-            np.sin(elements_along_x * psi_x / 2.0) / np.where(np.abs(sin_half_x) < peak_tol, 1.0, sin_half_x),
-        )
-        af_y = np.where(
-            np.abs(sin_half_y) < peak_tol,
-            float(elements_along_y),
-            np.sin(elements_along_y * psi_y / 2.0) / np.where(np.abs(sin_half_y) < peak_tol, 1.0, sin_half_y),
-        )
-
-        epsilon = 1e-12  # avoid log(0) at array-factor nulls
-        af_norm = np.abs(af_x * af_y) / (elements_along_x * elements_along_y)
-        af_db = 20.0 * np.log10(af_norm + epsilon)
-        return float(af_db) if af_db.ndim == 0 else af_db
-
-    def compute_array_factor_db_on_demand(
-        self,
-        theta_deg: float,
-        phi_deg: float,
-        steering_az_deg: float,
-        steering_el_deg: float,
-        freq_mhz: float,
-    ):
-        """
-        =========================================================================================================
-        Diagnostic uniform planar-array factor in dB at (theta, phi) with exact steering applied.
-
-        This helper is not used by the fixed-nadir link-budget gain path. It requires the RxAntenna
-        to have been initialized explicitly with array_geometry.
-
-        INPUTS:
-            theta_deg:        [float]   Polar angle from boresight [deg]
-            phi_deg:          [float]   Azimuth angle [deg]
-            steering_az_deg:  [float]   Steering azimuth [deg]
-            steering_el_deg:  [float]   Steering elevation (off-boresight) [deg]
-            freq_mhz:         [float]   Carrier frequency [MHz]
-
-        OUTPUT:
-            af_db: [float]   Array-factor magnitude in dB (peak = 0 dB at the steering direction)
-        =========================================================================================================
-        """
-        if getattr(self, "_array_geometry", None) is None:
-            raise ValueError(
-                "Array geometry not configured on RxAntenna. Pass an 'array_geometry' dict "
-                "(elements_along_x, elements_along_y, d_x, d_y) in settings to enable the diagnostic AF helper."
-            )
-        geom = self._array_geometry
-        freq_hz = float(freq_mhz) * 1e6
-        wavelength_m = Constants.SPEED_OF_LIGHT / freq_hz
-        k = 2 * np.pi / wavelength_m
-
-        steer_az_rad = np.deg2rad(steering_az_deg)
-        steer_el_rad = np.deg2rad(steering_el_deg)
-        beta_x = -k * geom["d_x"] * np.sin(steer_el_rad) * np.cos(steer_az_rad)
-        beta_y = -k * geom["d_y"] * np.sin(steer_el_rad) * np.sin(steer_az_rad)
-
-        return self._array_factor_db_at_direction(
-            geom["elements_along_x"],
-            geom["elements_along_y"],
-            geom["d_x"],
-            geom["d_y"],
-            freq_hz,
-            beta_x,
-            beta_y,
-            np.deg2rad(theta_deg),
-            np.deg2rad(phi_deg),
-        )
+        # Vectorised dB -> linear at the 4 corner cells, then weighted sum.
+        corners_db = pattern_db[[t_lo, t_lo, t_hi, t_hi], [p_lo, p_hi, p_lo, p_hi]]
+        corners_lin = np.power(10.0, corners_db / 10.0)
+        weights = np.array([(1.0 - wt) * (1.0 - wp), (1.0 - wt) * wp, wt * (1.0 - wp), wt * wp])
+        return float(np.dot(corners_lin, weights))
 
     def get_gain_dbi_for_direction(
         self,
@@ -480,13 +454,18 @@ class RxAntenna:
     ) -> float:
         """
         =========================================================================================================
-        Get fixed-nadir absolute gain [dBi] for a given look direction in antenna coordinates.
+        Get absolute gain [dBi] for a given look direction in antenna coordinates.
+
+        The beam auto-steers to the look direction (two-plane, capped per axis by max_azimuth_steering_deg /
+        max_elevation_steering_deg). Gain is the bilinear interpolation, in linear power, of the four stored
+        steered patterns bracketing the steering command; each contributes its own directivity (so scan loss
+        enters through the per-direction directivity).
 
         INPUTS:
             direction_antenna_frame: [np.ndarray, shape (3,)]   Look direction in antenna frame
             frequency_mhz:           [float]                    Carrier frequency [MHz]
-            azimuth_deg:             [float | None]             Retained for API compatibility; ignored.
-            elevation_deg:           [float | None]             Retained for API compatibility; ignored.
+            azimuth_deg:             [float | None]             Steering azimuth override [deg] (optional)
+            elevation_deg:           [float | None]             Steering elevation override [deg] (optional)
 
         OUTPUT:
             gain_dbi: [float]   Absolute gain [dBi], or NaN if direction is invalid / behind the antenna
@@ -505,48 +484,43 @@ class RxAntenna:
         if direction[2] <= 0.0:
             return np.nan
 
-        angles = self._direction_to_spherical_angles_deg(direction)
-        if angles is None:
+        # Pattern-sampling angles (spherical), used to read the stored pattern over (theta, phi).
+        theta_deg = float(np.degrees(np.arccos(np.clip(direction[2], -1.0, 1.0))))
+        phi_deg = float((np.degrees(np.arctan2(direction[1], direction[0])) + 360.0) % 360.0)
+
+        if azimuth_deg is None or elevation_deg is None:
+            steering_angles = self.resolve_steering_angles_for_direction(direction)
+            if steering_angles is None:
+                return np.nan
+            auto_azimuth_deg, auto_elevation_deg = steering_angles
+            steering_azimuth_deg = auto_azimuth_deg if azimuth_deg is None else float(azimuth_deg)
+            steering_elevation_deg = auto_elevation_deg if elevation_deg is None else float(elevation_deg)
+        else:
+            steering_azimuth_deg = float(azimuth_deg)
+            steering_elevation_deg = float(elevation_deg)
+
+        if self.max_azimuth_steering_deg is not None and abs(steering_azimuth_deg) > self.max_azimuth_steering_deg + 1e-9:
             return np.nan
-        theta_deg, phi_deg = angles
-
-        if self.max_fov_off_boresight_deg is not None and theta_deg > self.max_fov_off_boresight_deg:
-            return np.nan
-
-        unsteered_key = self._resolve_unsteered_footprint_lookup_key(frequency_mhz)
-        pattern_db = self._sample_radiation_pattern_db(unsteered_key, theta_deg, phi_deg)
-        if not np.isfinite(pattern_db):
-            return np.nan
-
-        return float(self.antenna_lookuptable[unsteered_key]["directivity_dB"] + pattern_db)
-
-    def _sample_radiation_pattern_db(self, frequency_key: float, theta_deg: float, phi_deg: float) -> float:
-        """Bilinearly sample the stored nadir-looking radiation pattern."""
-        pattern = np.asarray(self.antenna_lookuptable[frequency_key]["radiation_pattern_dB"], dtype=float)
-        n_theta, n_phi = pattern.shape
-        if n_theta == 0 or n_phi == 0 or not (0.0 <= theta_deg <= 180.0):
+        if self.max_elevation_steering_deg is not None and abs(steering_elevation_deg) > self.max_elevation_steering_deg + 1e-9:
             return np.nan
 
-        theta_pos = theta_deg / 180.0 * (n_theta - 1) if n_theta > 1 else 0.0
-        theta_0 = int(np.floor(theta_pos))
-        theta_1 = min(theta_0 + 1, n_theta - 1)
-        theta_frac = theta_pos - theta_0
+        # Bilinear interpolation of absolute gain across the 4 steering patterns bracketing
+        # (steering_azimuth_deg, steering_elevation_deg), evaluated in linear power.
+        corners = self._steering_bracket_keys_and_weights(frequency_mhz, steering_azimuth_deg, steering_elevation_deg)
+        total_linear = 0.0
+        for key, weight in corners:
+            if weight <= 0.0:
+                continue
+            lookup = self.antenna_lookuptable[key]
+            pattern_linear = self._bilinear_pattern_sample_linear(
+                lookup["radiation_pattern_dB"], theta_deg, phi_deg
+            )
+            directivity_linear = 10.0 ** (lookup["directivity_dB"] / 10.0)
+            total_linear += weight * directivity_linear * pattern_linear
 
-        # Stored grid is np.linspace(0, 360, n_phi, endpoint=False), so bin spacing is 360/n_phi.
-        # The sample after the last bin wraps periodically to bin 0.
-        phi_pos = (phi_deg % 360.0) / 360.0 * n_phi if n_phi > 1 else 0.0
-        phi_0 = int(np.floor(phi_pos))
-        phi_1 = (phi_0 + 1) % n_phi
-        phi_frac = phi_pos - phi_0
-
-        value_00 = pattern[theta_0, phi_0]
-        value_10 = pattern[theta_1, phi_0]
-        value_01 = pattern[theta_0, phi_1]
-        value_11 = pattern[theta_1, phi_1]
-
-        value_0 = (1.0 - theta_frac) * value_00 + theta_frac * value_10
-        value_1 = (1.0 - theta_frac) * value_01 + theta_frac * value_11
-        return float((1.0 - phi_frac) * value_0 + phi_frac * value_1)
+        if total_linear <= 0.0:
+            return np.nan
+        return float(10.0 * np.log10(total_linear))
 
     @staticmethod
     def _calculate_directivity(rad_pattern_lin_spherical, theta_rad, phi_rad, theta_mesh):
@@ -582,59 +556,91 @@ class RxAntenna:
 
         return directivity, directivity_dB
 
-    def _find_contour_vectors(self, rad_pattern_spherical_dB, theta_rad, phi_rad, theta_mesh, phi_mesh):
+    def _find_contour_vectors(self, rad_pattern_spherical_dB, steering_azimuth_deg, steering_elevation_deg):
         """
         =========================================================================================================
-        Find unit vectors pointing from antenna center toward the target dB contour, with interpolation.
+        Build the -|footprint_dB_contour| ring in a steering-command-centred local frame.
 
-        Assumes normalized radiation pattern where peak = 0 dB and all other values <= 0 dB.
+        The commanded front-lobe direction defines the axis n_peak. We sweep an off-peak azimuth psi around
+        n_peak in a tangent basis whose psi=0 direction is the projection of antenna +x onto the
+        tangent plane, and for each psi walk the off-peak angle gamma outward from 0 until the
+        pattern (bilinearly sampled in antenna-frame theta/phi) drops below footprint_dB_contour.
+
+        For unsteered patterns (n_peak = +z) this collapses to the antenna-frame (theta, phi) walk;
+        for steered patterns it yields a ring centred on the steered beam axis instead of the
+        antenna-frame fan the previous per-phi-slice walk produced. The global pattern maximum is
+        deliberately ignored because the pure array factor can have an equally strong back lobe.
 
         INPUTS:
             rad_pattern_spherical_dB: [np.ndarray]   Radiation pattern [dB], shape (n_theta, n_phi)
-            theta_rad:                [np.ndarray]   Polar angle samples [rad]
-            phi_rad:                  [np.ndarray]   Azimuth angle samples [rad]
-            theta_mesh:               [np.ndarray]   Meshgrid of theta values
-            phi_mesh:                 [np.ndarray]   Meshgrid of phi values
+            steering_azimuth_deg:     [float]        Commanded x-axis steering angle [deg]
+            steering_elevation_deg:   [float]        Commanded y-axis steering angle [deg]
 
         OUTPUT:
-            contour_vectors: [np.ndarray, shape (n_phi, 3)]   Unit vectors at the dB contour
+            contour_vectors: [np.ndarray, shape (footprint_resolution, 3)]   Main-lobe-centred ring vectors
         =========================================================================================================
         """
-        contour_vectors = []
+        n_theta_pat = rad_pattern_spherical_dB.shape[0]
 
-        for phi_i, phi_val in enumerate(phi_rad):
-            pattern_slice = rad_pattern_spherical_dB[:, phi_i]
-            peak_idx = np.argmax(pattern_slice)  # Finds 0dB point
+        sin_az = np.sin(np.radians(float(steering_azimuth_deg)))
+        sin_el = np.sin(np.radians(float(steering_elevation_deg)))
+        z_squared = 1.0 - sin_az**2 - sin_el**2
+        if z_squared <= 0.0:
+            raise ValueError("Steering command points outside the antenna front hemisphere.")
 
-            # Search outward from peak (0dB) toward self.footprint_dB_contour
-            theta = theta_rad[peak_idx]  # Default to peak
+        n_peak = np.array([
+            sin_az,
+            sin_el,
+            np.sqrt(z_squared),
+        ])
 
-            for direction in [1, -1]:  # Forward, then backward
-                start_idx = peak_idx + direction
-                end_idx = len(pattern_slice) if direction == 1 else -1
+        # Tangent basis at n_peak: psi=0 is the projection of antenna +x onto the tangent plane,
+        # so for n_peak = +z (unsteered) psi reduces to antenna-frame phi.
+        e_x = np.array([1.0, 0.0, 0.0])
+        tangent = e_x - np.dot(e_x, n_peak) * n_peak
+        if np.linalg.norm(tangent) < 1e-9:
+            # n_peak parallel to +x (would only happen at theta_p=90, phi_p=0); use +y as the reference.
+            e_y = np.array([0.0, 1.0, 0.0])
+            tangent = e_y - np.dot(e_y, n_peak) * n_peak
+        e_psi0 = tangent / np.linalg.norm(tangent)
+        e_psi90 = np.cross(n_peak, e_psi0)
 
-                for i in range(start_idx, end_idx, direction):
-                    if pattern_slice[i] <= self.footprint_dB_contour:
-                        # Interpolate for sub-sample accuracy
-                        prev_i = i - direction
-                        if pattern_slice[prev_i] != pattern_slice[i]:
-                            t = (self.footprint_dB_contour - pattern_slice[prev_i]) / (pattern_slice[i] - pattern_slice[prev_i])
-                            theta = theta_rad[prev_i] + t * (theta_rad[i] - theta_rad[prev_i])
-                        else:
-                            theta = theta_rad[i]
-                        break
-                else:
-                    continue  # No crossing in this direction
-                break  # Found crossing, stop searching
+        # Off-peak radial walk uses the same theta-resolution as the stored pattern.
+        gamma_grid = np.linspace(0.0, np.pi, n_theta_pat)
+        n_out = self.footprint_resolution
+        psi_grid = np.linspace(0.0, 2.0 * np.pi, n_out, endpoint=False)
+        theta_peak_deg = float(np.degrees(np.arccos(np.clip(n_peak[2], -1.0, 1.0))))
+        phi_peak_deg = float((np.degrees(np.arctan2(n_peak[1], n_peak[0])) + 360.0) % 360.0)
+        peak_lin = self._bilinear_pattern_sample_linear(rad_pattern_spherical_dB, theta_peak_deg, phi_peak_deg)
+        peak_dB = 10.0 * np.log10(max(peak_lin, 1e-30))
 
-            # Convert to unit vector
-            contour_vectors.append([
-                np.sin(theta) * np.cos(phi_val),
-                np.sin(theta) * np.sin(phi_val),
-                np.cos(theta)
-            ])
+        contour_vectors = np.zeros((n_out, 3), dtype=float)
+        for j, psi in enumerate(psi_grid):
+            u_psi = np.cos(psi) * e_psi0 + np.sin(psi) * e_psi90
 
-        return np.array(contour_vectors)
+            prev_dB = peak_dB
+            prev_gamma = 0.0
+            gamma_c = gamma_grid[-1]  # default if no crossing (would mean pattern stays above threshold)
+            for gamma in gamma_grid[1:]:
+                d = np.cos(gamma) * n_peak + np.sin(gamma) * u_psi
+                theta_d_deg = float(np.degrees(np.arccos(np.clip(d[2], -1.0, 1.0))))
+                phi_d_deg = float((np.degrees(np.arctan2(d[1], d[0])) + 360.0) % 360.0)
+                val_lin = self._bilinear_pattern_sample_linear(rad_pattern_spherical_dB, theta_d_deg, phi_d_deg)
+                val_dB = 10.0 * np.log10(max(val_lin, 1e-30))
+
+                if val_dB <= self.footprint_dB_contour:
+                    if prev_dB != val_dB:
+                        t = (self.footprint_dB_contour - prev_dB) / (val_dB - prev_dB)
+                        gamma_c = prev_gamma + t * (gamma - prev_gamma)
+                    else:
+                        gamma_c = gamma
+                    break
+                prev_dB = val_dB
+                prev_gamma = gamma
+
+            contour_vectors[j] = np.cos(gamma_c) * n_peak + np.sin(gamma_c) * u_psi
+
+        return contour_vectors
 
 class PlotRadiationPattern:
     def __init__(self, spherical_coordinates, arrow = None):

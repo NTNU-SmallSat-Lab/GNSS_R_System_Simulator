@@ -83,7 +83,11 @@ class BRP:
         # direction from the LEO is parallel to (LEO - Tx), so we can check the off-boresight
         # angle without solving for the BRP first — saves the quadratic for samples the antenna
         # could never receive from anyway.
-        antenna_fov_gating = antenna is not None and getattr(antenna, "max_fov_off_boresight_deg", None) is not None
+        antenna_fov_gating = (
+            antenna is not None
+            and getattr(antenna, "max_azimuth_steering_deg", None) is not None
+            and getattr(antenna, "max_elevation_steering_deg", None) is not None
+        )
 
         # --- Compute BRP for each GLOBAL index (geometry only; defer ECI conversion to batch below)
         for k in valid_idx:
@@ -104,9 +108,13 @@ class BRP:
                 if look_eci_norm <= 0.0:
                     continue
                 look_a = R_eci_to_antenna @ (look_eci / look_eci_norm)
-                # Antenna boresight is +z in the antenna frame; off-boresight = arccos(look_a[2]).
-                off_boresight_deg = np.degrees(np.arccos(np.clip(look_a[2], -1.0, 1.0)))
-                if off_boresight_deg > antenna.max_fov_off_boresight_deg:
+                # Two-plane steering: azimuth = asin(x-component), elevation = asin(y-component);
+                # reject if the beam can't be steered to this direction (behind, or beyond per-axis limit).
+                if look_a[2] <= 0.0:
+                    continue
+                az_scan_deg = np.degrees(np.arcsin(np.clip(look_a[0], -1.0, 1.0)))
+                el_scan_deg = np.degrees(np.arcsin(np.clip(look_a[1], -1.0, 1.0)))
+                if abs(az_scan_deg) > antenna.max_azimuth_steering_deg + 1e-9 or abs(el_scan_deg) > antenna.max_elevation_steering_deg + 1e-9:
                     continue
 
             brp, tval, reason = calculate_ellipsoid_intersection_t(T_ecef, R_ecef, a=a, b=b, max_central_angle_deg=self.max_central_angle_deg)
