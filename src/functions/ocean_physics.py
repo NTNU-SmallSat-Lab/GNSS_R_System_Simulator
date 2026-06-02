@@ -25,8 +25,9 @@ def seawater_permittivity(frequency_hz, temperature_c, salinity_psu):
         salinity_psu:   [scalar]          Salinity [practical salinity units / per mille] (valid ~ 0 to 40)
 
     OUTPUT:
-        eps_r: [complex] Relative permittivity (real - j * imag). The imaginary part is positive
-                         under the exp(+j omega t) convention used here.
+        eps_r: [complex] Relative permittivity (real - j * imag). The imaginary part is negative
+                         under the exp(+j omega t) convention used here (both Debye relaxation and
+                         ionic conductivity are losses and add to the same negative-imaginary sign).
     """
     f_hz = np.asarray(frequency_hz, dtype=float)
     T = float(temperature_c)
@@ -54,7 +55,7 @@ def seawater_permittivity(frequency_hz, temperature_c, salinity_psu):
     sigma_ionic = sigma_25 * np.exp(-delta * beta)                      # conductivity at T
 
     omega = 2.0 * np.pi * f_hz                                          # angular frequency [rad/s]
-    eps_r = eps_inf + (eps_s - eps_inf) / (1.0 - 1j * omega * tau) - 1j * sigma_ionic / (omega * EPS_0)    # Debye + ionic loss
+    eps_r = eps_inf + (eps_s - eps_inf) / (1.0 + 1j * omega * tau) - 1j * sigma_ionic / (omega * EPS_0)    # Debye + ionic loss
     return eps_r
 
 
