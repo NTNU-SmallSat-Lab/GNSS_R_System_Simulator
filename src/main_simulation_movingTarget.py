@@ -123,14 +123,8 @@ def run_moving_target_detection(settings: dict):
     mtd.show_link_budget_contributions(file_name=contributions_plot, show_figure=False)
     print(f"Pr breakdown plot saved as: {contributions_plot}")
 
-    # Optional: Animation (Set to True via settings if needed)
-    if settings.get("create_animation", False):
-        mtd.create_reflection_animation(
-            time_step_min=5,
-            output_format="mp4",
-            output_filename="Reflection_animation.mp4",
-            fps=2
-        )
+    if settings["create_animation"]:
+        mtd.create_reflection_animation(**settings["animation_settings"])
 
 if __name__ == "__main__":
     # Initialize returns both config (raw) and settings (processed)

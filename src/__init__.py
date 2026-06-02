@@ -464,6 +464,34 @@ def initialize(config_file_name="Configuration.ini"):
                 f"Invalid value for 'detection_bbox_buffer_deg' in [PLOT]: {config['PLOT']['detection_bbox_buffer_deg']}"
             ) from None
 
+    # --- [PLOT] animation knobs (moving-target only) ---
+    # Animation only applies when [MOVING TARGET] is present. INI-strict:
+    # create_animation must be set; its sub-knobs are required when it is True.
+    create_animation = False
+    animation_settings = None
+    if "MOVING TARGET" in config:
+        if "PLOT" not in config or "create_animation" not in config["PLOT"]:
+            raise ValueError("[PLOT].create_animation is required when [MOVING TARGET] is present.")
+        plot_section = config["PLOT"]
+        try:
+            create_animation = plot_section.getboolean("create_animation")
+        except ValueError:
+            raise ValueError(
+                f"Invalid boolean for [PLOT].create_animation: {plot_section['create_animation']}"
+            ) from None
+        if create_animation:
+            required_anim_keys = ("animation_filename", "animation_fps")
+            missing_anim = [k for k in required_anim_keys if k not in plot_section]
+            if missing_anim:
+                raise ValueError(f"[PLOT] keys required when create_animation = True: {missing_anim}")
+            try:
+                animation_settings = {
+                    "output_filename": plot_section["animation_filename"].strip().strip('"').strip("'"),
+                    "fps": int(plot_section["animation_fps"]),
+                }
+            except ValueError as e:
+                raise ValueError(f"Invalid value in [PLOT] animation settings: {e}") from None
+
 
     simulation_settings = {
         #[SIMULATION SETTINGS]
@@ -499,6 +527,8 @@ def initialize(config_file_name="Configuration.ini"):
         "link_budget": link_budget,
         #[PLOT]
         "detection_bbox_buffer_deg": detection_bbox_buffer_deg,
+        "create_animation": create_animation,
+        "animation_settings": animation_settings,
     }
     return config, simulation_settings
 

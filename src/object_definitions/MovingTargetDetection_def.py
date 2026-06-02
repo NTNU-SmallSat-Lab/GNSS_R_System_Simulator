@@ -2,7 +2,6 @@ from bisect import bisect_left
 from collections import defaultdict, namedtuple
 from dataclasses import dataclass, field
 import datetime as dt
-from datetime import timedelta
 import logging
 import os
 
@@ -1030,27 +1029,46 @@ class MovingTargetDetection:
             plt.close(fig)
             return img_array
 
-    def create_reflection_animation(self, time_step_min=3, output_format="gif", output_filename=None, fps=3):
+    def create_reflection_animation(self, output_filename=None, fps=3):
         """
         =========================================================================================================
-        Create an animation showing reflections over time. Supports GIF or video (MP4/AVI) output.
+        Create a GIF animation showing reflections over time.
 
         INPUTS:
-            time_step_min:   [float]        Time step between frames [min] (default: 3)
-            output_format:   [str]          'gif', 'mp4', or 'avi' (default: 'gif')
             output_filename: [str | None]   Output filename (default: timestamped)
             fps:             [int]          Frames per second (default: 3)
         =========================================================================================================
         """
         logger.info("Creating an animation of the moving target and the reflections")
 
-        # Generate time points
+        # Frame times: the native reflection-sample grid (simulation step), restricted to timestamps
+        # that have at least one reflection inside the map extent. Specular points sweep the ground at
+        # several km/s, so sampling coarser than the simulation step makes them appear to teleport/blink
+        # instead of travel; timestamps with no in-view reflection (dead time) are skipped.
+        buffer_deg = self.bbox_buffer_deg
+        min_lon, max_lon, min_lat, max_lat = self.bounding_box
+        west, east = min_lon - buffer_deg, max_lon + buffer_deg
+        south, north = min_lat - buffer_deg, max_lat + buffer_deg
+
+        all_refl_times = sorted({t for refls in self.reflection_dict_timeSorted.values() for t in refls})
+
         time_points = []
-        current_time = self.moving_target_object.start_time
-        end_time = self.moving_target_object.end_time
-        while current_time <= end_time:
-            time_points.append(current_time)
-            current_time += timedelta(minutes=time_step_min)
+        for t in all_refl_times:
+            in_view = False
+            for refls in self.reflection_dict_timeSorted.values():
+                for ref in refls.get(t, ()):
+                    lat, lon = ref.refl_obj.refl_LL_vec[ref.time_index]   # reflection point at this sample
+                    if np.isfinite(lat) and np.isfinite(lon) and west <= lon <= east and south <= lat <= north:
+                        in_view = True
+                        break
+                if in_view:
+                    break
+            if in_view:
+                time_points.append(t)
+
+        if not time_points:
+            logger.warning("No in-view reflection timestamps found; skipping animation.")
+            return
 
         logger.info(f"Creating {len(time_points)} frames...")
 
@@ -1073,23 +1091,13 @@ class MovingTargetDetection:
         # Create output filename
         if output_filename is None:
             timestamp = self.moving_target_object.start_time.strftime("%Y%m%d_%H%M")
-            output_filename = f"animation_{timestamp}.{output_format}"
+            output_filename = f"animation_{timestamp}.gif"
 
         output_path = os.path.join(Constants.output_folder_path, output_filename)
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-        logger.info(f"Creating {output_format} at {output_path}...")
-
-        # Save as MP4 or GIF
-        if output_format.lower() in ["mp4", "avi"]:
-            # Video writer
-            writer = imageio.get_writer(output_path, fps=fps, codec="libx264")
-            for frame in frames:
-                writer.append_data(frame)
-            writer.close()
-        else:
-            # GIF
-            imageio.mimsave(output_path, frames, fps=fps)
+        logger.info(f"Creating gif at {output_path}...")
+        imageio.mimsave(output_path, frames, fps=fps)
 
         logger.info(f"Animation created at: {output_path}")
 
