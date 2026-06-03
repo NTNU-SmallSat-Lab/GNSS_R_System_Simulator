@@ -31,6 +31,7 @@ gnssr_satID_*.tle
 *.FFephem
 *.e
 *.bsp
+*.tle
 
 # Generated shapefile sidecars and gridded derivatives
 *.cpg
