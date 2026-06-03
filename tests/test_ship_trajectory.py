@@ -170,7 +170,9 @@ class TestTrajectoryCacheLoading:
 
         assert called["load"]
 
-    def test_changed_metadata_still_loads_existing_cache(self, tmp_path, monkeypatch):
+    def test_changed_metadata_regenerates(self, tmp_path, monkeypatch):
+        # A changed ship_speed_m_s in the cached metadata makes the cache stale: the trajectory is
+        # time-sampled from the speed, so initialize() must regenerate the route, not load the cache.
         ship = _configured_cache_ship()
         monkeypatch.setattr(Constants, "autogen_ship_shapefiles", str(tmp_path))
         (tmp_path / "CacheShip_trajectory.shp").write_text("")
@@ -178,10 +180,13 @@ class TestTrajectoryCacheLoading:
         metadata["ship_speed_m_s"] = ship.ship_speed + 1.0
         (tmp_path / "CacheShip_trajectory_metadata.json").write_text(json.dumps(metadata))
 
-        called = {"load": False}
-        monkeypatch.setattr(ship, "load_class_from_file", lambda: called.__setitem__("load", True))
-        monkeypatch.setattr(ship, "plan_route", lambda _save_graph: pytest.fail("existing cache should load, not regenerate"))
+        called = {"plan": False}
+        monkeypatch.setattr(ship, "load_class_from_file", lambda: pytest.fail("stale cache should regenerate, not load"))
+        monkeypatch.setattr(ship, "plan_route", lambda _save_graph: called.__setitem__("plan", True))
+        # Downstream steps need real planned state; stub them so initialize() completes after plan_route.
+        monkeypatch.setattr(ship, "generate_trajectory_equal_time", lambda: None)
+        monkeypatch.setattr(ship, "create_trajectory_files", lambda: None)
 
         ship.initialize(None, save_graph=False)
 
-        assert called["load"]
+        assert called["plan"]

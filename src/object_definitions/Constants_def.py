@@ -10,6 +10,12 @@ class Constants:
       - This class contains all the constants used in the project
     =========================================================================================================
     """
+    ###########################
+    # Unit conversions
+    ###########################    
+    DEG2RAD = np.pi / 180.0  # Degrees to radians conversion factor
+    RAD2DEG = 180.0 / np.pi  # Radians to degrees
+    MHZ_TO_HZ = 1e6  # Megahertz to Hertz conversion factor
 
     ###########################
     # Physical constants
@@ -49,6 +55,11 @@ class Constants:
         [0, -1, 0],
         [0, 0, -1]
     ])  # Rotation matrix from body-fixed to VNC coordinate system (normal)
+    R_antenna_to_body = np.array([
+            [0, 1, 0],
+            [-1, 0, 0],
+            [0, 0, 1]
+        ])
 
     ###########################
     # GNSS-constants

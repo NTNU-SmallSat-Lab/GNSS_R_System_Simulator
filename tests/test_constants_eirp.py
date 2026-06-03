@@ -1,4 +1,6 @@
-"""Unit tests for Constants.GNSS_EIRP_DBW and the get_tx_eirp_dbw lookup helper."""
+"""
+Unit tests for Constants.GNSS_EIRP_DBW and the get_tx_eirp_dbw lookup helper.
+"""
 
 import pytest
 

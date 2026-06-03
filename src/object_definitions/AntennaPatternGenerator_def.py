@@ -18,7 +18,9 @@ PATTERN_FILE_PATTERN = "array_factor_*.json"
 
 class ArrayFactor:
     def __init__(self, elements_along_x, elements_along_y, freq_hz, d_x, d_y, beta_x, beta_y):
-        """Phased-array factor: psi = k d sin(theta) [cos|sin](phi) + beta, summed over elements."""
+        """
+        Phased-array factor: psi = k d sin(theta) [cos|sin](phi) + beta, summed over elements.
+        """
         wavelength_m = Constants.SPEED_OF_LIGHT / freq_hz
 
         self.elements_along_x = elements_along_x
@@ -30,7 +32,9 @@ class ArrayFactor:
         self.beta_y = beta_y
 
     def calculate_array_factor(self, theta, phi):
-        """Compute the (theta x phi) array factor pattern in dB, normalized to a 0 dB peak."""
+        """
+        Compute the (theta x phi) array factor pattern in dB, normalized to a 0 dB peak.
+        """
         psi_x = self.k * self.d_x * np.sin(theta) * np.cos(phi) + self.beta_x
         psi_y = self.k * self.d_y * np.sin(theta) * np.sin(phi) + self.beta_y
 
@@ -45,8 +49,9 @@ class ArrayFactor:
 
 
 class AntennaPatternGenerator:
-    """Generate (or reuse cached) phased-array radiation-pattern JSON files for the receiver antenna."""
-
+    """
+    Generate (or reuse cached) phased-array radiation-pattern JSON files for the receiver antenna.
+    """
     def __init__(
         self,
         elements_along_x,
@@ -73,7 +78,9 @@ class AntennaPatternGenerator:
             elevation_steering: [list]        [start_deg, end_deg, n_steps] beam tilt sweep along the array y-axis
             output_folder:      [str]         Path to write generated JSON files
             theta_resolution:   [int]         Number of theta samples in each pattern (0..180 deg), default 180
+                                              -> Polar angle off boresight: θ=0° is straight along boresight, θ=90° is the side (horizon), θ=180° is straight back.
             phi_resolution:     [int]         Number of phi samples in each pattern (0..360 deg), default 360
+                                              -> Azimuthal angle around boresight: φ=0° is along the array x-axis, φ=90° is along the array y-axis
         """
         self.elements_x = int(elements_along_x)
         self.elements_y = int(elements_along_y)
@@ -98,7 +105,9 @@ class AntennaPatternGenerator:
             )
 
     def _steering_sweeps_deg(self):
-        """Return (azimuth_sweep_deg, elevation_sweep_deg) arrays from the [start, end, n_steps] specs."""
+        """
+        Return (azimuth_sweep_deg, elevation_sweep_deg) arrays from the [start, end, n_steps] specs.
+        """
         azimuth_sweep = np.linspace(self.azimuth_steering[0], self.azimuth_steering[1], self.azimuth_steering[2])
         elevation_sweep = np.linspace(self.elevation_steering[0], self.elevation_steering[1], self.elevation_steering[2])
         return azimuth_sweep, elevation_sweep
@@ -122,7 +131,9 @@ class AntennaPatternGenerator:
     _GENERATOR_FORMAT_VERSION = 6
 
     def _signature(self):
-        """Dict of every parameter that affects the generated JSONs; used as a cache key."""
+        """
+        Dict of every parameter that affects the generated JSONs; used as a cache key.
+        """
         return {
             "generator_format_version": self._GENERATOR_FORMAT_VERSION,
             "elements_along_x": self.elements_x,
@@ -137,11 +148,15 @@ class AntennaPatternGenerator:
         }
 
     def _metadata_path(self):
-        """Path to the metadata JSON written alongside the generated patterns."""
+        """
+        Path to the metadata JSON written alongside the generated patterns.
+        """
         return self.output_folder / METADATA_FILENAME
 
     def _expected_filenames(self):
-        """Yield the filename for every (frequency, steering-azimuth, steering-elevation) generate() will produce."""
+        """
+        Yield the filename for every (frequency, steering-azimuth, steering-elevation) generate() will produce.
+        """
         azimuth_sweep, elevation_sweep = self._steering_sweeps_deg()
         for freq in self.freqs:
             for az_deg in azimuth_sweep:
@@ -149,7 +164,9 @@ class AntennaPatternGenerator:
                     yield f"array_factor_{freq}MHz_{az_deg:.2f}az_{el_deg:.2f}el.json"
 
     def _all_files_exist(self):
-        """True if every expected pattern JSON is present on disk."""
+        """
+        True if every expected pattern JSON is present on disk.
+        """
         filenames = list(self._expected_filenames())
         if not filenames:
             raise ValueError(
@@ -161,7 +178,9 @@ class AntennaPatternGenerator:
         return existing == len(filenames)
 
     def _warn_unexpected_pattern_files(self):
-        """Warn when generator-owned output_folder contains array-factor files outside the current sweep."""
+        """
+        Warn when generator-owned output_folder contains array-factor files outside the current sweep.
+        """
         expected = set(self._expected_filenames())
         existing = {path.name for path in self.output_folder.glob(PATTERN_FILE_PATTERN)}
         unexpected = sorted(existing - expected)
@@ -178,7 +197,9 @@ class AntennaPatternGenerator:
         )
 
     def _load_cached_signature(self):
-        """Return the signature recorded by a prior generate() run, or None if missing/unreadable."""
+        """
+        Return the signature recorded by a prior generate() run, or None if missing/unreadable.
+        """
         path = self._metadata_path()
         if not path.exists():
             return None
@@ -190,7 +211,9 @@ class AntennaPatternGenerator:
             return None
 
     def _purge_existing_patterns(self):
-        """Remove every array_factor_*.json + the metadata file from output_folder."""
+        """
+        Remove every array_factor_*.json + the metadata file from output_folder.
+        """
         if not self.output_folder.exists():
             return
         for stale in self.output_folder.glob(PATTERN_FILE_PATTERN):
@@ -206,13 +229,17 @@ class AntennaPatternGenerator:
                 print(f"[AntennaPatternGenerator] Could not delete '{meta}': {e}")
 
     def _write_metadata(self):
-        """Persist the current signature so the next run can decide whether to skip generation."""
+        """
+        Persist the current signature so the next run can decide whether to skip generation.
+        """
         with open(self._metadata_path(), "w") as f:
             json.dump(self._signature(), f, indent=2)
 
     def generate(self):
-        """Generate (or reuse cached) per-(freq, steering-az, steering-el) JSON pattern files based on a metadata signature."""
-        self.output_folder.mkdir(parents=True, exist_ok=True)
+        """
+        Generate (or reuse cached) per-(freq, steering-az, steering-el) JSON pattern files based on a metadata signature.
+        """
+        self.output_folder.mkdir(parents=True, exist_ok=True) # ensure the output folder exists before checking for cached files
 
         current_signature = self._signature()
         cached_signature = self._load_cached_signature()
@@ -234,28 +261,29 @@ class AntennaPatternGenerator:
         self._purge_existing_patterns()
 
         # Pattern grid (theta = polar 0..180 deg, phi = azimuthal 0..360 deg)
-        theta = np.linspace(0, 180, self.theta_resolution).reshape(-1, 1) * np.pi / 180
-        phi = np.linspace(0, 360, self.phi_resolution, endpoint=False).reshape(1, -1) * np.pi / 180
+        theta = np.linspace(0, 180, self.theta_resolution).reshape(-1, 1) * Constants.DEG2RAD
+        phi = np.linspace(0, 360, self.phi_resolution, endpoint=False).reshape(1, -1) * Constants.DEG2RAD
 
         # Steering sweep (two-plane): azimuth = tilt along array x-axis, elevation = tilt along y-axis.
         azimuth_sweep_deg, elevation_sweep_deg = self._steering_sweeps_deg()
-        azimuth_sweep = azimuth_sweep_deg * np.pi / 180
-        elevation_sweep = elevation_sweep_deg * np.pi / 180
+        azimuth_sweep = azimuth_sweep_deg * Constants.DEG2RAD
+        elevation_sweep = elevation_sweep_deg * Constants.DEG2RAD
 
         # Write one steered pattern per (freq, steering-az, steering-el). The progressive phase shift
         # beta steers the array peak to direction (sin az, sin el, .); RxAntenna bilinearly
         # interpolates gain between neighbouring grid steering directions.
         for freq in self.freqs:
-            freq_hz = freq * 1e6
-            k = 2 * np.pi / (Constants.SPEED_OF_LIGHT / freq_hz)
+            freq_hz = freq * Constants.MHZ_TO_HZ #[Hz]
+            lambda_m = Constants.SPEED_OF_LIGHT / freq_hz # [m] wavelength
+            k = 2 * np.pi / lambda_m # [rad/m] Angular wavenumber
 
             for az_direction in azimuth_sweep:
                 for el_direction in elevation_sweep:
                     beta_x = -k * self.d_x * np.sin(az_direction)
                     beta_y = -k * self.d_y * np.sin(el_direction)
 
-                    az_deg = az_direction * 180 / np.pi
-                    el_deg = el_direction * 180 / np.pi
+                    az_deg = az_direction * Constants.RAD2DEG
+                    el_deg = el_direction * Constants.RAD2DEG
 
                     af = ArrayFactor(self.elements_x, self.elements_y, freq_hz, self.d_x, self.d_y, beta_x, beta_y)
                     pattern_db = af.calculate_array_factor(theta, phi)
@@ -282,7 +310,8 @@ class AntennaPatternGenerator:
     _PLOT_DB_FLOOR = -40.0
 
     def _plot_boresight_pattern(self):
-        """Render the boresight (az=0, el=0) array factor as a dB radiation pattern plot per frequency.
+        """
+        Render the boresight (az=0, el=0) array factor as a dB radiation pattern plot per frequency.
 
         For each configured frequency, writes one PNG to OUTPUT/antennaRadiationPattern/:
           - <freq>MHz.png — 2D polar cut in dB (phi=0 and phi=90) + 3D dB surface (clipped at floor)
@@ -318,7 +347,9 @@ class AntennaPatternGenerator:
 
     @staticmethod
     def _render_pattern_figure(*, path, title, theta_1d, theta_mesh, phi_mesh, pattern_dB, floor_dB, phi0_idx, phi90_idx):
-        """One 2-panel figure: polar cut and 3D surface, both in dB, with a shared floor."""
+        """
+        One 2-panel figure: polar cut and 3D surface, both in dB, with a shared floor.
+        """
         fig = plt.figure(figsize=(14, 6))
 
         # 2D polar cut in dB: phi=0 (solid), phi=90 (dashed). Boresight at top, theta sweeps clockwise.

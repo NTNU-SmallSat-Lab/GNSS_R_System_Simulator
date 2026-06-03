@@ -1,4 +1,5 @@
-"""Unit tests for pure helpers in SRC/functions/functions.py.
+"""
+Unit tests for pure helpers in SRC/functions/functions.py.
 
 Covers the side-effect-free helpers — datetime coercion, vector math,
 GNSS-arg normalization, geodetic/ECEF conversion, and the

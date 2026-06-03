@@ -91,11 +91,7 @@ class RxAntenna:
         self.polarizations = settings.get("polarizations")
         self.bands = settings.get("bands")
         self.footprint_resolution = 64
-        self.R_antenna_to_body = np.array([
-            [0, 1, 0],
-            [-1, 0, 0],
-            [0, 0, 1]
-        ])
+        self.R_antenna_to_body = Constants.R_antenna_to_body
 
         self._initialize(antenna_patterns_temp)
 

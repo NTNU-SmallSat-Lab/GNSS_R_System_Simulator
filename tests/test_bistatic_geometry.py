@@ -1,4 +1,6 @@
-"""Unit tests for BistaticGeometry and build_bistatic_geometry in functions/link_budget.py."""
+"""
+Unit tests for BistaticGeometry and build_bistatic_geometry in functions/link_budget.py.
+"""
 
 import numpy as np
 import pytest
@@ -7,7 +9,9 @@ from functions.link_budget import BistaticGeometry, build_bistatic_geometry
 
 
 def _stack_tx_rx(tx: np.ndarray, rx: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Reshape two (3,) vectors to (3, 1) for single-sample tests."""
+    """
+    Reshape two (3,) vectors to (3, 1) for single-sample tests.
+    """
     return tx.reshape(3, 1), rx.reshape(3, 1)
 
 

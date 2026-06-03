@@ -1,4 +1,5 @@
-"""Deterministic in-memory RxAntenna fixture for golden-file regression tests.
+"""
+Deterministic in-memory RxAntenna fixture for golden-file regression tests.
 
 Bypasses RxAntenna.__init__ and populates the attributes that get_gain_dbi_for_direction
 depends on: a tuple-keyed (azimuth, elevation, frequency) lookup of steered patterns plus the
@@ -25,7 +26,8 @@ PATTERN_FALLOFF_DB_PER_DEG = 0.2
 
 
 def _steered_pattern_db(az_steer_deg: float, el_steer_deg: float) -> np.ndarray:
-    """Synthetic steered power pattern (dB), peak 0 dB at the steering direction.
+    """
+    Synthetic steered power pattern (dB), peak 0 dB at the steering direction.
 
     The steered beam axis is the sine-space direction (sin az, sin el, .); gain falls off linearly
     with angular separation from that axis, so different steering commands give different samples at
@@ -50,7 +52,9 @@ def _steered_pattern_db(az_steer_deg: float, el_steer_deg: float) -> np.ndarray:
 
 
 def make_test_antenna() -> RxAntenna:
-    """Build a deterministic two-plane steerable RxAntenna with a known steered-pattern sweep."""
+    """
+    Build a deterministic two-plane steerable RxAntenna with a known steered-pattern sweep.
+    """
     antenna = RxAntenna.__new__(RxAntenna)
     antenna.R_antenna_to_body = np.array([
         [0.0, 1.0, 0.0],
@@ -83,7 +87,9 @@ def make_test_antenna() -> RxAntenna:
 
 
 def gain_sampling_grid() -> tuple:
-    """Deterministic input grid: look directions (theta, phi) x steering commands (az, el)."""
+    """
+    Deterministic input grid: look directions (theta, phi) x steering commands (az, el).
+    """
     theta_deg = np.array([5.0, 15.0, 30.0, 60.0])
     phi_deg = np.array([0.0, 45.0, 90.0, 135.0, 180.0, 270.0, 359.0])
     az_steer = np.array([-40.0, -15.0, 0.0, 20.0, 40.0])
@@ -92,8 +98,10 @@ def gain_sampling_grid() -> tuple:
 
 
 def compute_gain_grid(antenna: RxAntenna) -> np.ndarray:
-    """Compute gain across the full sampling grid; returns a 4D ndarray of shape
-    (n_theta, n_phi, n_az_steer, n_el_steer)."""
+    """
+    Compute gain across the full sampling grid; returns a 4D ndarray of shape
+    (n_theta, n_phi, n_az_steer, n_el_steer).
+    """
     theta_deg, phi_deg, az_steer, el_steer = gain_sampling_grid()
 
     gains = np.full((len(theta_deg), len(phi_deg), len(az_steer), len(el_steer)), np.nan)

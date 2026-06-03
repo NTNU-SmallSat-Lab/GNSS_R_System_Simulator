@@ -1,4 +1,5 @@
-"""Unit tests for the backscatter BRP geometry in BackScattPoint_def.py.
+"""
+Unit tests for the backscatter BRP geometry in BackScattPoint_def.py.
 
 The pure-geometry helper `calculate_ellipsoid_intersection_t` is exercised
 directly (no Satellite objects, no pymap3d). The antenna-FOV pre-gate inside
@@ -100,12 +101,15 @@ class TestEllipsoidIntersection:
 
 
 def _make_satellite_stub(positions_eci: np.ndarray, velocities_eci: np.ndarray) -> types.SimpleNamespace:
-    """Tiny stand-in for a Satellite — only the two attributes BRP.compute_brp_coordinates reads."""
+    """
+    Tiny stand-in for a Satellite — only the two attributes BRP.compute_brp_coordinates reads.
+    """
     return types.SimpleNamespace(positions_eci=positions_eci, velocities_eci=velocities_eci)
 
 
 class TestAntennaFovPreGate:
-    """The pre-gate skips BRPs whose retroreflector look direction falls outside the LEO antenna FOV.
+    """
+    The pre-gate skips BRPs whose retroreflector look direction falls outside the LEO antenna FOV.
 
     Geometry: LEO at 700 km on the +x axis with velocity along +y (typical near-polar pass). With
     the fixture's R_antenna_to_body and the codebase's R_body_to_vnc_normal, the antenna boresight
@@ -115,7 +119,9 @@ class TestAntennaFovPreGate:
 
     @staticmethod
     def _build_state(tx_offset_along_y: float):
-        """LEO at 700 km +x with +y velocity; Tx at GPS altitude, displaced along +y for a controlled off-nadir BRP."""
+        """
+        LEO at 700 km +x with +y velocity; Tx at GPS altitude, displaced along +y for a controlled off-nadir BRP.
+        """
         rx_pos = np.array([[WGS84_A + 700_000.0], [0.0], [0.0]])         # shape (3, 1)
         rx_vel = np.array([[0.0], [7_500.0], [0.0]])                     # shape (3, 1)
         gnss_alt = WGS84_A + 20_200_000.0

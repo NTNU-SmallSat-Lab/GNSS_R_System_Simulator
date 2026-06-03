@@ -42,6 +42,13 @@ __version__ = "0.1.0"
 
 
 def _check_python_version() -> None:
+    """
+    Check the current Python version against the simulator's supported 'Python range' and issue warnings if it's outside that range!
+
+    The simulator has been tested on Python 3.12.x, and the pyproject.toml
+    specifies a minimum of 3.12.3. Running on versions below 3.12.3 may lead to compatibility issues, while running on versions above 3.12
+    (e.g., 3.13) may cause issues with certain dependencies like debugpy and cartopy.
+    """
     current = sys.version_info[:3]
     current_str = ".".join(map(str, current))
     if current < _PYTHON_MIN:

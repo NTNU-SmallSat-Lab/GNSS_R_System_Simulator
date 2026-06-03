@@ -1,4 +1,5 @@
-"""Unit tests for the configuration parser in SRC/__init__.py::initialize.
+"""
+Unit tests for the configuration parser in SRC/__init__.py::initialize.
 
 These tests exercise the parsing surface only — they never propagate orbits,
 generate antenna patterns, or read TLE files. To stay on the parsing side of
@@ -91,9 +92,20 @@ MINIMAL_MOVING_TARGET = dedent(
     """
 )
 
+# The loader requires [PLOT].create_animation whenever [MOVING TARGET] is present,
+# so any config that parses a moving target to completion must also supply it.
+MINIMAL_PLOT = dedent(
+    """\
+    [PLOT]
+    create_animation = false
+    """
+)
+
 
 def write_config(tmp_path, body: str) -> str:
-    """Write the given INI body to a temporary file and return its path."""
+    """
+    Write the given INI body to a temporary file and return its path.
+    """
     config_path = tmp_path / "config.ini"
     config_path.write_text(body, encoding="utf-8")
     return str(config_path)
@@ -109,7 +121,9 @@ def minimal_config_body(
     ocean_section: str = MINIMAL_OCEAN,
     extra_sections: str = "",
 ) -> str:
-    """Compose a minimal-but-valid INI body that initialize() can parse."""
+    """
+    Compose a minimal-but-valid INI body that initialize() can parse.
+    """
     return "\n".join(
         [
             MINIMAL_SIMULATION_SETTINGS + extra_sim_settings,
@@ -375,7 +389,7 @@ class TestOptionalSections:
         assert settings["ship"] is None
 
     def test_moving_target_section_parses(self, tmp_path):
-        path = write_config(tmp_path, minimal_config_body(extra_sections=MINIMAL_MOVING_TARGET + MINIMAL_SHIP))
+        path = write_config(tmp_path, minimal_config_body(extra_sections=MINIMAL_MOVING_TARGET + MINIMAL_SHIP + MINIMAL_PLOT))
         _, settings = initialize(path)
         assert settings["moving_target_speed"] == 12.5
         assert settings["start_coord_ll"] == (60.0, 5.0)
@@ -495,7 +509,7 @@ class TestOptionalSections:
             initialize(path)
 
     def test_ship_section_parses(self, tmp_path):
-        path = write_config(tmp_path, minimal_config_body(extra_sections=MINIMAL_MOVING_TARGET + MINIMAL_SHIP))
+        path = write_config(tmp_path, minimal_config_body(extra_sections=MINIMAL_MOVING_TARGET + MINIMAL_SHIP + MINIMAL_PLOT))
         _, settings = initialize(path)
         assert settings["ship"] == {"length_m": 100.0, "beam_m": 15.0, "freeboard_m": 5.0}
 

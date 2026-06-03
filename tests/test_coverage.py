@@ -1,4 +1,5 @@
-"""Tests for Coverage — gridding, validity-mask filtering, cluster splitting.
+"""
+Tests for Coverage — gridding, validity-mask filtering, cluster splitting.
 
 What's covered:
   * Static helpers: validity_mask, _get_reflection_clusters
@@ -27,7 +28,8 @@ from object_definitions.Coverage_def import Coverage
 
 @pytest.fixture
 def input_shapefile_path(tmp_path):
-    """Write a single 10°x10° rectangular polygon to a shapefile and return its absolute path.
+    """
+    Write a single 10°x10° rectangular polygon to a shapefile and return its absolute path.
 
     The polygon spans (lon: 0..10, lat: 0..10) — a clean grid-cell-aligned region that lets the
     cell-count assertions remain integer-exact regardless of latitude scaling.
@@ -41,7 +43,9 @@ def input_shapefile_path(tmp_path):
 
 @pytest.fixture
 def coverage_deg(input_shapefile_path):
-    """Coverage object with a 2.5°x2.5° equiangular grid → exactly 16 cells over the 10x10 region."""
+    """
+    Coverage object with a 2.5°x2.5° equiangular grid → exactly 16 cells over the 10x10 region.
+    """
     with contextlib.redirect_stdout(io.StringIO()):
         return Coverage(
             sat_const=None,                  # stored, not used in __init__
