@@ -155,10 +155,11 @@ def initialize(config_file_name="Configuration.ini"):
         gnss_tle_files   = [file1.tle, file2.tle, ...]    (TLE files for GNSS constellations)
         gnss_const_names = [const1, const2, ...]          (Names of the GNSS constellations, e.g., GPS, GLONASS, GALILEO, BEIDOU)
 
-        [LINK BUDGET] (optional)
-        See `BistaticLinkBudgetSettings` in `functions/link_budget.py` for the
-        list of accepted keys, units and defaults. Any subset can be supplied;
-        unspecified keys fall back to the dataclass defaults.
+        [LINK BUDGET] (required) and [OCEAN] (required)
+        Receiver-system losses and sea-state inputs for the bistatic ocean RCS. See
+        `BistaticLinkBudgetSettings` in `functions/link_budget.py` for the accepted keys
+        and units. INI-strict: every key must be present, missing keys raise. The dataclass
+        defaults are the programmatic-API default only; the loader never falls back to them.
 
         [SHIP] (required when [MOVING TARGET] is present)
         length_m    = above-waterline length [m]   (> 0)

@@ -21,7 +21,9 @@ class BistaticLinkBudgetSettings:
     Configuration values for the bistatic GNSS-R link budget.
 
     Field-by-field source of truth for the `[LINK BUDGET]` + `[OCEAN]` INI sections;
-    field names, defaults and units defined here are picked up automatically by the loader.
+    field names and units defined here mirror the INI keys. The INI loader is strict
+    (every key required, missing keys raise) and never falls back to the field defaults
+    below — those apply only to direct construction (e.g. the `settings=None` convenience path).
 
     ATTRIBUTES:
         system_losses_db:          [float]  Lumped implementation losses [dB]

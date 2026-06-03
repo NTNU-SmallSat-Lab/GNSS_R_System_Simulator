@@ -90,21 +90,25 @@ class OceanTarget(Target):
         incidence_deg = geometry.incidence_angle_deg
         n_samples = n_surface.shape[0]
 
-        # Local tangent basis
+        # Local geographic ENU basis at the surface point: north is the Earth rotation axis (+z)
+        # projected onto the tangent plane, east = north x up. This anchors the Cox-Munk wind
+        # direction to true geographic north for all latitudes. Only at the geographic poles
+        # (|n . z| -> 1) is that projection singular and the wind azimuth physically undefined;
+        # there we fall back to a +x projection to keep a finite, consistent basis.
         z_global = np.array([0.0, 0.0, 1.0])
         x_global = np.array([1.0, 0.0, 0.0])
-        z_dot_abs = np.abs(n_surface @ z_global)          # |n_surface . z| per sample
-        use_z = z_dot_abs < 0.95                          # use +z as reference except near the +/-z poles
-        ref_axis = np.where(use_z[:, None], z_global, x_global)
-
-        proj = np.einsum("ij,ij->i", n_surface, ref_axis)         # component of ref_axis along n_surface
-        north_unnorm = ref_axis - proj[:, None] * n_surface       # ref_axis projected onto the tangent plane
+        proj_z = n_surface @ z_global                             # +z component of n_surface = sin(latitude)
+        north_from_z = z_global - proj_z[:, None] * n_surface     # +z projected onto tangent plane (-> geographic north)
+        proj_x = n_surface @ x_global                             # +x component of n_surface
+        north_from_x = x_global - proj_x[:, None] * n_surface     # +x projection, used only at the poles
+        near_pole = np.abs(proj_z) > 1.0 - 1e-12                  # n_surface ~ +/-z: geographic north degenerate
+        north_unnorm = np.where(near_pole[:, None], north_from_x, north_from_z)
         north_mag = np.linalg.norm(north_unnorm, axis=1)
         valid_basis = np.isfinite(north_mag) & (north_mag > 1e-9)
 
         n_north = np.full((n_samples, 3), np.nan)
         n_north[valid_basis] = north_unnorm[valid_basis] / north_mag[valid_basis, None]
-        n_east = np.cross(n_north, n_surface)             # right-handed local ENU (east = north x n_surface)
+        n_east = np.cross(n_north, n_surface)             # right-handed local ENU (east = north x up)
         east_mag = np.linalg.norm(n_east, axis=1)
         valid_east = valid_basis & (east_mag > 1e-9)
         n_east[valid_east] /= east_mag[valid_east, None]
