@@ -197,8 +197,15 @@ class OceanTarget(Target):
         nrcs_bragg = np.where(bragg_active, bragg_nrcs_RL, 0.0)            # RHCP -> LHCP cross-pol (consumed)
         nrcs_bragg_co = np.where(bragg_active, bragg_nrcs_RR, 0.0)         # RHCP -> RHCP co-pol (polarization-hook diagnostic)
 
-        # Incoherent contribution: (GO glistening + Bragg) NRCS over the diffuse scattering area.
-        sigma_incoherent = (nrcs + nrcs_bragg) * glistening_area          # rough-surface diffuse return
+        # Backscatter illuminated area: unlike the forward glistening zone (slope-limited, sea-state
+        # dependent), the diffuse backscatter return is collected over the receiver-limited footprint,
+        # which does not depend on sea state. Wind dependence of the Bragg return therefore enters only
+        # through its NRCS, not its area.
+        bragg_area = np.pi * reduced_range ** 2 / cos_inc_safe ** 3
+
+        # Incoherent contribution: forward GO over the glistening zone plus Bragg over the backscatter
+        # footprint area.
+        sigma_incoherent = nrcs * glistening_area + nrcs_bragg * bragg_area    # rough-surface diffuse return
 
         # Coherent contribution: smooth-surface specular reflection from the mean surface, suppressed
         # by Rayleigh roughness exp(-kappa) and gated to geometries where the required facet slope is
@@ -244,7 +251,8 @@ class OceanTarget(Target):
                 "nrcs": np.where(valid, nrcs, np.nan),
                 "nrcs_bragg_RL": np.where(valid, nrcs_bragg, np.nan),
                 "nrcs_bragg_RR": np.where(valid, nrcs_bragg_co, np.nan),
-                "rcs_bragg_m2": np.where(valid, nrcs_bragg * glistening_area, np.nan),
+                "bragg_area_m2": np.where(valid, bragg_area, np.nan),
+                "rcs_bragg_m2": np.where(valid, nrcs_bragg * bragg_area, np.nan),
                 "rcs_coherent_m2": np.where(valid, sigma_coherent, np.nan),
                 "rcs_incoherent_m2": np.where(valid, sigma_incoherent, np.nan),
             },
