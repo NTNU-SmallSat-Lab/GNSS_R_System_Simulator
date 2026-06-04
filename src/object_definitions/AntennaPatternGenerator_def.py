@@ -107,10 +107,46 @@ class AntennaPatternGenerator:
     def _steering_sweeps_deg(self):
         """
         Return (azimuth_sweep_deg, elevation_sweep_deg) arrays from the [start, end, n_steps] specs.
+
+        Each sweep is guaranteed to contain boresight (0 deg); see _axis_sweep_with_boresight.
         """
-        azimuth_sweep = np.linspace(self.azimuth_steering[0], self.azimuth_steering[1], self.azimuth_steering[2])
-        elevation_sweep = np.linspace(self.elevation_steering[0], self.elevation_steering[1], self.elevation_steering[2])
+        azimuth_sweep = self._axis_sweep_with_boresight("azimuth", self.azimuth_steering)
+        elevation_sweep = self._axis_sweep_with_boresight("elevation", self.elevation_steering)
         return azimuth_sweep, elevation_sweep
+
+    @staticmethod
+    def _axis_sweep_with_boresight(axis_name, spec):
+        """
+        Build a steering sweep [deg] guaranteed to include boresight (0 deg).
+
+        linspace(start, end, n_steps) lands exactly on 0 only for particular (range, count) pairs --
+        for a symmetric range that means an ODD count. The boresight pattern is required downstream
+        (nadir gain + footprint reference), so when 0 is missing this raises the count by one (which
+        fixes the common symmetric-even case while keeping the grid uniform) and, failing that, inserts
+        0 explicitly. Either repair emits a warning so the configuration can be corrected.
+        """
+        start, end, n_steps = spec[0], spec[1], int(spec[2])
+        sweep = np.linspace(start, end, n_steps)
+        if np.any(np.isclose(sweep, 0.0, atol=1e-9)):
+            return sweep
+
+        bumped = np.linspace(start, end, n_steps + 1)
+        if np.any(np.isclose(bumped, 0.0, atol=1e-9)):
+            warnings.warn(
+                f"[ANTENNA PATTERN] {axis_name}_steering = [{start}, {end}, {n_steps}] skips boresight "
+                f"(0 deg): a symmetric range needs an odd n_steps. Raising n_steps to {n_steps + 1} so the "
+                f"steering grid includes boresight.",
+                stacklevel=2,
+            )
+            return bumped
+
+        warnings.warn(
+            f"[ANTENNA PATTERN] {axis_name}_steering = [{start}, {end}, {n_steps}] does not include "
+            f"boresight (0 deg); inserting it. Use a range that lands on 0 (e.g. symmetric with odd "
+            f"n_steps) to avoid a non-uniform steering grid.",
+            stacklevel=2,
+        )
+        return np.unique(np.concatenate([sweep, [0.0]]))
 
     # Bump this whenever the generator's output convention changes in a way that affects how the
     # consumer (Rx_antenna_def.py) must sample the patterns. Each bump invalidates every cached

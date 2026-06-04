@@ -77,53 +77,6 @@ def parse_antenna_angles(filename: str) -> tuple[float, float, float]:
     return float(az_match.group(1)), float(el_match.group(1)), float(freq_match.group(1))
 
 
-def _normalize_path_for_compare(path):
-    return os.path.normcase(os.path.abspath(os.path.normpath(path)))
-
-
-def _get_antenna_pattern_folder(config, pattern_section=None):
-    """
-    Resolve the antenna-pattern folder from configuration.
-
-    [ANTENNA].pattern_folder is the canonical setting. The older
-    [ANTENNA].antenna_filepaths and [ANTENNA PATTERN].output_folder keys are
-    still accepted for compatibility.
-    """
-    antenna_folder = None
-    if "ANTENNA" in config:
-        antenna_section = config["ANTENNA"]
-        if "pattern_folder" in antenna_section:
-            antenna_folder = antenna_section["pattern_folder"].strip()
-        elif "antenna_pattern_folder" in antenna_section:
-            antenna_folder = antenna_section["antenna_pattern_folder"].strip()
-            warnings.warn(
-                "[ANTENNA].antenna_pattern_folder is deprecated; use [ANTENNA].pattern_folder instead.",
-                stacklevel=2,
-            )
-        elif "antenna_filepaths" in antenna_section:
-            antenna_folder = antenna_section["antenna_filepaths"].strip()
-            warnings.warn(
-                "[ANTENNA].antenna_filepaths is deprecated; use [ANTENNA].pattern_folder instead.",
-                stacklevel=2,
-            )
-
-    pattern_folder = None
-    if pattern_section is not None and "output_folder" in pattern_section:
-        pattern_folder = pattern_section["output_folder"].strip()
-        warnings.warn(
-            "[ANTENNA PATTERN].output_folder is deprecated; use [ANTENNA].pattern_folder instead.",
-            stacklevel=2,
-        )
-
-    if antenna_folder and pattern_folder and _normalize_path_for_compare(antenna_folder) != _normalize_path_for_compare(pattern_folder):
-        raise ValueError(
-            "Antenna pattern folder is configured in two places with different values. "
-            "Use only [ANTENNA].pattern_folder."
-        )
-
-    return antenna_folder or pattern_folder
-
-
 def initialize(config_file_name="Configuration.ini"):
     """
     =========================================================================================================
@@ -149,7 +102,7 @@ def initialize(config_file_name="Configuration.ini"):
         speed     = Speed_in_knots                                                      (only needed for moving target analysis)
 
         [ANTENNA]
-        pattern_folder         = path/to/generated_or_precomputed_patterns                       (only needed for moving target analysis)
+        (the antenna pattern folder is not an INI key; it is fixed in Constants.antenna_pattern_folder)
         antenna_beamwidth_3dB  = [x1, y1, x2, y2, ...] (from 0 to 90 degrees rotationally) (only needed for moving target analysis)
         polarizations          = ["LHCP", "RHCP", "VP", "HP"]                              (only needed for moving target analysis)
         bands                  = ["L1", "L2", "L2", "L5"]                                        (only needed for moving target analysis)
@@ -216,8 +169,10 @@ def initialize(config_file_name="Configuration.ini"):
     except KeyError:
         raise KeyError("The 'grid_size_meters' or 'shapefile_path' key is missing in the 'COVERAGE' section of the configuration file.")  # noqa: B904
 
-    pattern_section = config["ANTENNA PATTERN"] if "ANTENNA PATTERN" in config else None
-    antenna_pattern_folder = _get_antenna_pattern_folder(config, pattern_section)
+    # The antenna-pattern folder is a fixed data path (Constants.antenna_pattern_folder), not an INI
+    # knob. It is "active" (non-None) only when an antenna is configured, so configs without an antenna
+    # keep antenna_pattern_folder = None -- the flag main_simulation_areaCoverage.py uses to skip the antenna.
+    antenna_pattern_folder = Constants.antenna_pattern_folder if ("ANTENNA" in config or "ANTENNA PATTERN" in config) else None
 
     #[ANTENNA PATTERN]
     # Parameters for AntennaPatternGenerator. Parsed up-front so the generator
@@ -230,8 +185,6 @@ def initialize(config_file_name="Configuration.ini"):
         missing = [k for k in required_keys if k not in section]
         if missing:
             raise KeyError(f"Missing required key(s) in [ANTENNA PATTERN] section: {missing}")
-        if antenna_pattern_folder is None:
-            raise KeyError("Missing antenna pattern folder. Add [ANTENNA] pattern_folder = <path>.")
         try:
             antenna_pattern_settings = {
                 "elements_along_x": int(section["elements_along_x"]),
@@ -268,10 +221,11 @@ def initialize(config_file_name="Configuration.ini"):
 
         # If antenna is initialzied in the ini-file:
         if "ANTENNA" in config:
-            if antenna_pattern_folder is None:
-                raise KeyError("Missing [ANTENNA] pattern_folder.")
-            if antenna_pattern_folder is not None and not os.path.isdir(antenna_pattern_folder):
-                raise NotADirectoryError(f"The specified antenna pattern folder '{antenna_pattern_folder}' does not exist or is not a directory. Please check the folder path in the configuration file.")
+            if not os.path.isdir(antenna_pattern_folder):
+                raise NotADirectoryError(
+                    f"Antenna pattern folder '{antenna_pattern_folder}' (Constants.antenna_pattern_folder) "
+                    "does not exist or is not a directory."
+                )
             filepaths_antenna_pattern = []
             for file in sorted(os.listdir(antenna_pattern_folder)):
                 # Pick up only the pattern JSONs; the AntennaPatternGenerator metadata file
@@ -308,7 +262,7 @@ def initialize(config_file_name="Configuration.ini"):
         if footprint_dB is not None and footprint_dB >= 0.0:
             raise ValueError("'footprint_dB' must be below 0 dB because antenna patterns are normalized to a 0 dB peak.")
     except KeyError:
-        raise KeyError("The 'pattern_folder', 'polarizations' or 'bands' key is missing in the 'ANTENNA' section of the configuration file.") # noqa: B904
+        raise KeyError("The 'polarizations' or 'bands' key is missing in the 'ANTENNA' section of the configuration file.") # noqa: B904
 
     #[ORBITS]
     # Check how many orbits are specified in the configuration file
