@@ -8,6 +8,7 @@ from functions.ocean_physics import (
     circular_pol_reflectivities,
     cox_munk_slope_pdf,
     cox_munk_slope_variances,
+    elfouhaily_omnidirectional_spectrum,
     fresnel_coefficients,
     seawater_permittivity,
 )
@@ -119,3 +120,48 @@ class TestCoxMunkSlopePdf:
             cox_munk_slope_pdf(0.0, 0.0, 0.0, 0.01)
         with pytest.raises(ValueError):
             cox_munk_slope_pdf(0.0, 0.0, 0.01, 0.0)
+
+
+class TestElfouhailySpectrum:
+    # L-band Bragg ocean wavenumbers K_B = 2 k_radar sin(theta) at L1 (k_radar ~ 33 rad/m):
+    #   theta = 30 deg -> ~33 rad/m,   theta = 45 deg -> ~47 rad/m.
+    K_BRAGG_L1_30DEG = 33.0
+    K_BRAGG_L1_45DEG = 47.0
+    K_CAPILLARY = 200.0   # well above the L1 Bragg band; capillary branch dominates, wind response is clean
+
+    def test_positive_and_finite_across_spectrum(self):
+        k = np.logspace(-1, 3, 300)   # 0.1 .. 1000 rad/m
+        S = elfouhaily_omnidirectional_spectrum(k, wind_speed_m_s=7.0, inverse_wave_age=0.84)
+        assert np.all(np.isfinite(S))
+        assert np.all(S > 0.0)
+
+    def test_capillary_density_increases_with_wind(self):
+        # At the capillary scale the short-wave branch dominates, so density rises monotonically
+        # with wind. (At the L1 Bragg scale this is deliberately NOT asserted -- the short-gravity
+        # tail competes with the capillary part and the omnidirectional response is non-monotonic.)
+        S_calm = elfouhaily_omnidirectional_spectrum(self.K_CAPILLARY, 5.0, 0.84)
+        S_mod = elfouhaily_omnidirectional_spectrum(self.K_CAPILLARY, 10.0, 0.84)
+        S_high = elfouhaily_omnidirectional_spectrum(self.K_CAPILLARY, 15.0, 0.84)
+        assert S_calm < S_mod < S_high
+
+    def test_bragg_scale_curvature_order_of_magnitude(self):
+        # Saturation/curvature B(k) = k^3 S(k) sits in the ~1e-3 equilibrium band at the L1 Bragg scales.
+        for k_bragg in (self.K_BRAGG_L1_30DEG, self.K_BRAGG_L1_45DEG):
+            S = elfouhaily_omnidirectional_spectrum(k_bragg, 7.0, 0.84)
+            curvature = k_bragg**3 * S
+            assert 1e-4 < curvature < 1e-1, f"curvature {curvature:.2e} out of band at k={k_bragg}"
+
+    def test_array_matches_scalar(self):
+        k = np.array([1.0, 10.0, 47.0, 200.0])
+        S_arr = elfouhaily_omnidirectional_spectrum(k, 7.0, 0.84)
+        S_scalar = np.array([elfouhaily_omnidirectional_spectrum(float(ki), 7.0, 0.84) for ki in k])
+        np.testing.assert_allclose(S_arr, S_scalar, rtol=1e-12)
+        assert S_arr.shape == k.shape
+
+    def test_rejects_invalid_inputs(self):
+        with pytest.raises(ValueError):
+            elfouhaily_omnidirectional_spectrum(33.0, 0.0, 0.84)    # zero wind
+        with pytest.raises(ValueError):
+            elfouhaily_omnidirectional_spectrum(33.0, 7.0, 0.0)     # zero inverse wave age
+        with pytest.raises(ValueError):
+            elfouhaily_omnidirectional_spectrum(-1.0, 7.0, 0.84)    # non-positive wavenumber

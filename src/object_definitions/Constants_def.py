@@ -32,6 +32,15 @@ class Constants:
     EPSG_GEOCENTRIC = 4978  # EPSG code for Geocentric coordinate system [-]
 
     ###########################
+    # Ocean wave spectrum (Elfouhaily et al., 1997)
+    #   Physical constants for the sea-surface roughness spectrum used by the
+    #   Bragg ocean-backscatter model in functions/ocean_physics.py.
+    ###########################
+    GRAVITY_ACCEL_M_S2 = 9.81  # g: standard gravitational acceleration     [m/s^2]
+    WAVE_KM_RAD_M = 370.0      # k_m: wavenumber of minimum phase speed      [rad/m]
+    WAVE_CM_M_S = 0.23         # c_m: minimum phase speed (at k_m)           [m/s]
+
+    ###########################
     # Folder Paths
     ###########################
     # Determine the base directory of this file

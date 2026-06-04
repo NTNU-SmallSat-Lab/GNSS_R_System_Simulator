@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from object_definitions.Constants_def import Constants
+
 EPS_0 = 8.854187817e-12  # vacuum permittivity [F/m]
 
 
@@ -122,3 +124,71 @@ def cox_munk_slope_pdf(s_u, s_c, sigma_u_sq, sigma_c_sq):
         raise ValueError("Slope variances must be positive")
     pdf_norm = 1.0 / (2.0 * np.pi * np.sqrt(sigma_u_sq * sigma_c_sq))   # 2-D Gaussian normalisation constant
     return pdf_norm * np.exp(-0.5 * (s_u**2 / sigma_u_sq + s_c**2 / sigma_c_sq))
+
+
+def elfouhaily_omnidirectional_spectrum(wavenumber_rad_m, wind_speed_m_s, inverse_wave_age):
+    """Omnidirectional sea-surface elevation spectrum S(k) (Elfouhaily et al., 1997).
+
+    Unified long- plus short-wave wind-wave spectrum. The omnidirectional curvature
+    (saturation) spectrum is B(k) = B_low(k) + B_high(k); this returns S(k) = B(k) / k^3.
+    Unlike the Cox-Munk slope variances (which integrate the whole wave field), this resolves
+    the spectral density at a single wavenumber -- the quantity Bragg backscatter needs at the
+    resonant wavenumber k_Bragg = 2 k sin(theta).
+
+    Reference: Elfouhaily, Chapron, Katsaros, Vandemark, "A unified directional spectrum for
+    long and short wind-driven waves", J. Geophys. Res. 102(C7), 15781-15796, 1997.
+
+    INPUTS:
+        wavenumber_rad_m: [scalar or array] Spatial wavenumber k = 2 pi / wavelength [rad/m] (k > 0)
+        wind_speed_m_s:   [scalar]          Wind speed at 10 m reference height U10 [m/s] (> 0)
+        inverse_wave_age: [scalar]          Inverse wave age Omega_c [-] (0.84 fully developed, up to ~5 young seas)
+
+    OUTPUT:
+        S_k: [scalar or array] Omnidirectional elevation spectrum [m^3], same shape as wavenumber_rad_m.
+    """
+    k = np.asarray(wavenumber_rad_m, dtype=float)
+    U10 = float(wind_speed_m_s)
+    omega_c = float(inverse_wave_age)
+    if U10 <= 0.0:
+        raise ValueError(f"wind_speed_m_s must be > 0; got {U10}")
+    if omega_c <= 0.0:
+        raise ValueError(f"inverse_wave_age must be > 0; got {omega_c}")
+    if np.any(k <= 0.0):
+        raise ValueError("wavenumber_rad_m must be strictly positive")
+
+    g = Constants.GRAVITY_ACCEL_M_S2                           # standard gravitational acceleration [m/s^2]
+    km = Constants.WAVE_KM_RAD_M                               # wavenumber of minimum phase speed [rad/m]
+    cm = Constants.WAVE_CM_M_S                                 # minimum phase speed (at km) [m/s]
+
+    # Spectral peak and phase speeds
+    k0 = g / U10**2                                            # k0 = g / U10^2 [rad/m]
+    kp = k0 * omega_c**2                                       # peak wavenumber kp = k0 * Omega_c^2
+    cp = np.sqrt(g / kp)                                       # phase speed at the peak cp = sqrt(g / kp)
+    c_k = np.sqrt((g / k) * (1.0 + (k / km) ** 2))             # phase speed c(k), incl. capillary term
+
+    # Friction velocity from a 10 m neutral drag law (Wu, 1982)
+    drag_coeff = 1.0e-3 * (0.81 + 0.065 * U10)                 # neutral drag coefficient Cd(U10)
+    u_star = U10 * np.sqrt(drag_coeff)                         # friction velocity u_* [m/s]
+
+    # JONSWAP peak shape (shared by both branches)
+    Lpm = np.exp(-1.25 * (kp / k) ** 2)                        # Pierson-Moskowitz shape exp(-5/4 (kp/k)^2)
+    gamma = 1.7 if omega_c <= 1.0 else 1.7 + 6.0 * np.log10(omega_c)   # JONSWAP peak-enhancement base
+    sigma = 0.08 * (1.0 + 4.0 * omega_c**-3)                   # JONSWAP peak width
+    Gamma = np.exp(-((np.sqrt(k / kp) - 1.0) ** 2) / (2.0 * sigma**2)) # peak-enhancement exponent
+    Jp = gamma**Gamma                                          # JONSWAP peak enhancement Jp = gamma^Gamma
+
+    # Long-wave (gravity) curvature B_low
+    alpha_p = 0.006 * omega_c**0.55                            # long-wave equilibrium parameter (Phillips-Kitaigorodskii)
+    Fp = np.exp(-(omega_c / np.sqrt(10.0)) * (np.sqrt(k / kp) - 1.0))  # long-wave side effect
+    B_low = 0.5 * alpha_p * (cp / c_k) * Lpm * Jp * Fp         # B_l = 0.5 alpha_p (cp/c) LPM Jp Fp
+
+    # Short-wave (gravity-capillary) curvature B_high
+    if u_star <= cm:
+        alpha_m = 0.01 * (1.0 + np.log(u_star / cm))           # light-wind branch
+    else:
+        alpha_m = 0.01 * (1.0 + 3.0 * np.log(u_star / cm))     # strong-wind branch
+    alpha_m = max(alpha_m, 0.0)                                # Elfouhaily alpha_m underflows < 0 below ~2.6 m/s; clamp (no negative spectrum)
+    Fm = np.exp(-0.25 * (k / km - 1.0) ** 2)                   # capillary side effect
+    B_high = 0.5 * alpha_m * (cm / c_k) * Lpm * Jp * Fm        # B_h = 0.5 alpha_m (cm/c) LPM Jp Fm
+
+    return (B_low + B_high) / k**3                             # S(k) = B(k) / k^3 [m^3]
