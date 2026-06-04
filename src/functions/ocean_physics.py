@@ -219,3 +219,61 @@ def bragg_scattering_coefficients(theta_inc_rad, eps_r):
         g_hh = (eps_r - 1.0) / (cos_t + sqrt_term) ** 2               # HH Bragg amplitude
         g_vv = (eps_r - 1.0) * ((eps_r - 1.0) * sin_sq + eps_r) / (eps_r * cos_t + sqrt_term) ** 2  # VV Bragg amplitude
     return g_hh, g_vv
+
+
+def bragg_backscatter_nrcs(theta_inc_rad, wavelength_m, eps_r, wind_speed_m_s, inverse_wave_age):
+    """First-order Bragg (small-perturbation) ocean backscatter NRCS for circular polarisation.
+
+    Resonant scattering from the wind-driven ripple at the Bragg wavenumber k_B = 2 k sin(theta),
+    with k = 2 pi / wavelength. This is the return the geometric-optics glistening model misses at
+    oblique incidence (no facets tilted enough to retroreflect) and that dominates ocean backscatter
+    beyond ~20 deg incidence.
+
+        sigma0_pp = 8 pi k^4 cos^4(theta) |g_pp|^2 W_iso(k_B)
+
+    with the isotropic 2-D spectrum W_iso(K) = S(K) / (2 pi K) from the Elfouhaily S(k), and the
+    circular amplitudes formed from the linear Bragg coefficients:
+        g_RL = (g_HH + g_VV) / 2   RHCP -> LHCP, handedness flipped  (carries all power at nadir)
+        g_RR = (g_HH - g_VV) / 2   RHCP -> RHCP, handedness preserved (vanishes at nadir)
+
+    The 8 pi prefactor is the textbook SPM constant; combined with the Elfouhaily spectrum
+    normalisation it places sigma0_RL at the published L-band level (~ -21 dB at 30 deg, 7 m/s) with
+    no free scaling -- the absolute level is pinned by TestBraggBackscatterNrcs, not a fudge factor.
+
+    SPM validity holds for moderate incidence (~10..70 deg); near nadir k_B -> 0, the Bragg return
+    vanishes and the geometric-optics term owns the geometry, so this returns 0 there.
+
+    Reference: Valenzuela (1978); Ulaby, Moore and Fung, "Microwave Remote Sensing" Vol. II.
+
+    INPUTS:
+        theta_inc_rad:    [scalar or array]  Incidence angle from the surface normal [rad]
+        wavelength_m:     [float]            Radar wavelength [m]
+        eps_r:            [complex]          Seawater relative permittivity
+        wind_speed_m_s:   [scalar]           Wind speed at 10 m [m/s]
+        inverse_wave_age: [scalar]           Inverse wave age Omega_c [-]
+
+    OUTPUT:
+        sigma0_RL, sigma0_RR: RHCP->LHCP (cross-pol) and RHCP->RHCP (co-pol) NRCS [dimensionless],
+                              same shape as theta_inc_rad; 0 at / below nadir.
+    """
+    theta = np.asarray(theta_inc_rad, dtype=float)
+    k_radar = 2.0 * np.pi / wavelength_m                               # radar wavenumber k = 2 pi / lambda [rad/m]
+    sin_t = np.sin(theta)
+    cos_t = np.cos(theta)
+    k_bragg = 2.0 * k_radar * sin_t                                    # resonant ocean wavenumber k_B = 2 k sin(theta)
+
+    # Isotropic 2-D roughness spectrum W_iso(K) = S(K) / (2 pi K). At/below nadir k_B -> 0 (no resonant
+    # ripple): evaluate S on a safe-positive wavenumber, then zero W_iso where k_B is not positive.
+    positive_kb = k_bragg > 0.0
+    k_safe = np.where(positive_kb, k_bragg, 1.0)
+    S_bragg = elfouhaily_omnidirectional_spectrum(k_safe, wind_speed_m_s, inverse_wave_age)
+    W_iso = np.where(positive_kb, S_bragg / (2.0 * np.pi * k_safe), 0.0)   # [m^4]
+
+    g_hh, g_vv = bragg_scattering_coefficients(theta, eps_r)
+    g_RL = 0.5 * (g_hh + g_vv)                                         # RHCP -> LHCP amplitude (handedness flip)
+    g_RR = 0.5 * (g_hh - g_vv)                                         # RHCP -> RHCP amplitude (preserved)
+
+    prefactor = 8.0 * np.pi * k_radar**4 * cos_t**4 * W_iso            # 8 pi k^4 cos^4(theta) W_iso
+    sigma0_RL = prefactor * np.abs(g_RL) ** 2
+    sigma0_RR = prefactor * np.abs(g_RR) ** 2
+    return sigma0_RL, sigma0_RR

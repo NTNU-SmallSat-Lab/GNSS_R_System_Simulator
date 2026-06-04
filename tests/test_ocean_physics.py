@@ -5,6 +5,7 @@ import pytest
 from scipy import integrate
 
 from functions.ocean_physics import (
+    bragg_backscatter_nrcs,
     bragg_scattering_coefficients,
     circular_pol_reflectivities,
     cox_munk_slope_pdf,
@@ -201,3 +202,49 @@ class TestBraggScatteringCoefficients:
             np.testing.assert_allclose(g_hh_arr[i], g_hh_s, rtol=1e-12)
             np.testing.assert_allclose(g_vv_arr[i], g_vv_s, rtol=1e-12)
         assert g_hh_arr.shape == thetas.shape
+
+
+class TestBraggBackscatterNrcs:
+    LAMBDA_L1_M = 299792458.0 / 1.57542e9
+    EPS_SEAWATER_L1 = seawater_permittivity(1.57542e9, 15.0, 35.0)
+
+    def _sigma0(self, theta_deg, wind=7.0, pol="RL"):
+        sigma0_rl, sigma0_rr = bragg_backscatter_nrcs(
+            np.radians(theta_deg), self.LAMBDA_L1_M, self.EPS_SEAWATER_L1, wind, 0.84
+        )
+        return float(sigma0_rl if pol == "RL" else sigma0_rr)
+
+    def test_calibration_anchor_l_band_level(self):
+        # Absolute-level anchor: the textbook 8 pi SPM prefactor with the Elfouhaily spectrum
+        # normalisation places sigma0_RL at 30 deg / 7 m/s at the published L-band level (~ -21 dB)
+        # with no free scaling. A prefactor or spectrum-normalisation change trips this.
+        sigma0_db = 10.0 * np.log10(self._sigma0(30.0))
+        assert -25.0 < sigma0_db < -17.0, f"anchor sigma0_RL = {sigma0_db:.2f} dB outside L-band band"
+
+    def test_vanishes_at_nadir(self):
+        # No resonant ripple at nadir (k_B -> 0); the geometric-optics term owns that geometry.
+        sigma0_rl, sigma0_rr = bragg_backscatter_nrcs(0.0, self.LAMBDA_L1_M, self.EPS_SEAWATER_L1, 7.0, 0.84)
+        assert float(sigma0_rl) == 0.0 and float(sigma0_rr) == 0.0
+
+    def test_cross_pol_dominates_co_pol(self):
+        # RHCP -> LHCP (handedness flip) is the strong channel; co-pol is well below at oblique incidence.
+        assert self._sigma0(30.0, pol="RL") > self._sigma0(30.0, pol="RR")
+
+    def test_decreases_with_incidence_in_valid_range(self):
+        # In the SPM-valid oblique band, backscatter falls off toward grazing.
+        vals = [self._sigma0(th) for th in (30.0, 40.0, 50.0, 60.0)]
+        assert all(np.diff(vals) < 0.0), f"sigma0_RL not decreasing with incidence: {vals}"
+
+    def test_increases_with_wind(self):
+        # Sea-state sensitivity: stronger wind -> brighter backscatter, checked at 40 deg where the
+        # leading isotropic model is monotonic (at lower incidence the gravity-tail crossover mutes it).
+        assert self._sigma0(40.0, wind=15.0) > self._sigma0(40.0, wind=5.0)
+
+    def test_array_matches_scalar(self):
+        thetas = np.radians(np.array([25.0, 35.0, 55.0]))
+        rl_arr, rr_arr = bragg_backscatter_nrcs(thetas, self.LAMBDA_L1_M, self.EPS_SEAWATER_L1, 7.0, 0.84)
+        for i, th in enumerate(thetas):
+            rl_s, rr_s = bragg_backscatter_nrcs(float(th), self.LAMBDA_L1_M, self.EPS_SEAWATER_L1, 7.0, 0.84)
+            np.testing.assert_allclose(rl_arr[i], rl_s, rtol=1e-12)
+            np.testing.assert_allclose(rr_arr[i], rr_s, rtol=1e-12)
+        assert rl_arr.shape == thetas.shape
