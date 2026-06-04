@@ -5,6 +5,7 @@ import pytest
 from scipy import integrate
 
 from functions.ocean_physics import (
+    bragg_scattering_coefficients,
     circular_pol_reflectivities,
     cox_munk_slope_pdf,
     cox_munk_slope_variances,
@@ -165,3 +166,38 @@ class TestElfouhailySpectrum:
             elfouhaily_omnidirectional_spectrum(33.0, 7.0, 0.0)     # zero inverse wave age
         with pytest.raises(ValueError):
             elfouhaily_omnidirectional_spectrum(-1.0, 7.0, 0.84)    # non-positive wavenumber
+
+
+class TestBraggScatteringCoefficients:
+    EPS_SEAWATER_L1 = seawater_permittivity(1.57542e9, 15.0, 35.0)
+
+    def test_equal_at_normal_incidence(self):
+        # By symmetry H and V are indistinguishable at normal incidence.
+        g_hh, g_vv = bragg_scattering_coefficients(0.0, self.EPS_SEAWATER_L1)
+        np.testing.assert_allclose(g_hh, g_vv, rtol=1e-12)
+
+    def test_normal_incidence_closed_form(self):
+        # g_pp(0) = (eps - 1) / (1 + sqrt(eps))^2.
+        g_hh, _ = bragg_scattering_coefficients(0.0, self.EPS_SEAWATER_L1)
+        expected = (self.EPS_SEAWATER_L1 - 1.0) / (1.0 + np.sqrt(self.EPS_SEAWATER_L1)) ** 2
+        np.testing.assert_allclose(g_hh, expected, rtol=1e-12)
+
+    def test_vv_exceeds_hh_at_oblique_incidence(self):
+        # For a high-permittivity surface (seawater), |g_VV| > |g_HH| away from nadir.
+        for theta_deg in (20.0, 40.0, 60.0):
+            g_hh, g_vv = bragg_scattering_coefficients(np.radians(theta_deg), self.EPS_SEAWATER_L1)
+            assert np.abs(g_vv) > np.abs(g_hh), f"|g_VV| !> |g_HH| at {theta_deg} deg"
+
+    def test_finite_across_incidence(self):
+        thetas = np.radians(np.linspace(0.0, 80.0, 17))
+        g_hh, g_vv = bragg_scattering_coefficients(thetas, self.EPS_SEAWATER_L1)
+        assert np.all(np.isfinite(g_hh)) and np.all(np.isfinite(g_vv))
+
+    def test_array_matches_scalar(self):
+        thetas = np.radians(np.array([10.0, 30.0, 50.0]))
+        g_hh_arr, g_vv_arr = bragg_scattering_coefficients(thetas, self.EPS_SEAWATER_L1)
+        for i, th in enumerate(thetas):
+            g_hh_s, g_vv_s = bragg_scattering_coefficients(float(th), self.EPS_SEAWATER_L1)
+            np.testing.assert_allclose(g_hh_arr[i], g_hh_s, rtol=1e-12)
+            np.testing.assert_allclose(g_vv_arr[i], g_vv_s, rtol=1e-12)
+        assert g_hh_arr.shape == thetas.shape

@@ -192,3 +192,30 @@ def elfouhaily_omnidirectional_spectrum(wavenumber_rad_m, wind_speed_m_s, invers
     B_high = 0.5 * alpha_m * (cm / c_k) * Lpm * Jp * Fm        # B_h = 0.5 alpha_m (cm/c) LPM Jp Fm
 
     return (B_low + B_high) / k**3                             # S(k) = B(k) / k^3 [m^3]
+
+
+def bragg_scattering_coefficients(theta_inc_rad, eps_r):
+    """First-order small-perturbation (Bragg) scattering coefficients for H and V polarisation.
+
+    These are the polarisation amplitudes in the SPM/Bragg backscatter cross-section
+    sigma0_pp ~ k^4 cos^4(theta) |g_pp|^2 W(2 k sin theta). They are NOT the Fresnel
+    reflection coefficients: they reduce to a common value at normal incidence
+    (g_HH(0) = g_VV(0) = (eps - 1) / (1 + sqrt(eps))^2), and |g_VV| exceeds |g_HH| at
+    oblique incidence for a high-permittivity surface such as seawater.
+
+    Reference: Valenzuela (1978); Ulaby, Moore and Fung, "Microwave Remote Sensing" Vol. II.
+
+    INPUTS:
+        theta_inc_rad: [scalar or array]  Incidence angle from the surface normal [rad]
+        eps_r:         [complex]          Relative permittivity of the lower medium (seawater)
+
+    OUTPUT:
+        g_hh, g_vv: complex Bragg scattering coefficients for horizontal and vertical polarisation.
+    """
+    cos_t = np.cos(theta_inc_rad)                                      # cos(theta_inc)
+    sin_sq = np.sin(theta_inc_rad) ** 2                                # sin^2(theta_inc)
+    with np.errstate(invalid="ignore", divide="ignore"):               # silence NaN propagation noise
+        sqrt_term = np.sqrt(eps_r - sin_sq)                            # sqrt(eps_r - sin^2 theta)
+        g_hh = (eps_r - 1.0) / (cos_t + sqrt_term) ** 2               # HH Bragg amplitude
+        g_vv = (eps_r - 1.0) * ((eps_r - 1.0) * sin_sq + eps_r) / (eps_r * cos_t + sqrt_term) ** 2  # VV Bragg amplitude
+    return g_hh, g_vv
