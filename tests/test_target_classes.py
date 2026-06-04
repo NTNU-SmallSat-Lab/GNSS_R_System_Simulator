@@ -46,6 +46,19 @@ def _mirror_geometry(theta_deg: float):
     return dataclasses.replace(geom, incidence_angle_deg=np.array([float(theta_deg)]))
 
 
+def _oblique_backscatter_geometry(theta_deg: float):
+    """Collinear Tx/Rx (bistatic ~ 0) viewing the surface at incidence theta_deg. Surface normal +x."""
+    R = 6.371e6
+    surf = np.array([[R, 0.0, 0.0]])
+    normal = np.array([[1.0, 0.0, 0.0]])
+    th = np.radians(theta_deg)
+    look = np.array([np.cos(th), 0.0, np.sin(th)])           # surface -> sky at incidence theta
+    tx = (surf[0] + 26.5e6 * look).reshape(3, 1)
+    rx = (surf[0] + 7.0e5 / np.cos(th) * look).reshape(3, 1)
+    geom = build_bistatic_geometry(tx, rx, surf, normal)
+    return dataclasses.replace(geom, incidence_angle_deg=np.array([float(theta_deg)]))
+
+
 class TestTargetABC:
     def test_cannot_instantiate_abstract_base(self):
         with pytest.raises(TypeError):
@@ -148,6 +161,10 @@ class TestOceanTargetComputeRcs:
             "fresnel_area_m2",
             "rayleigh_roughness_kappa",
             "nrcs",
+            "nrcs_bragg_RL",
+            "nrcs_bragg_RR",
+            "bragg_area_m2",
+            "rcs_bragg_m2",
         ):
             assert key in result.info
             assert result.info[key].shape == (1,)
@@ -206,6 +223,36 @@ class TestOceanTargetComputeRcs:
         kappa_calm = OceanTarget(0.1, 5.0, 0.0, 15.0, 35.0).compute_rcs(geom, 0.19).info["rayleigh_roughness_kappa"]
         kappa_storm = OceanTarget(5.0, 5.0, 0.0, 15.0, 35.0).compute_rcs(geom, 0.19).info["rayleigh_roughness_kappa"]
         assert kappa_storm[0] > kappa_calm[0]
+
+    def test_bragg_zero_at_forward_specular(self):
+        # Forward specular (bistatic = 2 theta) is outside the backscatter gate: Bragg must be exactly
+        # 0, so the specular path (and its golden reference) is unchanged.
+        result = _default_ocean().compute_rcs(_mirror_geometry(theta_deg=30.0), 0.19)
+        assert result.info["rcs_bragg_m2"][0] == 0.0
+        assert result.info["nrcs_bragg_RL"][0] == 0.0
+
+    def test_bragg_zero_near_nadir_backscatter(self):
+        # Below the SPM incidence floor the quasi-specular GO term owns the geometry; Bragg is 0.
+        result = _default_ocean().compute_rcs(_oblique_backscatter_geometry(10.0), 0.19)
+        assert result.info["rcs_bragg_m2"][0] == 0.0
+
+    def test_bragg_dominates_at_oblique_backscatter(self):
+        # At oblique backscatter the GO term collapses and Bragg carries the incoherent return.
+        result = _default_ocean().compute_rcs(_oblique_backscatter_geometry(30.0), 0.19)
+        assert result.info["rcs_bragg_m2"][0] > 0.0
+        assert result.info["rcs_bragg_m2"][0] > 0.5 * result.info["rcs_incoherent_m2"][0]
+
+    def test_bragg_uses_supplied_illuminated_area(self):
+        # The Bragg RCS is its NRCS times the supplied antenna-footprint area; with none supplied it
+        # falls back to a geometric proxy (a different, sea-state-independent value).
+        geom = _oblique_backscatter_geometry(30.0)
+        ocean = _default_ocean()
+        res_fallback = ocean.compute_rcs(geom, 0.19)
+        res_area = ocean.compute_rcs(geom, 0.19, illuminated_area_m2=np.array([5.0e10]))
+        nrcs_bragg = res_fallback.info["nrcs_bragg_RL"][0]
+        assert nrcs_bragg > 0.0
+        np.testing.assert_allclose(res_area.info["rcs_bragg_m2"][0], nrcs_bragg * 5.0e10, rtol=1e-12)
+        assert res_fallback.info["bragg_area_m2"][0] != res_area.info["bragg_area_m2"][0]
 
 
 class TestComputeReflectionLinkBudgetIntegration:

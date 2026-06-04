@@ -84,6 +84,28 @@ def _backscatter_scenario(theta_inc_deg: float, tx_eirp_dbw: float, frequency_hz
     )
 
 
+def _oblique_backscatter_scenario(theta_inc_deg: float, tx_eirp_dbw: float, frequency_hz: float = 1.57542e9):
+    """Collinear Tx/Rx (bistatic ~ 0) viewing the surface at oblique incidence -> oblique backscatter."""
+    th = np.radians(theta_inc_deg)
+    surf = np.array([[R_EARTH_M, 0.0, 0.0]])
+    look = np.array([np.cos(th), 0.0, np.sin(th)])                  # surface -> sky at incidence theta
+    tx = (surf[0] + R_GPS_M * look).reshape(3, 1)
+    rx = (surf[0] + (R_LEO_M - R_EARTH_M) / np.cos(th) * look).reshape(3, 1)
+    rx_vel = np.array([[0.0], [7.5e3], [0.0]])
+    return compute_reflection_link_budget(
+        tx_positions_eci=tx,
+        rx_positions_eci=rx,
+        rx_velocities_eci=rx_vel,
+        reflection_positions_eci=surf,
+        incidence_deg=np.array([theta_inc_deg]),
+        antenna=None,
+        frequency_hz=frequency_hz,
+        tx_eirp_dbw=tx_eirp_dbw,
+        settings=None,
+        target=DEFAULT_OCEAN,
+    )
+
+
 class TestSpecularReceivedPower:
     @pytest.mark.parametrize("theta_inc_deg", [5.0, 10.0, 30.0, 60.0])
     def test_gps_l1_specular_pr_is_finite(self, theta_inc_deg):
@@ -155,3 +177,31 @@ class TestAbsoluteRange:
     def test_gps_l1_backscatter_pr_within_envelope(self):
         pr_dbm = _backscatter_scenario(0.0, tx_eirp_dbw=27.0)["received_power_dbm"][0]
         assert -160.0 < pr_dbm < -110.0, f"Pr {pr_dbm:.2f} dBm outside CYGNSS-class envelope"
+
+
+class TestObliqueBackscatter:
+    """Oblique ocean backscatter (the Bragg regime) -- the gap the nadir-only backscatter test missed.
+
+    These run with antenna=None, so the Bragg term uses the geometric (isotropic) area fallback; the
+    absolute Pr is the wide-area isotropic case, weaker than forward specular.
+    """
+
+    @pytest.mark.parametrize("theta_inc_deg", [20.0, 30.0, 45.0])
+    def test_oblique_backscatter_pr_is_finite(self, theta_inc_deg):
+        lb = _oblique_backscatter_scenario(theta_inc_deg, tx_eirp_dbw=27.0)
+        pr_dbm = lb["received_power_dbm"][0]
+        sigma0_db = 10.0 * np.log10(lb["target_info"]["nrcs_bragg_RL"][0])
+        print(f"  oblique backscatter theta={theta_inc_deg:4.1f}  ->  Pr = {pr_dbm:7.1f} dBm   sigma0_bragg = {sigma0_db:6.1f} dB")
+        assert np.isfinite(pr_dbm)
+
+    def test_bragg_nrcs_in_l_band_envelope(self):
+        # The Bragg NRCS at 30 deg sits at the published L-band ocean level (area-independent check).
+        lb = _oblique_backscatter_scenario(30.0, tx_eirp_dbw=27.0)
+        sigma0_db = 10.0 * np.log10(lb["target_info"]["nrcs_bragg_RL"][0])
+        assert -30.0 < sigma0_db < -13.0, f"sigma0_bragg {sigma0_db:.1f} dB outside L-band band"
+
+    def test_oblique_backscatter_weaker_than_forward_specular(self):
+        # Oblique backscatter is far weaker than forward specular -- the reason GNSS-R is forward-scatter.
+        pr_back = _oblique_backscatter_scenario(30.0, tx_eirp_dbw=27.0)["received_power_dbm"][0]
+        pr_spec = _specular_scenario(30.0, tx_eirp_dbw=27.0)["received_power_dbm"][0]
+        assert pr_back < pr_spec - 5.0
