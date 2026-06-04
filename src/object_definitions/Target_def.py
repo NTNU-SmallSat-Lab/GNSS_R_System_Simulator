@@ -36,7 +36,11 @@ class Target(ABC):
     """
 
     @abstractmethod
-    def compute_rcs(self, geometry: BistaticGeometry, wavelength_m: float) -> TargetRcs:
+    def compute_rcs(self, geometry: BistaticGeometry, wavelength_m: float, illuminated_area_m2: np.ndarray | None = None) -> TargetRcs:
         """
         Return per-sample RCS in m^2 for the given bistatic geometry and wavelength.
+
+        illuminated_area_m2: optional per-sample antenna-beam-limited footprint area [m^2] for
+        distributed (area-extensive) returns; None lets the target use a geometric fallback. Point
+        targets (e.g. a ship) ignore it.
         """

@@ -60,7 +60,7 @@ class TestTargetABC:
 
     def test_concrete_subclass_works(self):
         class ConstantRcs(Target):
-            def compute_rcs(self, geometry, wavelength_m):
+            def compute_rcs(self, geometry, wavelength_m, illuminated_area_m2=None):
                 n = geometry.range_tx_m.shape[0]
                 return TargetRcs(rcs_m2=np.full(n, 1.0), info={"name": "constant"})
 
@@ -275,7 +275,7 @@ class TestComputeReflectionLinkBudgetIntegration:
 
     def test_custom_target_replaces_ocean_rcs(self):
         class FixedRcs(Target):
-            def compute_rcs(self, geometry, wavelength_m):
+            def compute_rcs(self, geometry, wavelength_m, illuminated_area_m2=None):
                 n = geometry.range_tx_m.shape[0]
                 return TargetRcs(rcs_m2=np.full(n, 100.0), info={"kind": "fixed"})
 
@@ -302,7 +302,7 @@ class TestComputeReflectionLinkBudgetIntegration:
             def __init__(self, rcs):
                 self.rcs = rcs
 
-            def compute_rcs(self, geometry, wavelength_m):
+            def compute_rcs(self, geometry, wavelength_m, illuminated_area_m2=None):
                 n = geometry.range_tx_m.shape[0]
                 return TargetRcs(rcs_m2=np.full(n, self.rcs), info={})
 

@@ -61,7 +61,8 @@ class ShipTarget(Target):
             heading_eci=heading_eci,
         )
 
-    def compute_rcs(self, geometry: BistaticGeometry, wavelength_m: float) -> TargetRcs:
+    def compute_rcs(self, geometry: BistaticGeometry, wavelength_m: float, illuminated_area_m2: np.ndarray | None = None) -> TargetRcs:
+        # illuminated_area_m2 is unused: a ship is a point target with an absolute RCS (no area factor).
         n_tx2s = geometry.n_tx2s
         n_s2rx = geometry.n_s2rx
         mast_hat = geometry.n_surface                                  # outward surface normal = up

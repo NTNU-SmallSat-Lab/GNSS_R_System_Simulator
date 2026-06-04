@@ -99,7 +99,7 @@ class OceanTarget(Target):
             inverse_wave_age=settings.ocean_inverse_wave_age,
         )
 
-    def compute_rcs(self, geometry: BistaticGeometry, wavelength_m: float) -> TargetRcs:
+    def compute_rcs(self, geometry: BistaticGeometry, wavelength_m: float, illuminated_area_m2: np.ndarray | None = None) -> TargetRcs:
         n_surface = geometry.n_surface          # (n, 3) outward surface unit normal
         n_tx2s = geometry.n_tx2s                # (n, 3) Tx -> surface unit vector
         n_s2rx = geometry.n_s2rx                # (n, 3) surface -> Rx unit vector
@@ -200,8 +200,12 @@ class OceanTarget(Target):
         # Backscatter illuminated area: unlike the forward glistening zone (slope-limited, sea-state
         # dependent), the diffuse backscatter return is collected over the receiver-limited footprint,
         # which does not depend on sea state. Wind dependence of the Bragg return therefore enters only
-        # through its NRCS, not its area.
-        bragg_area = np.pi * reduced_range ** 2 / cos_inc_safe ** 3
+        # through its NRCS, not its area. Use the antenna-beam footprint when supplied; otherwise an
+        # isotropic geometric proxy from the ranges.
+        if illuminated_area_m2 is None:
+            bragg_area = np.pi * reduced_range ** 2 / cos_inc_safe ** 3
+        else:
+            bragg_area = np.asarray(illuminated_area_m2, dtype=float)
 
         # Incoherent contribution: forward GO over the glistening zone plus Bragg over the backscatter
         # footprint area.

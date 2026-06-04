@@ -390,7 +390,20 @@ def compute_reflection_link_budget(
             rx_gain_dbi[i] = antenna.get_gain_dbi_for_direction(look_dir_a, freq_mhz)
 
     wavelength_m = Constants.SPEED_OF_LIGHT / frequency_hz
-    target_rcs = target.compute_rcs(geometry, wavelength_m)
+
+    # Antenna-beam-limited illuminated area for distributed (area-extensive) returns. The receiver
+    # auto-steers to the reflection, so rx_gain_dbi is the steered-beam peak directivity and the beam
+    # solid angle 4 pi / G projects to a ground footprint (4 pi / G) * R_r^2 / cos(theta_inc). With no
+    # antenna the area is left to the target's geometric fallback.
+    if antenna is None:
+        illuminated_area_m2 = None
+    else:
+        with np.errstate(invalid="ignore", divide="ignore"):
+            g_rx_lin = np.power(10.0, rx_gain_dbi / 10.0)
+            cos_inc = np.clip(np.cos(np.radians(incidence_deg)), 0.05, 1.0)
+            illuminated_area_m2 = (4.0 * np.pi / g_rx_lin) * range_rx_m ** 2 / cos_inc
+
+    target_rcs = target.compute_rcs(geometry, wavelength_m, illuminated_area_m2=illuminated_area_m2)
 
     link_budget = compute_bistatic_link_budget(
         range_tx_m=range_tx_m,
