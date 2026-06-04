@@ -12,7 +12,7 @@ class Constants:
     """
     ###########################
     # Unit conversions
-    ###########################    
+    ###########################
     DEG2RAD = np.pi / 180.0  # Degrees to radians conversion factor
     RAD2DEG = 180.0 / np.pi  # Radians to degrees
     MHZ_TO_HZ = 1e6  # Megahertz to Hertz conversion factor

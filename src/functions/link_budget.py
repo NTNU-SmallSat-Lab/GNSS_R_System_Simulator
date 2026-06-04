@@ -283,7 +283,7 @@ def resolve_single_link_budget_frequency_hz(antenna) -> float:
     =========================================================================================================
     """
     if antenna is None or not getattr(antenna, "frequencies", None):
-        return Constants.BANDS_CENTER_FREQUENCIES_Hz["L1"]
+        return float(Constants.BANDS_CENTER_FREQUENCIES_Hz["L1"])
     if len(antenna.frequencies) > 1:
         raise NotImplementedError(
             f"Multi-band link budget is not yet supported "
@@ -485,7 +485,7 @@ def compute_rx_look_direction_antenna_frame(
     n_ar_a_norm = np.linalg.norm(n_ar_a)
     if n_ar_a_norm <= 0.0:
         return invalid
-    return n_ar_a / n_ar_a_norm
+    return np.asarray(n_ar_a / n_ar_a_norm, dtype=float)
 
 
 def compute_bistatic_link_budget(

@@ -167,17 +167,14 @@ warn_unreachable = true
 ignore_missing_imports = true  # For scientific packages
 
 [[tool.mypy.overrides]]
+# Only modules actually imported in SRC; the global ignore_missing_imports above already covers
+# the rest, so listing unimported packages here just produces "unused override" notes.
 module = [
-    "poliastro.*",
-    "skyfield.*", 
+    "skyfield.*",
     "sgp4.*",
-    "harmony.*",
-    "podaac.*",
     "cartopy.*",
     "geopandas.*",
-    "pyogrio.*",
     "imageio.*",
-    "PyQt5.*",
     "networkx.*",  # Added for graph algorithms
 ]
 ignore_missing_imports = true
