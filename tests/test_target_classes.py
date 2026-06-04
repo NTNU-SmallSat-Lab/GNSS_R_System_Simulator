@@ -94,6 +94,7 @@ class TestOceanTargetConstruction:
         assert target.wind_direction_deg == settings.ocean_wind_direction_deg
         assert target.sea_temperature_c == settings.ocean_sea_temperature_c
         assert target.salinity_psu == settings.ocean_salinity_psu
+        assert target.inverse_wave_age == settings.ocean_inverse_wave_age
 
     def test_negative_wave_height_raises(self):
         with pytest.raises(ValueError, match="wave_height_m"):
@@ -114,6 +115,12 @@ class TestOceanTargetConstruction:
             OceanTarget(1.0, 7.0, 0.0, 15.0, -1.0)
         with pytest.raises(ValueError, match="salinity_psu"):
             OceanTarget(1.0, 7.0, 0.0, 15.0, 100.0)
+
+    def test_implausible_inverse_wave_age_raises(self):
+        with pytest.raises(ValueError, match="inverse_wave_age"):
+            OceanTarget(1.0, 7.0, 0.0, 15.0, 35.0, inverse_wave_age=0.5)
+        with pytest.raises(ValueError, match="inverse_wave_age"):
+            OceanTarget(1.0, 7.0, 0.0, 15.0, 35.0, inverse_wave_age=6.0)
 
 
 class TestOceanTargetComputeRcs:

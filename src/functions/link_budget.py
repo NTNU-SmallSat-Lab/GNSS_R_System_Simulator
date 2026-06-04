@@ -33,6 +33,7 @@ class BistaticLinkBudgetSettings:
         ocean_wind_direction_deg:  [float]  Wind direction (meteorological FROM bearing) [deg]
         ocean_sea_temperature_c:   [float]  Sea surface temperature [degC]
         ocean_salinity_psu:        [float]  Salinity (practical salinity units) [psu]
+        ocean_inverse_wave_age:    [float]  Inverse wave age Omega_c [-] (0.84 fully developed; drives the Elfouhaily Bragg spectrum)
 
     NOTE: GNSS transmitter EIRP is per-(constellation, band) and lives in
     `Constants.GNSS_EIRP_DBW` — it is not a link-budget config knob.
@@ -45,6 +46,7 @@ class BistaticLinkBudgetSettings:
     ocean_wind_direction_deg: float = 270.0
     ocean_sea_temperature_c: float = 15.0
     ocean_salinity_psu: float = 35.0
+    ocean_inverse_wave_age: float = 0.84
 
 
 def coerce_link_budget_settings(settings: dict | BistaticLinkBudgetSettings | None) -> BistaticLinkBudgetSettings:

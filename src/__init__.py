@@ -381,6 +381,7 @@ def initialize(config_file_name="Configuration.ini"):
         "ocean_wind_direction_deg",
         "ocean_sea_temperature_c",
         "ocean_salinity_psu",
+        "ocean_inverse_wave_age",
     ):
         if key not in section:
             raise ValueError(f"[OCEAN].{key} is required in the configuration file.")

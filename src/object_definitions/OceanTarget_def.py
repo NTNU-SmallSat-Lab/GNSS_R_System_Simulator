@@ -54,6 +54,7 @@ class OceanTarget(Target):
         wind_direction_deg: float,
         sea_temperature_c: float,
         salinity_psu: float,
+        inverse_wave_age: float = 0.84,
     ) -> None:
         if wave_height_m < 0.0:
             raise ValueError(f"wave_height_m must be >= 0; got {wave_height_m}")
@@ -63,12 +64,15 @@ class OceanTarget(Target):
             raise ValueError(f"sea_temperature_c outside plausible range: {sea_temperature_c}")
         if not (0.0 <= salinity_psu <= 50.0):
             raise ValueError(f"salinity_psu outside plausible range: {salinity_psu}")
+        if not (0.84 <= inverse_wave_age <= 5.0):
+            raise ValueError(f"inverse_wave_age (Omega_c) outside Elfouhaily range [0.84, 5.0]: {inverse_wave_age}")
 
         self.wave_height_m = float(wave_height_m)
         self.wind_speed_m_s = float(wind_speed_m_s)
         self.wind_direction_deg = float(wind_direction_deg)
         self.sea_temperature_c = float(sea_temperature_c)
         self.salinity_psu = float(salinity_psu)
+        self.inverse_wave_age = float(inverse_wave_age)
 
     @classmethod
     def from_settings(cls, settings: BistaticLinkBudgetSettings) -> OceanTarget:
@@ -78,6 +82,7 @@ class OceanTarget(Target):
             wind_direction_deg=settings.ocean_wind_direction_deg,
             sea_temperature_c=settings.ocean_sea_temperature_c,
             salinity_psu=settings.ocean_salinity_psu,
+            inverse_wave_age=settings.ocean_inverse_wave_age,
         )
 
     def compute_rcs(self, geometry: BistaticGeometry, wavelength_m: float) -> TargetRcs:

@@ -71,6 +71,7 @@ MINIMAL_OCEAN = dedent(
     ocean_wind_direction_deg = 270.0
     ocean_sea_temperature_c = 10.0
     ocean_salinity_psu = 35.0
+    ocean_inverse_wave_age = 0.84
     """
 )
 
@@ -472,6 +473,7 @@ class TestOptionalSections:
         assert settings["link_budget"]["ocean_wind_direction_deg"] == 270.0
         assert settings["link_budget"]["ocean_sea_temperature_c"] == 10.0
         assert settings["link_budget"]["ocean_salinity_psu"] == 35.0
+        assert settings["link_budget"]["ocean_inverse_wave_age"] == 0.84
 
     def test_no_ocean_section_raises(self, tmp_path):
         path = write_config(tmp_path, minimal_config_body(ocean_section=""))
