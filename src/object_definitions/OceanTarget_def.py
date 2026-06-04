@@ -14,6 +14,10 @@
       Klein-Swift seawater permittivity at the configured temperature and salinity
     - A_glistening is the effective glistening-zone area at the specular peak
 
+    Bragg (rough-surface resonant backscatter), added only at near-backscatter geometry where the GO
+    term collapses: a first-order small-perturbation NRCS over the Elfouhaily spectrum, gated so the
+    forward-specular path stays unchanged. See functions.ocean_physics.bragg_backscatter_nrcs.
+
     Coherent (smooth-surface specular reflection from the mean surface):
     sigma_coherent = 4 * pi * |R_pol|^2 * (R_t R_r / (R_t + R_r))^2 * exp(-kappa)
     - the flat-mirror cross-section that reproduces the two-ray coherent power
@@ -32,6 +36,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from functions.ocean_physics import (
+    bragg_backscatter_nrcs,
     circular_pol_reflectivities,
     cox_munk_slope_pdf,
     cox_munk_slope_variances,
@@ -42,6 +47,15 @@ from object_definitions.Target_def import Target, TargetRcs
 
 if TYPE_CHECKING:
     from functions.link_budget import BistaticGeometry, BistaticLinkBudgetSettings
+
+
+# Bragg backscatter is gated to near-backscatter geometry: the BRP retroreflection line is collinear
+# (bistatic ~ 0 deg), while any forward-specular reflection sits at bistatic = 2 * incidence (>= ~10 deg).
+# Gating below this keeps the specular path -- and its golden reference -- exactly unchanged.
+_BRAGG_MAX_BISTATIC_DEG = 5.0
+# First-order Bragg (SPM) is valid at oblique incidence; below this the quasi-specular geometric-optics
+# term owns the geometry and the SPM formula overshoots, so the Bragg contribution is suppressed.
+_BRAGG_MIN_INCIDENCE_DEG = 20.0
 
 
 class OceanTarget(Target):
@@ -172,8 +186,19 @@ class OceanTarget(Target):
         geom_factor[valid_q] = (q_mag[valid_q] / np.abs(q_z[valid_q])) ** 4    # (|q| / q_z)^4
         nrcs = np.pi * R_RL_sq * geom_factor * pdf
 
-        # Incoherent contribution: NRCS integrated over the glistening zone.
-        sigma_incoherent = nrcs * glistening_area                         # rough-surface diffuse return
+        # Bragg (small-perturbation) backscatter NRCS, gated to near-backscatter geometry at oblique
+        # incidence. The GO formula above collapses there (no facets tilted enough to retroreflect);
+        # Bragg fills it in. Forward-specular and near-nadir geometries get 0, so the specular path is
+        # untouched and the quasi-specular GO term owns nadir.
+        bragg_nrcs_RL, bragg_nrcs_RR = bragg_backscatter_nrcs(
+            np.radians(incidence_deg), wavelength_m, eps_r, self.wind_speed_m_s, self.inverse_wave_age
+        )
+        bragg_active = (bistatic_deg < _BRAGG_MAX_BISTATIC_DEG) & (incidence_deg >= _BRAGG_MIN_INCIDENCE_DEG)
+        nrcs_bragg = np.where(bragg_active, bragg_nrcs_RL, 0.0)            # RHCP -> LHCP cross-pol (consumed)
+        nrcs_bragg_co = np.where(bragg_active, bragg_nrcs_RR, 0.0)         # RHCP -> RHCP co-pol (polarization-hook diagnostic)
+
+        # Incoherent contribution: (GO glistening + Bragg) NRCS over the diffuse scattering area.
+        sigma_incoherent = (nrcs + nrcs_bragg) * glistening_area          # rough-surface diffuse return
 
         # Coherent contribution: smooth-surface specular reflection from the mean surface, suppressed
         # by Rayleigh roughness exp(-kappa) and gated to geometries where the required facet slope is
@@ -217,6 +242,9 @@ class OceanTarget(Target):
                 "glistening_area_m2": np.where(valid, glistening_area, np.nan),
                 "rayleigh_roughness_kappa": np.where(valid, rayleigh_kappa, np.nan),
                 "nrcs": np.where(valid, nrcs, np.nan),
+                "nrcs_bragg_RL": np.where(valid, nrcs_bragg, np.nan),
+                "nrcs_bragg_RR": np.where(valid, nrcs_bragg_co, np.nan),
+                "rcs_bragg_m2": np.where(valid, nrcs_bragg * glistening_area, np.nan),
                 "rcs_coherent_m2": np.where(valid, sigma_coherent, np.nan),
                 "rcs_incoherent_m2": np.where(valid, sigma_incoherent, np.nan),
             },
