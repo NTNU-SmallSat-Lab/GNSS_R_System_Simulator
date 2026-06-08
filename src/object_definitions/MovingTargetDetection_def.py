@@ -1137,6 +1137,9 @@ class MovingTargetDetection:
             timestamp = self.moving_target_object.start_time.strftime("%Y%m%d_%H%M")
             output_filename = f"animation_{timestamp}.gif"
 
+        stem, ext = os.path.splitext(output_filename)            # tag filename with reflection mode (specular / backscatter)
+        output_filename = f"{stem}_{self.reflection_mode}{ext}"
+
         output_path = os.path.join(Constants.output_folder_path, output_filename)
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
