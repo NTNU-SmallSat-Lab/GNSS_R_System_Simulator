@@ -326,7 +326,7 @@ def initialize(config_file_name="Configuration.ini"):
 
 
 
-    # --- [REFLECTION] (REQUIRED SECTION) ---
+    #[REFLECTION] (REQUIRED SECTION)
     # max_central_angle_deg is required always; max_incidence_angle_deg only when
     # reflection_type = backscatter. No fallback defaults — these knobs materially
     # change the result count and must be set explicitly per simulation.
@@ -355,7 +355,7 @@ def initialize(config_file_name="Configuration.ini"):
                 f"Invalid value for 'max_incidence_angle_deg' in [REFLECTION]: {section['max_incidence_angle_deg']}"
             ) from None
 
-    # --- [LINK BUDGET] (REQUIRED SECTION) ---
+    #[LINK BUDGET] (REQUIRED SECTION)
     # Receiver-system parameters. No fallback defaults; missing keys raise.
     # (Transmit EIRP is per-(constellation, band) and lives in Constants.GNSS_EIRP_DBW.)
     if "LINK BUDGET" not in config:
@@ -370,7 +370,7 @@ def initialize(config_file_name="Configuration.ini"):
         except ValueError:
             raise ValueError(f"Invalid value for '{key}' in [LINK BUDGET]: {section[key]}") from None
 
-    # --- [OCEAN] (REQUIRED SECTION) ---
+    #[OCEAN] (REQUIRED SECTION)
     # Sea-state and water-property inputs for the bistatic ocean RCS model. INI-strict.
     if "OCEAN" not in config:
         raise ValueError("[OCEAN] section is required in the configuration file.")
@@ -398,7 +398,7 @@ def initialize(config_file_name="Configuration.ini"):
             f"keys {sorted(link_budget.keys())}. Update the loader and the dataclass together."
         )
 
-    # --- [SHIP] (REQUIRED with [MOVING TARGET]) ---
+    #[SHIP] (REQUIRED with [MOVING TARGET])
     # Physical dimensions of the moving target, above waterline only. INI-strict.
     ship = None
     if "MOVING TARGET" in config:
@@ -417,7 +417,7 @@ def initialize(config_file_name="Configuration.ini"):
                 raise ValueError(f"[SHIP].{key} must be > 0; got {value}")
             ship[key] = value
 
-    # --- [PLOT] (OPTIONAL SECTION) ---
+    #[PLOT] (OPTIONAL SECTION)
     detection_bbox_buffer_deg = 2.0
     if "PLOT" in config and "detection_bbox_buffer_deg" in config["PLOT"]:
         try:
@@ -427,7 +427,7 @@ def initialize(config_file_name="Configuration.ini"):
                 f"Invalid value for 'detection_bbox_buffer_deg' in [PLOT]: {config['PLOT']['detection_bbox_buffer_deg']}"
             ) from None
 
-    # --- [PLOT] animation knobs (moving-target only) ---
+    #[PLOT] animation knobs (moving-target only)
     # Animation only applies when [MOVING TARGET] is present. INI-strict:
     # create_animation must be set; its sub-knobs are required when it is True.
     create_animation = False
@@ -497,4 +497,3 @@ def initialize(config_file_name="Configuration.ini"):
 
 # Export the initialize function
 __all__ = ["initialize"]
-# __all__ = ['initialize', 'optical_calc', 'georeferencing']

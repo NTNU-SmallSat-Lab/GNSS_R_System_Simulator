@@ -14,10 +14,9 @@ import matplotlib
 matplotlib.use("Agg")  # Use Agg backend for off-screen rendering
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import pymap3d
 from shapely.errors import GEOSException
-from shapely.geometry import MultiPolygon, Polygon, box
+from shapely.geometry import MultiPolygon, Point, Polygon, box
 from shapely.ops import unary_union
 from shapely.validation import explain_validity
 from tqdm import tqdm
@@ -151,18 +150,22 @@ class MovingTargetDetection:
         =========================================================================================================
         """
 
-        def show_reflection_and_target_position(pos_tgt_i: pd.Series, footprint_reflection: Polygon, spec_refl_point: np.ndarray, gnss_name: str) -> None:
+        def show_reflection_and_target_position(pos_tgt_i: Point, footprint_reflection: Polygon, reflection_point_ll: np.ndarray, gnss_name: str) -> None:
             """
             =========================================================================================================
             Debug plot: one reflection point and the target position at a given time.
 
             INPUTS:
-                pos_tgt_i:            [pd.Series]    Target position row (with geometry)
+                pos_tgt_i:            [Point]        Target position as a shapely Point (lon = x, lat = y)
                 footprint_reflection: [Polygon]      Footprint polygon at this time step
-                spec_refl_point:      [np.ndarray]   Specular reflection point [lat, lon]
+                reflection_point_ll:  [np.ndarray]   Reflection point [lat, lon] (specular point, or BRP in backscatter mode)
                 gnss_name:            [str]          Name of the GNSS constellation
             =========================================================================================================
             """
+            # Agg is forced at import for headless runs and cannot show a window; switch to the
+            # interactive Qt5Agg backend (PyQt5 is a project dependency) so this debug plot displays.
+            # Must happen before the figure is created, since a figure binds to the active backend.
+            plt.switch_backend("Qt5Agg")
             fig, ax = plt.subplots(figsize=(10, 6), subplot_kw={"projection": ccrs.PlateCarree()})
 
             buffer_deg = self.bbox_buffer_deg
@@ -201,8 +204,8 @@ class MovingTargetDetection:
                 logger.warning(f"Unexpected geometry type for footprint: {type(footprint_reflection)}")
 
             ax.plot(
-                pos_tgt_i.geometry.x,
-                pos_tgt_i.geometry.y,
+                pos_tgt_i.x,
+                pos_tgt_i.y,
                 "o",
                 color="blue",
                 markersize=8,
@@ -210,12 +213,12 @@ class MovingTargetDetection:
                 transform=ccrs.PlateCarree(),
             )
             ax.plot(
-                spec_refl_point[1],
-                spec_refl_point[0],
+                reflection_point_ll[1],
+                reflection_point_ll[0],
                 ".",
                 color="orange",
                 markersize=8,
-                label="Specular Reflection",
+                label="Reflection Point",
                 transform=ccrs.PlateCarree(),
             )
 
@@ -238,7 +241,7 @@ class MovingTargetDetection:
             else:
                 logger.debug(f"Geometry bounds: {footprint_reflection.bounds}")
             logger.debug(f"Bounding box: {self.bounding_box}")
-            logger.debug(f"Reflection point: Lon {spec_refl_point[0]:.6f}, Lat {spec_refl_point[1]:.6f}")
+            logger.debug(f"Reflection point: Lon {reflection_point_ll[0]:.6f}, Lat {reflection_point_ll[1]:.6f}")
 
             # Add grid lines for better reference
             gl = ax.gridlines(draw_labels=True, linewidth=0.5, alpha=0.7, linestyle="--")
@@ -280,7 +283,7 @@ class MovingTargetDetection:
             for gnss_name, gnss_const in self.gnss_constellation.items():
                 if verbose:
                     logger.info("-----------------------------------------------------------------")
-                    logger.info(f'Calculating reflections for GNSS constellation "{gnss_name}"')
+                    logger.info(f'Calculating reflections for GNSS constellation  "{gnss_name}"')
                 reflections_vec = []
 
                 # Loop through the GNSS-R satellites in the GNSS-R LEO constellation / Rx
@@ -332,7 +335,8 @@ class MovingTargetDetection:
                                 link_budget_settings=self.link_budget_settings,
                             )
                             reflections_vec.append(reflection)
-
+                        else:
+                            raise ValueError(f"Invalid reflection mode: {self.reflection_mode}. Must be 'specular' or 'backscatter'.")
                         # Update progress bar after each reflection calculation
                         pbar.update(1)
 
@@ -454,12 +458,12 @@ class MovingTargetDetection:
                                         f"INFORMATION: Reflection coordinates are NaN for {gnss_name}, satellites ID-GNSS {refl_obj.tx_satID}, and ID-GNSS-R {refl_obj.rx_satID} at time {time_refl_i}"
                                     )
                                 continue
-                            # Create an ellipse around the reflection point
+                            # Create footprint around the reflection point
                             for freq in self.sat_antenna.frequencies:
-                                footprint_reflection, spec_refl_point = self._reflection_point_footprint(refl_obj, reflection_index, freq, verbose)
+                                footprint_reflection, reflection_point_ll = self._reflection_point_footprint(refl_obj, reflection_index, freq, verbose)
 
                                 ## DEBUG: Plot the footprint and the moving target position
-                                # show_reflection_and_target_position(pos_tgt_i, footprint_reflection, spec_refl_point, gnss_name)
+                                # show_reflection_and_target_position(pos_tgt_i, footprint_reflection, reflection_point_ll, gnss_name) # TODO this always uses-3db and specular
                                 if footprint_reflection.intersects(pos_tgt_i):
                                     # Moving Target could be detected! Initialize the moving target detection structure
                                     possible_target_detection = MovingTargetDetectionStruct()
@@ -467,7 +471,7 @@ class MovingTargetDetection:
                                     possible_target_detection.position_ll = refl_obj.refl_LL_vec[reflection_index]
                                     possible_target_detection.time = time_tgt_i
                                     possible_target_detection.footprint_shape = footprint_reflection
-                                    possible_target_detection.spec_refl_point = spec_refl_point  # Specular reflection point
+                                    possible_target_detection.reflection_point_ll = reflection_point_ll  # specular point, or BRP in backscatter mode
                                     possible_target_detection.refl_obj = refl_obj
                                     possible_target_detection.frequency = freq
                                     possible_target_detection.pos_tgt_i = pos_tgt_i
@@ -1165,7 +1169,7 @@ class MovingTargetDetection:
             verbose:   [bool]               Print warnings (default: False)
 
         OUTPUT:
-            result: [tuple]   (footprint_polygon, specular_reflection_point) — empty Polygon on failure
+            result: [tuple]   (footprint_polygon, reflection_point_ll) — empty Polygon on failure
         =========================================================================================================
         """
 
@@ -1258,7 +1262,7 @@ class MovingTargetDetection:
             self.footprint_stats["rejected_empty"] += 1
             return Polygon(), np.array([])
 
-        footprint_points, spec_refl_point = refl_obj._compute_footprint(i, self.sat_antenna, frequency, earth_model=self.earth_model)
+        footprint_points, reflection_point_ll = refl_obj._compute_footprint(i, self.sat_antenna, frequency, earth_model=self.earth_model)
         if not footprint_points.is_valid:
             if verbose:
                 logger.warning(f"Invalid footprint for reflection index {i}. {explain_validity(footprint_points)}")
@@ -1282,7 +1286,7 @@ class MovingTargetDetection:
             if verbose:
                 logger.warning(f"Ellipse points contain NaN values for reflection index {i} in {refl_obj.gnss_const}. Skipping footprint creation. The satellite might be too far away or the footprint size is too large.")
             self.footprint_stats["rejected_empty"] += 1
-            return Polygon(), spec_refl_point
+            return Polygon(), reflection_point_ll
 
             ## DEBUG plot footprint_poly
             # show_footprint(footprint_points)
@@ -1290,7 +1294,7 @@ class MovingTargetDetection:
         # Create a shapely polygon from the points
         if footprint_points.is_empty:
             self.footprint_stats["rejected_empty"] += 1
-        return footprint_points, spec_refl_point
+        return footprint_points, reflection_point_ll
 
     def _fix_longitude_wrapping(self, polygon):
         """
