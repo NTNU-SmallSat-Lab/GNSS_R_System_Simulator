@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from functions.link_budget import compute_reflection_link_budget
 from object_definitions.MovingTargetDetection_def import (
     MovingTargetDetection,
     MovingTargetDetectionStruct,
@@ -161,3 +162,77 @@ class TestDetectionStructDefaults:
         assert s.scr_db is None
         assert s.rcs_ocean_m2 is None
         assert s.rcs_ship_m2 is None
+
+
+def _build_multi_sample_refl_obj(n=4):
+    """Multi-sample refl_obj (spherical) for the ocean per-event equivalence checks."""
+    R = 6.371e6
+    incs = np.array([5.0, 15.0, 30.0, 45.0])[:n]
+    surf = np.tile(np.array([R, 0.0, 0.0]), (n, 1))
+    tx = np.zeros((3, n))
+    rx = np.zeros((3, n))
+    rxv = np.zeros((3, n))
+    for i, th_deg in enumerate(incs):
+        th = np.radians(th_deg)
+        tx[:, i] = surf[i] + 2.0e7 * np.array([np.cos(th), 0.0, np.sin(th)])
+        rx[:, i] = surf[i] + 7.0e5 / np.cos(th) * np.array([np.cos(th), 0.0, -np.sin(th)])
+        rxv[:, i] = [0.0, 7_500.0, 0.0]
+    return SimpleNamespace(
+        gnss_pos_vec=tx,
+        sat_pos_vec=rx,
+        sat_vel_vec=rxv,
+        refl_ECI_vec=surf,
+        refl_ang_vec=incs,
+        refl_ECEF_vec=None,          # spherical => geocentric normals, no ECEF needed
+        time_vec=[BASE_TIME] * n,
+    )
+
+
+def _ocean_mtd(mtd, antenna):
+    mtd.earth_model = "spherical"
+    mtd.sat_antenna = antenna
+    mtd.link_budget_frequency_hz = 1.57542e9
+    mtd.tx_eirp_dbw_per_constellation = {"GPS": 27.0}
+    mtd.link_budget_settings = None
+    return mtd
+
+
+def _full_series_budget(refl_obj, antenna):
+    return compute_reflection_link_budget(
+        tx_positions_eci=refl_obj.gnss_pos_vec,
+        rx_positions_eci=refl_obj.sat_pos_vec,
+        rx_velocities_eci=refl_obj.sat_vel_vec,
+        reflection_positions_eci=refl_obj.refl_ECI_vec,
+        incidence_deg=refl_obj.refl_ang_vec,
+        antenna=antenna,
+        frequency_hz=1.57542e9,
+        tx_eirp_dbw=27.0,
+        settings=None,
+    )
+
+
+class TestComputeOceanPrAtEvent:
+    """Deferred per-event ocean budget must equal the eager full-series value bit-for-bit."""
+
+    def test_per_event_matches_full_series(self, mtd):
+        # The deferred slice-and-recompute must reproduce the idx-th element of the full-array budget
+        # the propagation used to cache, across several distinct geometries.
+        refl_obj = _build_multi_sample_refl_obj()
+        antenna = _constant_gain_antenna()
+        full = _full_series_budget(refl_obj, antenna)
+        _ocean_mtd(mtd, antenna)
+        for i in range(refl_obj.refl_ECI_vec.shape[0]):
+            pr_evt, rcs_evt = mtd._compute_ocean_pr_at_event(refl_obj, i, "GPS")
+            np.testing.assert_allclose(pr_evt, full["received_power_w"][i], rtol=1e-12, atol=0.0)
+            np.testing.assert_allclose(rcs_evt, full["rcs_m2"][i], rtol=1e-12, atol=0.0)
+
+    def test_invalid_sample_is_nan_in_both(self, mtd):
+        # An invalid reflection point is NaN in the full series, and the per-event recompute agrees.
+        refl_obj = _build_multi_sample_refl_obj()
+        refl_obj.refl_ECI_vec[2] = np.nan
+        antenna = _constant_gain_antenna()
+        full = _full_series_budget(refl_obj, antenna)
+        _ocean_mtd(mtd, antenna)
+        pr_evt, _ = mtd._compute_ocean_pr_at_event(refl_obj, 2, "GPS")
+        assert np.isnan(pr_evt)
+        assert np.isnan(full["received_power_w"][2])

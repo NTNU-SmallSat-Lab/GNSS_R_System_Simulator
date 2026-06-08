@@ -34,6 +34,7 @@ class BRP:
         self.time_vec = []
         self.refl_ECI_vec = []
         self.refl_LL_vec = None
+        self.refl_ECEF_vec = None     # ECEF reflection points; set in compute_brp_coordinates
         self.refl_ang_vec = []
         self.gnss_pos_vec = []
         self.gnss_vel_vec = []
@@ -51,6 +52,7 @@ class BRP:
         frequency_hz: float | None = None,
         link_budget_settings: dict | lb.BistaticLinkBudgetSettings | None = None,
         q_sat: np.ndarray | None = None,
+        compute_link_budget: bool = True,
     ):
         if frequency_hz is None:
             frequency_hz = Constants.BANDS_CENTER_FREQUENCIES_Hz["L1"]
@@ -155,24 +157,29 @@ class BRP:
             )
             brp_LL_vec[valid_brp_idx] = np.column_stack((lat, lon))
 
-        link_budget = lb.compute_reflection_link_budget(
-            tx_positions_eci=GNSS_state.positions_eci,
-            rx_positions_eci=Sat_state.positions_eci,
-            rx_velocities_eci=Sat_state.velocities_eci,
-            reflection_positions_eci=brp_ECI_vec,
-            incidence_deg=incidence_angles,
-            antenna=antenna,
-            frequency_hz=frequency_hz,
-            tx_eirp_dbw=tx_eirp_dbw,
-            settings=link_budget_settings,
-            q_sat=q_sat,
-            surface_normals_eci=(
-                lb.ellipsoid_surface_normals_eci(brp_ECEF_vec, times)
-                if self.earth_model == "elliptical"
-                else None
-            ),
-        )
-        power = link_budget["received_power_w"]
+        if compute_link_budget:
+            link_budget = lb.compute_reflection_link_budget(
+                tx_positions_eci=GNSS_state.positions_eci,
+                rx_positions_eci=Sat_state.positions_eci,
+                rx_velocities_eci=Sat_state.velocities_eci,
+                reflection_positions_eci=brp_ECI_vec,
+                incidence_deg=incidence_angles,
+                antenna=antenna,
+                frequency_hz=frequency_hz,
+                tx_eirp_dbw=tx_eirp_dbw,
+                settings=link_budget_settings,
+                q_sat=q_sat,
+                surface_normals_eci=(
+                    lb.ellipsoid_surface_normals_eci(brp_ECEF_vec, times)
+                    if self.earth_model == "elliptical"
+                    else None
+                ),
+            )
+            power = link_budget["received_power_w"]
+        else:
+            # Deferred mode: the link budget is computed per detection event by the caller.
+            link_budget = {}
+            power = None
 
         self.time_vec = times
 
@@ -184,6 +191,7 @@ class BRP:
         self.gnss_vel_vec = GNSS_state.velocities_eci
         self.sat_pos_vec  = Sat_state.positions_eci
         self.sat_vel_vec  = Sat_state.velocities_eci
+        self.refl_ECEF_vec = brp_ECEF_vec  # ECEF reflection points; for deferred per-event budget
         self.link_budget = link_budget
         self.power = power
 

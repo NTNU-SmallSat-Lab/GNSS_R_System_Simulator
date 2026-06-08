@@ -61,6 +61,7 @@ class Reflection:
         self.time_vec = []
         self.refl_ECI_vec = []
         self.refl_LL_vec = None
+        self.refl_ECEF_vec = None     # ECEF reflection points (None for spherical); set in compute_reflection_coordinates
         self.gnss_pos_vec = []
         self.gnss_vel_vec = []
         self.sat_pos_vec = []
@@ -79,6 +80,7 @@ class Reflection:
         frequency_hz: float | None = None,
         link_budget_settings: dict | lb.BistaticLinkBudgetSettings | None = None,
         q_sat: np.ndarray | None = None,
+        compute_link_budget: bool = True,
     ):
         times = fn.to_utc_datetime_array(times)
 
@@ -205,24 +207,29 @@ class Reflection:
             if finite_mask.any():
                 incidence_deg[i] = float(np.mean(angle_candidates[finite_mask]))
 
-        link_budget = lb.compute_reflection_link_budget(
-            tx_positions_eci=GNSS_state.positions_eci,
-            rx_positions_eci=Sat_state.positions_eci,
-            rx_velocities_eci=Sat_state.velocities_eci,
-            reflection_positions_eci=specular_point_vec,
-            incidence_deg=incidence_deg,
-            antenna=antenna,
-            frequency_hz=frequency_hz,
-            tx_eirp_dbw=tx_eirp_dbw,
-            settings=link_budget_settings,
-            q_sat=q_sat,
-            surface_normals_eci=(
-                lb.ellipsoid_surface_normals_eci(specular_point_ecef_vec, times)
-                if self.earth_model == "elliptical" and specular_point_ecef_vec is not None
-                else None
-            ),
-        )
-        power = link_budget["received_power_w"]
+        if compute_link_budget:
+            link_budget = lb.compute_reflection_link_budget(
+                tx_positions_eci=GNSS_state.positions_eci,
+                rx_positions_eci=Sat_state.positions_eci,
+                rx_velocities_eci=Sat_state.velocities_eci,
+                reflection_positions_eci=specular_point_vec,
+                incidence_deg=incidence_deg,
+                antenna=antenna,
+                frequency_hz=frequency_hz,
+                tx_eirp_dbw=tx_eirp_dbw,
+                settings=link_budget_settings,
+                q_sat=q_sat,
+                surface_normals_eci=(
+                    lb.ellipsoid_surface_normals_eci(specular_point_ecef_vec, times)
+                    if self.earth_model == "elliptical" and specular_point_ecef_vec is not None
+                    else None
+                ),
+            )
+            power = link_budget["received_power_w"]
+        else:
+            # Deferred mode: the link budget is computed per detection event by the caller.
+            link_budget = {}
+            power = None
 
         # Store results in the object
         self.time_vec = times  # Time vector numpy array
@@ -238,6 +245,7 @@ class Reflection:
         self.sat_vel_vec = Sat_state.velocities_eci  # LEO satellite velocities  ECI coordinates
         self.refl_ang_vec = incidence_deg  # Incidence angle wrt local surface normal [deg], shape (n,)
         self.angle_diagnostics = theta_vec  # Solver diagnostics [theta_in, theta_out, central_angle], shape (n, 3)
+        self.refl_ECEF_vec = specular_point_ecef_vec  # ECEF reflection points (None for spherical); for deferred per-event budget
         self.link_budget = link_budget
         self.power = power  # Received reflection power [W]
 

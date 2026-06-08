@@ -179,20 +179,20 @@ class MovingTargetDetection:
             ax.add_feature(cfeature.OCEAN, facecolor="lightblue")
             ax.add_feature(cfeature.LAKES, facecolor="lightblue")
 
-            # Replace the problematic plotting section with this:
+            footprint_label = f"Footprint {self.sat_antenna.footprint_dB_contour:g} dB"  # configured iso-gain contour
             if isinstance(footprint_reflection, Polygon):
                 # Handle single Polygon
                 ax.plot(
                     *footprint_reflection.exterior.xy,
                     color="red",
                     linewidth=2,
-                    label="Footprint -3dB",
+                    label=footprint_label,
                     transform=ccrs.PlateCarree(),
                 )
             elif isinstance(footprint_reflection, MultiPolygon):
                 # Handle MultiPolygon - plot each constituent polygon
                 for i, poly in enumerate(footprint_reflection.geoms):
-                    label = "Footprint -3dB" if i == 0 else ""  # Only label the first polygon
+                    label = footprint_label if i == 0 else ""  # Only label the first polygon
                     ax.plot(
                         *poly.exterior.xy,
                         color="red",
@@ -314,6 +314,7 @@ class MovingTargetDetection:
                                 antenna=self.sat_antenna,
                                 frequency_hz=self.link_budget_frequency_hz,
                                 link_budget_settings=self.link_budget_settings,
+                                compute_link_budget=False,  # deferred to _compute_ocean_pr_at_event per detection event
                             )
                             reflections_vec.append(reflection)
                         elif self.reflection_mode == "backscatter":
@@ -333,6 +334,7 @@ class MovingTargetDetection:
                                 antenna=self.sat_antenna,
                                 frequency_hz=self.link_budget_frequency_hz,
                                 link_budget_settings=self.link_budget_settings,
+                                compute_link_budget=False,  # deferred to _compute_ocean_pr_at_event per detection event
                             )
                             reflections_vec.append(reflection)
                         else:
@@ -465,6 +467,14 @@ class MovingTargetDetection:
                                 ## DEBUG: Plot the footprint and the moving target position
                                 # show_reflection_and_target_position(pos_tgt_i, footprint_reflection, reflection_point_ll, gnss_name) # TODO this always uses-3db and specular
                                 if footprint_reflection.intersects(pos_tgt_i):
+                                    # Per-event ocean-clutter link budget, deferred from the reflection
+                                    # propagation. A non-finite Pr means the reflection is out of the antenna
+                                    # FOV or has no valid RCS; the eager path dropped these via an empty
+                                    # footprint, so skip the detection to preserve that behaviour.
+                                    pr_ocean_w, rcs_ocean_m2 = self._compute_ocean_pr_at_event(refl_obj, reflection_index, gnss_name)
+                                    if not np.isfinite(pr_ocean_w):
+                                        continue
+
                                     # Moving Target could be detected! Initialize the moving target detection structure
                                     possible_target_detection = MovingTargetDetectionStruct()
                                     possible_target_detection.position_eci = refl_obj.refl_ECI_vec[reflection_index]
@@ -478,11 +488,6 @@ class MovingTargetDetection:
                                     possible_target_detection.tx_satID = refl_obj.tx_satID
                                     possible_target_detection.rx_satID = refl_obj.rx_satID
 
-                                    # Per-event link budget split: ocean clutter (already cached on
-                                    # refl_obj from the per-constellation propagation) plus ship signal.
-                                    cached_lb = refl_obj.link_budget
-                                    pr_ocean_w = float(cached_lb["received_power_w"][reflection_index])
-                                    rcs_ocean_m2 = float(cached_lb["rcs_m2"][reflection_index])
                                     possible_target_detection.pr_ocean_w = pr_ocean_w
                                     possible_target_detection.rcs_ocean_m2 = rcs_ocean_m2
 
@@ -680,6 +685,41 @@ class MovingTargetDetection:
         )
         pr_ship_w = float(link_budget["received_power_w"][0])
         return pr_ship_w, rcs_ship_m2
+
+    def _compute_ocean_pr_at_event(
+        self,
+        refl_obj: Reflection | Backscatter,
+        reflection_index: int,
+        gnss_name: str,
+    ) -> tuple[float, float]:
+        """
+        Compute the ocean-clutter received power and RCS at one reflection sample.
+
+        Re-runs the shared link budget on a single-sample slice of the reflection object, so the
+        result is identical to the eager full-series value at `reflection_index`. Returns
+        (pr_ocean_w, rcs_ocean_m2).
+        """
+        idx = reflection_index
+        if self.earth_model == "elliptical" and refl_obj.refl_ECEF_vec is not None:
+            surface_normals_eci = lb.ellipsoid_surface_normals_eci(refl_obj.refl_ECEF_vec[idx:idx + 1, :], [refl_obj.time_vec[idx]])
+        else:
+            surface_normals_eci = None
+
+        link_budget = lb.compute_reflection_link_budget(
+            tx_positions_eci=refl_obj.gnss_pos_vec[:, idx:idx + 1],
+            rx_positions_eci=refl_obj.sat_pos_vec[:, idx:idx + 1],
+            rx_velocities_eci=refl_obj.sat_vel_vec[:, idx:idx + 1],
+            reflection_positions_eci=refl_obj.refl_ECI_vec[idx:idx + 1, :],
+            incidence_deg=refl_obj.refl_ang_vec[idx:idx + 1],
+            antenna=self.sat_antenna,
+            frequency_hz=self.link_budget_frequency_hz,
+            tx_eirp_dbw=self.tx_eirp_dbw_per_constellation[gnss_name],
+            settings=self.link_budget_settings,
+            surface_normals_eci=surface_normals_eci,
+        )
+        pr_ocean_w = float(link_budget["received_power_w"][0])
+        rcs_ocean_m2 = float(link_budget["rcs_m2"][0])
+        return pr_ocean_w, rcs_ocean_m2
 
     def show_link_budget_contributions(self, file_name: str | None = None, show_figure: bool = False) -> None:
         """
@@ -1258,7 +1298,7 @@ class MovingTargetDetection:
 
         self.footprint_stats["total"] += 1
 
-        if not np.isfinite(refl_obj.power[i]):
+        if np.isnan(refl_obj.refl_ECI_vec[i]).any():
             self.footprint_stats["rejected_empty"] += 1
             return Polygon(), np.array([])
 
