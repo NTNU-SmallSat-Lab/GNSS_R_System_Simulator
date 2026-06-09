@@ -278,3 +278,130 @@ class Plotting:
         plt.savefig(save_path, dpi=600)
         print(f"Orbit plot saved to {save_path}")
         plt.close()
+
+        # Also write a rotatable standalone HTML version of the same scene
+        epoch = sat_const.satellites[0].time_prop_vec[0]  # geo-register the globe to the start epoch
+        gmst_rad = float(epoch.gmst) * np.pi / 12.0  # GMST hours -> radians (rotate the ECEF map into the ECI frame)
+        html_path = os.path.join(Constants.output_folder_path, "Orbits.html")
+        Plotting._write_orbits_html(all_positions, earth_radius, html_path, gmst_rad)
+        print(f"Rotatable orbit plot saved to {html_path}")
+
+    @staticmethod
+    def _land_ocean_mask(lon_deg, lat_deg):
+        """Land mask (1 = land, 0 = ocean) on a lon/lat grid, from the Natural Earth ocean polygons."""
+        import geopandas as gpd
+        from shapely.geometry import Point
+        from shapely.ops import unary_union
+        from shapely.prepared import prep
+
+        ocean = prep(unary_union(gpd.read_file(Constants.earth_coastline_path).geometry.values))
+        mask = np.ones((len(lat_deg), len(lon_deg)))  # default land; clear cells that fall inside ocean polygons
+        for j, la in enumerate(lat_deg):
+            for i, lo in enumerate(lon_deg):
+                if ocean.contains(Point(float(lo), float(la))):
+                    mask[j, i] = 0.0
+        return mask
+
+    @staticmethod
+    def _write_orbits_html(sat_positions_km, earth_radius_km, save_path, gmst_rad):
+        """Write a rotatable, self-contained 3D HTML view of the orbits (plotly)."""
+        import plotly.graph_objects as go  # lazy import: only needed for the interactive export
+
+        traces = []
+
+        # Earth as a textured globe: land/ocean colours from Natural Earth, oriented into ECI via GMST
+        n_lon, n_lat = 180, 90
+        lon = np.linspace(-180.0, 180.0, n_lon)
+        lat = np.linspace(-90.0, 90.0, n_lat)
+        land_mask = Plotting._land_ocean_mask(lon, lat)
+        lon_grid, lat_grid = np.meshgrid(np.radians(lon) + gmst_rad, np.radians(lat))  # +GMST: geographic lon -> ECI right ascension
+        x_earth = earth_radius_km * np.cos(lat_grid) * np.cos(lon_grid)
+        y_earth = earth_radius_km * np.cos(lat_grid) * np.sin(lon_grid)
+        z_earth = earth_radius_km * np.sin(lat_grid)
+        traces.append(
+            go.Surface(
+                x=x_earth,
+                y=y_earth,
+                z=z_earth,
+                surfacecolor=land_mask,
+                colorscale=[[0.0, "rgb(30,90,160)"], [0.5, "rgb(30,90,160)"], [0.5, "rgb(80,130,80)"], [1.0, "rgb(80,130,80)"]],  # ocean blue / land green
+                cmin=0.0,
+                cmax=1.0,
+                showscale=False,
+                hoverinfo="skip",
+                name="Earth",
+            )
+        )
+
+        # Equator (circle in the x-y plane) and polar axis for orientation
+        theta = np.linspace(0, 2 * np.pi, 100)
+        traces.append(
+            go.Scatter3d(
+                x=1.01 * earth_radius_km * np.cos(theta),  # just outside the opaque globe to avoid z-fighting
+                y=1.01 * earth_radius_km * np.sin(theta),
+                z=np.zeros_like(theta),
+                mode="lines",
+                line={"color": "black", "dash": "dash", "width": 2},
+                name="Equator",
+            )
+        )
+        traces.append(
+            go.Scatter3d(
+                x=[0, 0],
+                y=[0, 0],
+                z=[-earth_radius_km * 1.1, earth_radius_km * 1.1],  # extend slightly beyond the poles
+                mode="lines",
+                line={"color": "black", "dash": "dash", "width": 2},
+                name="Polar axis",
+            )
+        )
+        traces.append(
+            go.Scatter3d(
+                x=[0, 0],
+                y=[0, 0],
+                z=[1.02 * earth_radius_km, -1.02 * earth_radius_km],  # just outside the globe so the markers stay visible
+                mode="markers",
+                marker={"size": 4, "color": ["red", "blue"]},  # north pole red, south pole blue
+                name="Poles",
+            )
+        )
+
+        # Orbit trajectories + a marker at each satellite ECI position (first propagated time)
+        max_points = 2000  # cap serialized points per orbit: a full-window track can be ~1e5+ samples
+        palette = [f"rgb({int(r * 255)},{int(g * 255)},{int(b * 255)})" for (r, g, b) in plt.cm.tab10.colors]
+        for i, pos in enumerate(sat_positions_km):
+            color = palette[i % len(palette)]
+            stride = max(1, pos.shape[1] // max_points)  # downsample for a small file; orbit shape is preserved
+            pos_ds = pos[:, ::stride]
+            traces.append(
+                go.Scatter3d(
+                    x=pos_ds[0],
+                    y=pos_ds[1],
+                    z=pos_ds[2],
+                    mode="lines",
+                    line={"color": color, "width": 3},
+                    name=f"Satellite {i + 1}",
+                )
+            )
+            traces.append(
+                go.Scatter3d(
+                    x=[pos[0, 0]],
+                    y=[pos[1, 0]],
+                    z=[pos[2, 0]],
+                    mode="markers",
+                    marker={"size": 5, "color": color, "line": {"color": "black", "width": 1}},
+                    showlegend=False,
+                )
+            )
+
+        fig = go.Figure(data=traces)
+        fig.update_layout(
+            title=f"Orbits of {len(sat_positions_km)} Satellites (ECI)",
+            scene={
+                "aspectmode": "data",  # equal scale on all axes so the Earth stays spherical
+                "xaxis_title": "X (km)",
+                "yaxis_title": "Y (km)",
+                "zaxis_title": "Z (km)",
+            },
+        )
+        fig.write_html(save_path, include_plotlyjs=True)  # embed plotly.js so the file opens offline
