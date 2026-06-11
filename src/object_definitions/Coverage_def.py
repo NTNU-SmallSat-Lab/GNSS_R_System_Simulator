@@ -15,7 +15,6 @@ from shapely.geometry import LineString, Polygon
 from tqdm import tqdm
 
 import functions.functions as fn
-import functions.link_budget as lb
 from object_definitions.Constants_def import Constants
 from object_definitions.Reflection_def import Reflection
 from object_definitions.Static_classes_def import Plotting
@@ -34,6 +33,7 @@ class Coverage:
         link_budget_settings=None,
         *,
         max_central_angle_deg,
+        selected_signals: list[dict] | None = None,
     ) -> None:
         """
         =========================================================================================================
@@ -52,6 +52,7 @@ class Coverage:
             earth_model:           [str]                      "spherical" or "elliptical"
             link_budget_settings:  [dict | BistaticLinkBudgetSettings | None]   Link budget settings
             max_central_angle_deg: [float]                    Max Tx-Rx central angle [deg] (required)
+            selected_signals:      [list[dict] | None]        Validated [{band, constellation, freq_hz, eirp_dbw}] signal plan from the INI band selection
         =========================================================================================================
         """
         # Path to the input shapefile (outline of the area of interest)
@@ -80,6 +81,10 @@ class Coverage:
         self.gnss_constellation = gnss_const  # Dictionary with GNSS constellation objects
         self.link_budget_settings = link_budget_settings
         self.max_central_angle_deg = float(max_central_angle_deg)
+        # Per-(constellation, band) signal plan from the validated INI band selection. Coverage is
+        # computed one band at a time via compute_coverage_for_signal (each band carries its own
+        # carrier frequency and transmit EIRP). Empty when constructed without a plan (e.g. unit tests).
+        self.signals = [s for s in (selected_signals or []) if s["constellation"] in self.gnss_constellation]
         if earth_model not in ["spherical", "elliptical"]:
             raise ValueError("earth_model must be either 'spherical' or 'elliptical'")
         else:
@@ -104,24 +109,20 @@ class Coverage:
         if os.path.exists(self.gridded_shapefile_path):
             self.grid_gdf = gpd.read_file(self.gridded_shapefile_path)
 
-        ####################################################################################################################
-        # Initialize coverage vector for storing coverage over each grid-cell in the gridded shapefile
-        # Make a list of CoverageStruct instanced with the length N
-        ####################################################################################################################
-        for gnss_name, _gnss_value in self.gnss_constellation.items():
-            N = len(self.grid_gdf)
-            coverage_vector = [CoverageStruct() for _ in range(N)]
-            self.coverage_dict[gnss_name] = coverage_vector
-
-        # Initialize coverage vector for storing coverage over each grid-cell in the gridded shapefile
-        for gnss_name, _gnss_value in self.gnss_constellation.items():
-            for idx in range(len(self.grid_gdf)):
-                # Compute the centroid of the current grid-cell
-                centroid = self.grid_gdf.loc[idx].geometry.centroid
-                self.coverage_dict[gnss_name][idx].position = (centroid.x, centroid.y)
-                self.coverage_dict[gnss_name][idx].shape = self.grid_gdf.loc[[idx]].boundary
+        # One empty per-cell coverage vector per constellation (filled per band at compute time).
+        for gnss_name in self.gnss_constellation:
+            self.coverage_dict[gnss_name] = self._fresh_coverage_vector()
 
         self.bounding_box = self._get_bounding_box()
+
+    def _fresh_coverage_vector(self) -> list:
+        """Build an empty per-cell CoverageStruct vector with each cell's centroid and boundary set."""
+        vector = [CoverageStruct() for _ in range(len(self.grid_gdf))]
+        for idx in range(len(self.grid_gdf)):
+            centroid = self.grid_gdf.loc[idx].geometry.centroid
+            vector[idx].position = (centroid.x, centroid.y)
+            vector[idx].shape = self.grid_gdf.loc[[idx]].boundary
+        return vector
 
     def _get_bounding_box(self) -> tuple:
         """
@@ -159,8 +160,8 @@ class Coverage:
         # Pre-compute KD-Tree for grid centroids
         #        kdtree = self._precompute_grid_kdtree()
 
-        # Loop through each GNSS constellation
-        for gnss_name, _gnss_value in self.gnss_constellation.items():
+        # Loop through each GNSS constellation that has reflections for the current signal
+        for gnss_name in self.reflection_dict:
             refl_vector = self.reflection_dict[gnss_name]  # Reflection vector for the current GNSS constellation
 
             for i in range(len(refl_vector)):
@@ -217,62 +218,61 @@ class Coverage:
                             self.coverage_dict[gnss_name][rect_idx].angles.append(angle)
                             self.coverage_dict[gnss_name][rect_idx].power.append(power)
 
-    def calculate_reflection_points_and_coverage(self, verbose=False):
+    def compute_coverage_for_signal(self, band, constellation, freq_hz, eirp_dbw, verbose=False):
         """
         =========================================================================================================
-        Compute reflection points between satellites for every (LEO, GNSS) pair, then accumulate
-        per-cell coverage from the resulting reflection vectors.
+        Compute reflection points and per-cell coverage for one (constellation, band) signal.
+
+        Geometry is solved per (LEO, GNSS) pair for `constellation`; the link budget is evaluated at
+        `freq_hz` / `eirp_dbw`. Resets the reflection dictionary and this constellation's coverage vector,
+        so each call holds exactly the current signal -- the caller plots / saves before the next call.
 
         INPUTS:
-            verbose: [bool]    Print per-constellation progress (default: False)
+            band:          [str]     Band name (for progress labels and output filenames)
+            constellation: [str]     GNSS constellation transmitting this band
+            freq_hz:       [float]   Carrier frequency [Hz]
+            eirp_dbw:      [float]   Transmit EIRP [dBW]
+            verbose:       [bool]    Print progress (default: False)
         =========================================================================================================
         """
-        # Calculate the total number of calculations to be performed
         times = [time.utc_datetime() for time in self.sat_constellation.times_skyfield]
-        total_computations = 0
-        for _, gnss_const in self.gnss_constellation.items():
-            total_computations += len(self.sat_constellation.satellites) * len(gnss_const.satellites)
+        gnss_const = self.gnss_constellation[constellation]
 
-        with tqdm(total=total_computations, desc="Reflection calculations", unit="reflection") as pbar:
-            for gnss_name, gnss_const in self.gnss_constellation.items():
-                if verbose:
-                    print(f'\nCalculating reflections for GNSS constellation "{gnss_name}"')
-                reflections_vec = []
+        # Fresh accumulators for this signal (single owning constellation).
+        self.reflection_dict = {}
+        self.coverage_dict[constellation] = self._fresh_coverage_vector()
 
-                for sat_no, sat in enumerate(self.sat_constellation.satellites):
-                    # Update status but don't advance the progress bar yet
-                    pbar.set_description(f"GNSS-R Sat-{sat_no + 1} with {gnss_name}")
+        total_computations = len(self.sat_constellation.satellites) * len(gnss_const.satellites)
+        with tqdm(total=total_computations, desc=f"Reflections {constellation} {band}", unit="reflection") as pbar:
+            if verbose:
+                print(f'\nCalculating reflections for {constellation} band {band} ({freq_hz / 1e6:.2f} MHz)')
+            reflections_vec = []
+            for sat_no, sat in enumerate(self.sat_constellation.satellites):
+                pbar.set_description(f"GNSS-R Sat-{sat_no + 1} with {constellation} {band}")
+                antenna_obj = sat.gnss_r_antenna if hasattr(sat, "gnss_r_antenna") else None
 
-                    # Resolve antenna and EIRP once per LEO satellite, then reuse across all GNSS Tx pairings.
-                    antenna_obj = sat.gnss_r_antenna if hasattr(sat, "gnss_r_antenna") else None
-                    frequency_hz = lb.resolve_single_link_budget_frequency_hz(antenna_obj)
-                    tx_eirp_dbw = Constants.get_tx_eirp_dbw(gnss_name, frequency_hz)
-
-                    for i, gnss_sat in enumerate(gnss_const.satellites):
-                        if i % 5 == 0:
-                            pbar.set_description(f"GNSS-R Sat-{sat_no + 1} with {gnss_name} [{i}/{len(gnss_const.satellites)}]")
-                        # Perform the reflection calculation
-                        refl_gnss = Reflection(
-                            gnss_sat.satID,
-                            sat.satID,
-                            earth_model=self.earth_model,
-                            max_central_angle_deg=self.max_central_angle_deg,
-                            gnss_const=gnss_name,
-                        )
-                        refl_gnss.compute_reflection_coordinates(
-                            gnss_sat,
-                            sat,
-                            times,
-                            tx_eirp_dbw=tx_eirp_dbw,
-                            antenna=antenna_obj,
-                            frequency_hz=frequency_hz,
-                            link_budget_settings=self.link_budget_settings,
-                        )
-                        reflections_vec.append(refl_gnss)
-
-                        # Update progress bar after each reflection calculation
-                        pbar.update(1)
-                self.reflection_dict[gnss_const.satConfigName] = reflections_vec
+                for i, gnss_sat in enumerate(gnss_const.satellites):
+                    if i % 5 == 0:
+                        pbar.set_description(f"GNSS-R Sat-{sat_no + 1} with {constellation} {band} [{i}/{len(gnss_const.satellites)}]")
+                    refl_gnss = Reflection(
+                        gnss_sat.satID,
+                        sat.satID,
+                        earth_model=self.earth_model,
+                        max_central_angle_deg=self.max_central_angle_deg,
+                        gnss_const=constellation,
+                    )
+                    refl_gnss.compute_reflection_coordinates(
+                        gnss_sat,
+                        sat,
+                        times,
+                        tx_eirp_dbw=eirp_dbw,
+                        antenna=antenna_obj,
+                        frequency_hz=freq_hz,
+                        link_budget_settings=self.link_budget_settings,
+                    )
+                    reflections_vec.append(refl_gnss)
+                    pbar.update(1)
+            self.reflection_dict[constellation] = reflections_vec
         self._calculate_coverage(times)
 
     def calculate_statistics(self, gnss_constellation=None):

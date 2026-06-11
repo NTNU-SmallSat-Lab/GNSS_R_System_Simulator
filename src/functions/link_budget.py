@@ -266,33 +266,6 @@ def ellipsoid_surface_normals_eci(surface_positions_ecef: np.ndarray, times) -> 
     return normals_eci
 
 
-def resolve_single_link_budget_frequency_hz(antenna) -> float:
-    """
-    =========================================================================================================
-    Resolve the carrier frequency to use for the link budget.
-
-    Multi-band support (one link budget per Rx band, across multiple GNSS constellations) is planned
-    but not yet implemented. Until then, the antenna must be configured with exactly one band; this
-    helper enforces that and falls back to L1 when no antenna is provided.
-
-    INPUTS:
-        antenna: [RxAntenna | None]   Receiver antenna, or None for the L1 default
-
-    OUTPUT:
-        frequency_hz: [float]   Carrier frequency [Hz]
-    =========================================================================================================
-    """
-    if antenna is None or not getattr(antenna, "frequencies", None):
-        return float(Constants.BANDS_CENTER_FREQUENCIES_Hz["L1"])
-    if len(antenna.frequencies) > 1:
-        raise NotImplementedError(
-            f"Multi-band link budget is not yet supported "
-            f"(antenna configured for bands {antenna.bands}). "
-            "Configure exactly one band for now."
-        )
-    return float(antenna.frequencies[0]) * 1e6
-
-
 def compute_reflection_link_budget(
     tx_positions_eci: np.ndarray,
     rx_positions_eci: np.ndarray,

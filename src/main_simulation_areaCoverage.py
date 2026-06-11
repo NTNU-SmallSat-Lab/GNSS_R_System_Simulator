@@ -89,27 +89,31 @@ def run_area_coverage_simulation(sim_settings):
         earth_model=earth,
         link_budget_settings=sim_settings.get("link_budget"),
         max_central_angle_deg=sim_settings["max_central_angle_deg"],
+        selected_signals=sim_settings["selected_signals"],
     )
-    coverage.calculate_reflection_points_and_coverage(verbose=True)
+    if not coverage.signals:
+        raise ValueError("No usable (constellation, band) signals for coverage. Check [ANTENNA].bands and the loaded GNSS constellations.")
 
     ####################################
-    # 7. Plot reflection points
+    # 6/7. Per-(constellation, band): compute coverage, plot reflection/coverage maps, print stats.
     ####################################
-    coverage.plot_reflection_points()
-    coverage.plot_coverage_shapefile(gnss_constellation="GPS", file_name="Coverage.png")
-    coverage.plot_coverage_shapefile(file_name="Coverage_all_configurations.png")
-    coverage.plot_coverage_gridded_shapefile(gnss_constellation="GPS", file_name="Coverage_grid_GPS.png")
-    coverage.plot_coverage_gridded_shapefile(file_name="Coverage_grid_GPS_GALIEO.png")
+    for sig in coverage.signals:
+        band, constellation = sig["band"], sig["constellation"]
+        coverage.compute_coverage_for_signal(
+            band=band,
+            constellation=constellation,
+            freq_hz=sig["freq_hz"],
+            eirp_dbw=sig["eirp_dbw"],
+            verbose=True,
+        )
+        coverage.plot_coverage_shapefile(gnss_constellation=constellation, file_name=f"Coverage_{constellation}_{band}.png")
+        coverage.plot_coverage_gridded_shapefile(gnss_constellation=constellation, file_name=f"Coverage_grid_{constellation}_{band}.png")
+        coverage.calculate_statistics(gnss_constellation=constellation)
 
     ####################################
-    # 9. Plot orbits
+    # 9. Plot orbits (band-independent)
     ####################################
     Plotting.plot_orbits(sat_const)
-
-    ####################################
-    # 10. Calculate statistics
-    ####################################
-    coverage.calculate_statistics()
 
 
 if __name__ == "__main__":

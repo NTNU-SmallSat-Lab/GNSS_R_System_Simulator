@@ -80,6 +80,42 @@ def parse_antenna_angles(filename: str) -> tuple[float, float, float]:
     return float(az_match.group(1)), float(el_match.group(1)), float(freq_match.group(1))
 
 
+def build_selected_signals(antenna_bands, loaded_constellation_names) -> list[dict]:
+    """
+    Validate the configured bands and return the [{band, constellation, freq_hz, eirp_dbw}] signal plan.
+
+    Each band is a constellation-specific signal (L1=GPS, E1=Galileo, ...). Invalid bands are warned
+    about and dropped (never raise): unknown band names, bands with no transmit-EIRP entry, and bands
+    whose owning constellation is not among `loaded_constellation_names`.
+    """
+    selected_signals = []
+    loaded_by_upper = {name.upper(): name for name in loaded_constellation_names}  # canonical name -> actual key
+    for band in antenna_bands or []:
+        if band not in Constants.BANDS_CENTER_FREQUENCIES_Hz:
+            logger.warning("Band %r is not a known GNSS band; skipping it. Known bands: %s.", band, sorted(Constants.BANDS_CENTER_FREQUENCIES_Hz))
+            continue
+        owner = Constants.get_constellation_for_band(band)  # canonical constellation name, or None when no EIRP entry
+        if owner is None:
+            logger.warning("Band %r has no transmit-EIRP entry (no constellation defined for it); skipping it.", band)
+            continue
+        if owner not in loaded_by_upper:
+            logger.warning(
+                "Band %r belongs to constellation %s, which is not among the loaded GNSS constellations %s; skipping it.",
+                band, owner, sorted(loaded_by_upper),
+            )
+            continue
+        constellation = loaded_by_upper[owner]  # use the key as it appears in gnss_constellation for downstream lookups
+        selected_signals.append(
+            {
+                "band": band,
+                "constellation": constellation,
+                "freq_hz": float(Constants.BANDS_CENTER_FREQUENCIES_Hz[band]),
+                "eirp_dbw": Constants.get_tx_eirp_dbw_for_band(constellation, band),
+            }
+        )
+    return selected_signals
+
+
 def initialize(config_file_name="Configuration.ini"):
     """
     =========================================================================================================
@@ -328,34 +364,9 @@ def initialize(config_file_name="Configuration.ini"):
         )
 
     #[ANTENNA] band selection -> per-(constellation, band) signal plan
-    # Each configured band is a constellation-specific signal (L1=GPS, E1=Galileo, ...). Validate
-    # each against the band table and the loaded constellations; warn and drop invalid entries
-    # instead of stopping, so a typo or an unmatched band never aborts the run.
-    selected_signals = []
-    loaded_by_upper = {name.upper(): name for name in gnss_constellation}  # canonical name -> actual dict key
-    for band in antenna_bands or []:
-        if band not in Constants.BANDS_CENTER_FREQUENCIES_Hz:
-            logger.warning("Band %r is not a known GNSS band; skipping it. Known bands: %s.", band, sorted(Constants.BANDS_CENTER_FREQUENCIES_Hz))
-            continue
-        owner = Constants.get_constellation_for_band(band)  # canonical constellation name, or None when no EIRP entry
-        if owner is None:
-            logger.warning("Band %r has no transmit-EIRP entry (no constellation defined for it); skipping it.", band)
-            continue
-        if owner not in loaded_by_upper:
-            logger.warning(
-                "Band %r belongs to constellation %s, which is not among the loaded GNSS constellations %s; skipping it.",
-                band, owner, sorted(loaded_by_upper),
-            )
-            continue
-        constellation = loaded_by_upper[owner]  # use the key as it appears in gnss_constellation for downstream lookups
-        selected_signals.append(
-            {
-                "band": band,
-                "constellation": constellation,
-                "freq_hz": float(Constants.BANDS_CENTER_FREQUENCIES_Hz[band]),
-                "eirp_dbw": Constants.get_tx_eirp_dbw_for_band(constellation, band),
-            }
-        )
+    # Each configured band is a constellation-specific signal (L1=GPS, E1=Galileo, ...). Invalid
+    # entries warn and drop instead of stopping, so a typo never aborts the run (see build_selected_signals).
+    selected_signals = build_selected_signals(antenna_bands, gnss_constellation.keys())
 
     #[REFLECTION] (REQUIRED SECTION)
     # max_central_angle_deg is required always; max_incidence_angle_deg only when
@@ -528,4 +539,4 @@ def initialize(config_file_name="Configuration.ini"):
     return config, simulation_settings
 
 # Export the initialize function
-__all__ = ["initialize"]
+__all__ = ["build_selected_signals", "initialize"]
