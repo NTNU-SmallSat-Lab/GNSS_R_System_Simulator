@@ -355,17 +355,6 @@ class Plotting:
                 name="Polar axis",
             )
         )
-        traces.append(
-            go.Scatter3d(
-                x=[0, 0],
-                y=[0, 0],
-                z=[1.02 * earth_radius_km, -1.02 * earth_radius_km],  # just outside the globe so the markers stay visible
-                mode="markers",
-                marker={"size": 4, "color": ["red", "blue"]},  # north pole red, south pole blue
-                name="Poles",
-            )
-        )
-
         # Orbit trajectories + a marker at each satellite ECI position (first propagated time)
         max_points = 2000  # cap serialized points per orbit: a full-window track can be ~1e5+ samples
         palette = [f"rgb({int(r * 255)},{int(g * 255)},{int(b * 255)})" for (r, g, b) in plt.cm.tab10.colors]
