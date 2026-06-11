@@ -737,7 +737,7 @@ class MovingTargetDetection:
         rcs_ocean_m2 = float(link_budget["rcs_m2"][0])
         return pr_ocean_w, rcs_ocean_m2
 
-    def show_link_budget_contributions(self, file_name: str | None = None, show_figure: bool = False) -> None:
+    def show_link_budget_contributions(self, file_name: str | None = None, show_figure: bool = False, band: str | None = None) -> None:
         """
         =========================================================================================================
         Visualise per-detection-event ocean clutter vs ship signal contributions to the link budget.
@@ -753,6 +753,7 @@ class MovingTargetDetection:
         INPUTS:
             file_name:   [str | None]   Output filename in Constants.output_folder_path; None => don't save
             show_figure: [bool]         Display interactively (default: False)
+            band:        [str | None]   Restrict to one band (default: all bands combined)
         =========================================================================================================
         """
         # Collect detection events that have a finite ship-Pr and ocean-Pr pair.
@@ -760,6 +761,8 @@ class MovingTargetDetection:
         for gnss_name, events in self.target_detect_dict.items():
             kept = []
             for e in events:
+                if band is not None and e.band != band:
+                    continue
                 if (
                     e.pr_ocean_w is not None and np.isfinite(e.pr_ocean_w) and e.pr_ocean_w > 0.0
                     and e.pr_ship_w is not None and np.isfinite(e.pr_ship_w) and e.pr_ship_w > 0.0
@@ -825,6 +828,8 @@ class MovingTargetDetection:
         ax_hist.legend(loc="best")
         ax_hist.grid(True, alpha=0.3)
 
+        if band is not None:
+            fig.suptitle(f"Band {band}", fontweight="bold")
         plt.tight_layout()
 
         if file_name is not None:
@@ -838,10 +843,18 @@ class MovingTargetDetection:
         # Console summary.
         print()
         print("=" * 64)
-        print("LINK BUDGET CONTRIBUTION SUMMARY (ship vs ocean per detection)")
+        header = "LINK BUDGET CONTRIBUTION SUMMARY (ship vs ocean per detection)"
+        if band is not None:
+            header += f" -- band {band}"
+        print(header)
         print("=" * 64)
         for gnss_name in self.gnss_constellation:
-            total = len(self.target_detect_dict.get(gnss_name, []))
+            all_events = self.target_detect_dict.get(gnss_name, [])
+            if band is not None:
+                all_events = [e for e in all_events if e.band == band]
+            total = len(all_events)
+            if band is not None and total == 0:
+                continue  # this constellation has no signal in this band -- omit the noise row
             kept = events_by_const.get(gnss_name, [])
             n_finite = len(kept)
             if n_finite == 0:
@@ -1640,7 +1653,8 @@ class MovingTargetDetection:
             return Polygon()
 
     def show_track_and_detection_points(self, gnss_constellation=None, file_name=None, show_figure=False,
-                                       delta_lon=None, delta_lat=None, verbose=False, label_detections=False) -> None:
+                                       delta_lon=None, delta_lat=None, verbose=False, label_detections=False,
+                                       band: str | None = None) -> None:
         """
         =========================================================================================================
         Plot the detection points for each GNSS constellation. Filters out problematic polygons that
@@ -1654,6 +1668,7 @@ class MovingTargetDetection:
             delta_lat:          [float | None] Latitude buffer added to bounds [deg]; falls back to self.bbox_buffer_deg
             verbose:            [bool]         Print warnings (default: False)
             label_detections:   [bool]         Annotate detections with sat IDs (default: False)
+            band:               [str | None]   Restrict to one band (default: all bands combined)
         =========================================================================================================
         """
         if delta_lon is None:
@@ -1679,7 +1694,10 @@ class MovingTargetDetection:
         ax.set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
 
         gnss_const_str = ", ".join(gnss_const).replace("[", "").replace("]", "").replace(", ", " and ")
-        plt.title(f"Detection Points for GNSS Constellations {gnss_const_str}")
+        title = f"Detection Points for GNSS Constellations {gnss_const_str}"
+        if band is not None:
+            title += f" (band {band})"
+        plt.title(title)
         plt.xlabel("Longitude")
         plt.ylabel("Latitude")
 
@@ -1707,6 +1725,9 @@ class MovingTargetDetection:
         for gnss_name in gnss_const:
             if gnss_name in self.target_detect_dict:
                 for idx, detect_struct in enumerate(self.target_detect_dict[gnss_name]):
+                    # Restrict to one band when requested (idx stays aligned with _identify_wrapping_polygons)
+                    if band is not None and detect_struct.band != band:
+                        continue
                     # Skip problematic polygons
                     if (gnss_name, idx) in problem_indices:
                         skipped_count += 1
