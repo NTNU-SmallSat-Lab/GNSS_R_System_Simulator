@@ -111,6 +111,11 @@ def run_area_coverage_simulation(sim_settings):
         coverage.calculate_statistics(gnss_constellation=constellation)
 
     ####################################
+    # 8. Whole-earth reflection-trace plots for every computed constellation (geometry is band-independent).
+    ####################################
+    coverage.plot_reflection_points()
+
+    ####################################
     # 9. Plot orbits (band-independent)
     ####################################
     Plotting.plot_orbits(sat_const)

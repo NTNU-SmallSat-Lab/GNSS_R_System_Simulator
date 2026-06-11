@@ -143,14 +143,15 @@ class Coverage:
         else:
             return None
 
-    def _calculate_coverage(self, times) -> None:
+    def _calculate_coverage(self, times, constellation) -> None:
         """
         =========================================================================================================
         Filter reflection points to those inside the bounding box, then accumulate per-cell coverage
-        (times, satellite IDs, incidence angles, received power) into `self.coverage_dict`.
+        (times, satellite IDs, incidence angles, received power) into `self.coverage_dict[constellation]`.
 
         INPUTS:
-            times: [list[datetime]]   Time vector of the reflection samples
+            times:         [list[datetime]]   Time vector of the reflection samples
+            constellation: [str]              Constellation whose reflections to accumulate (the current signal)
         =========================================================================================================
         """
         if self.reflection_dict is None:
@@ -160,8 +161,10 @@ class Coverage:
         # Pre-compute KD-Tree for grid centroids
         #        kdtree = self._precompute_grid_kdtree()
 
-        # Loop through each GNSS constellation that has reflections for the current signal
-        for gnss_name in self.reflection_dict:
+        # Accumulate only the current signal's constellation. reflection_dict may also hold other
+        # constellations from earlier signals (kept for the whole-earth reflection plots), whose
+        # coverage is already computed -- re-processing them here would double-count.
+        for gnss_name in [constellation]:
             refl_vector = self.reflection_dict[gnss_name]  # Reflection vector for the current GNSS constellation
 
             for i in range(len(refl_vector)):
@@ -238,8 +241,8 @@ class Coverage:
         times = [time.utc_datetime() for time in self.sat_constellation.times_skyfield]
         gnss_const = self.gnss_constellation[constellation]
 
-        # Fresh accumulators for this signal (single owning constellation).
-        self.reflection_dict = {}
+        # Fresh coverage accumulator for this constellation. Reflections from earlier signals are kept
+        # in reflection_dict so the end-of-run whole-earth reflection plots show every computed constellation.
         self.coverage_dict[constellation] = self._fresh_coverage_vector()
 
         total_computations = len(self.sat_constellation.satellites) * len(gnss_const.satellites)
@@ -273,7 +276,7 @@ class Coverage:
                     reflections_vec.append(refl_gnss)
                     pbar.update(1)
             self.reflection_dict[constellation] = reflections_vec
-        self._calculate_coverage(times)
+        self._calculate_coverage(times, constellation)
 
     def calculate_statistics(self, gnss_constellation=None):
         """
@@ -366,10 +369,12 @@ class Coverage:
                 file_name=plot_name,
             )
 
-        const_names_str = "_".join(self.gnss_constellation.keys())
+        # Only the constellations actually computed (those with a selected band) are in reflection_dict.
+        present = {name: self.gnss_constellation[name] for name in self.reflection_dict}
+        const_names_str = "_".join(present.keys())
         Plotting.plot_reflection_traces_total(
             self.sat_constellation,
-            self.gnss_constellation,
+            present,
             self.reflection_dict,
             file_name=f"Reflection_traces_{const_names_str}.png",
         )
