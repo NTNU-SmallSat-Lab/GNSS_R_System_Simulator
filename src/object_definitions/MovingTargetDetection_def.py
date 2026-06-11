@@ -49,6 +49,7 @@ class MovingTargetDetection:
         max_central_angle_deg,
         max_incidence_angle_deg,
         ship_dimensions: dict | None = None,
+        selected_signals: list[dict] | None = None,
     ) -> None:
         """
         =========================================================================================================
@@ -70,6 +71,7 @@ class MovingTargetDetection:
                 max_central_angle_deg:              [float]                    Max Tx-Rx central angle [deg] (required)
                 max_incidence_angle_deg:            [float | None]             Max BRP incidence angle [deg]; required when reflection_mode = "backscatter", may be None for "specular"
                 ship_dimensions:                    [dict | None]              {length_m, beam_m, freeboard_m}; enables ship-RCS contribution at detection events when set
+                selected_signals:                   [list[dict] | None]        Validated [{band, constellation, freq_hz, eirp_dbw}] signal plan from the INI band selection
 
             ATTRIBUTES:
                 moving_target_object:        [ShipTrajectory]   Moving target object
@@ -104,7 +106,6 @@ class MovingTargetDetection:
         self.earth_model = earth_model  # Earth model to use for the reflection calculation (default: 'spherical')
         self.reflection_mode = reflection_mode  # Either Specular reflection, or backscattering calculation
         self.link_budget_settings = link_budget_settings
-        self.link_budget_frequency_hz = lb.resolve_single_link_budget_frequency_hz(self.sat_antenna)
         self.bbox_buffer_deg = float(bbox_buffer_deg)
         self.max_central_angle_deg = float(max_central_angle_deg)
         if self.reflection_mode == "backscatter":
@@ -114,13 +115,20 @@ class MovingTargetDetection:
         else:
             self.max_incidence_angle_deg = None
 
-        # Per-constellation transmit EIRP, looked up once at construction so configuration
-        # mismatches (no L1-equivalent band for this constellation) fail fast instead of
-        # midway through propagation.
-        self.tx_eirp_dbw_per_constellation = {}
-        for gnss_name in self.gnss_constellation:
-            self.tx_eirp_dbw_per_constellation[gnss_name] = Constants.get_tx_eirp_dbw(
-                gnss_name, self.link_budget_frequency_hz
+        # Per-(constellation, band) signal plan from the validated INI band selection. Geometry is
+        # computed once per Tx/Rx pair; the link budget is evaluated per band, each carrying its own
+        # carrier frequency and transmit EIRP. Built once here so a misconfiguration fails fast.
+        self.signals_per_constellation = {name: [] for name in self.gnss_constellation}
+        for sig in selected_signals or []:
+            constellation = sig["constellation"]
+            if constellation in self.signals_per_constellation:
+                self.signals_per_constellation[constellation].append(
+                    {"band": sig["band"], "freq_hz": float(sig["freq_hz"]), "eirp_dbw": float(sig["eirp_dbw"])}
+                )
+        if not any(self.signals_per_constellation.values()):
+            raise ValueError(
+                "No usable (constellation, band) signals: every configured band was dropped during "
+                "validation, or none belong to the loaded GNSS constellations. Check [ANTENNA].bands."
             )
 
         self.footprint_stats = {"total": 0, "rejected_empty": 0}  # populated by _reflection_point_footprint, summarised at the end of calculate_moving_target_reflection_intersection
@@ -297,7 +305,8 @@ class MovingTargetDetection:
                             # Update progress bar description (only every 5th iteration)
                             pbar.set_description(f"GNSS-R Sat-{sat_no + 1} with {gnss_name} [{i}/{len(gnss_const.satellites)}]")
 
-                        tx_eirp_dbw = self.tx_eirp_dbw_per_constellation[gnss_name]
+                        # Geometry only here; tx_eirp_dbw/frequency_hz are unused with compute_link_budget=False
+                        # (the budget is evaluated per band in _compute_ocean_pr_at_event / _compute_ship_pr_at_event).
                         if self.reflection_mode == "specular":
                             reflection = Reflection(
                                 sat_tx.satID,
@@ -310,9 +319,8 @@ class MovingTargetDetection:
                                 sat_tx,
                                 sat_rx,
                                 times_refl_array,
-                                tx_eirp_dbw=tx_eirp_dbw,
+                                tx_eirp_dbw=float("nan"),
                                 antenna=self.sat_antenna,
-                                frequency_hz=self.link_budget_frequency_hz,
                                 link_budget_settings=self.link_budget_settings,
                                 compute_link_budget=False,  # deferred to _compute_ocean_pr_at_event per detection event
                             )
@@ -330,9 +338,8 @@ class MovingTargetDetection:
                                 sat_tx,
                                 sat_rx,
                                 times_refl_array,
-                                tx_eirp_dbw=tx_eirp_dbw,
+                                tx_eirp_dbw=float("nan"),
                                 antenna=self.sat_antenna,
-                                frequency_hz=self.link_budget_frequency_hz,
                                 link_budget_settings=self.link_budget_settings,
                                 compute_link_budget=False,  # deferred to _compute_ocean_pr_at_event per detection event
                             )
@@ -460,9 +467,15 @@ class MovingTargetDetection:
                                         f"INFORMATION: Reflection coordinates are NaN for {gnss_name}, satellites ID-GNSS {refl_obj.tx_satID}, and ID-GNSS-R {refl_obj.rx_satID} at time {time_refl_i}"
                                     )
                                 continue
-                            # Create footprint around the reflection point
-                            for freq in self.sat_antenna.frequencies:
-                                footprint_reflection, reflection_point_ll = self._reflection_point_footprint(refl_obj, reflection_index, freq, verbose)
+                            # Create footprint around the reflection point, once per configured band of this
+                            # constellation. Geometry is band-independent; only the footprint size, antenna gain,
+                            # EIRP, and ocean RCS change with the carrier frequency.
+                            for signal in self.signals_per_constellation[gnss_name]:
+                                band = signal["band"]
+                                frequency_hz = signal["freq_hz"]
+                                tx_eirp_dbw = signal["eirp_dbw"]
+                                freq_mhz = frequency_hz / 1e6
+                                footprint_reflection, reflection_point_ll = self._reflection_point_footprint(refl_obj, reflection_index, freq_mhz, verbose)
 
                                 ## DEBUG: Plot the footprint and the moving target position
                                 # show_reflection_and_target_position(pos_tgt_i, footprint_reflection, reflection_point_ll, gnss_name) # TODO this always uses-3db and specular
@@ -471,7 +484,7 @@ class MovingTargetDetection:
                                     # propagation. A non-finite Pr means the reflection is out of the antenna
                                     # FOV or has no valid RCS; the eager path dropped these via an empty
                                     # footprint, so skip the detection to preserve that behaviour.
-                                    pr_ocean_w, rcs_ocean_m2 = self._compute_ocean_pr_at_event(refl_obj, reflection_index, gnss_name)
+                                    pr_ocean_w, rcs_ocean_m2 = self._compute_ocean_pr_at_event(refl_obj, reflection_index, frequency_hz, tx_eirp_dbw)
                                     if not np.isfinite(pr_ocean_w):
                                         continue
 
@@ -483,7 +496,8 @@ class MovingTargetDetection:
                                     possible_target_detection.footprint_shape = footprint_reflection
                                     possible_target_detection.reflection_point_ll = reflection_point_ll  # specular point, or BRP in backscatter mode
                                     possible_target_detection.refl_obj = refl_obj
-                                    possible_target_detection.frequency = freq
+                                    possible_target_detection.frequency = freq_mhz
+                                    possible_target_detection.band = band
                                     possible_target_detection.pos_tgt_i = pos_tgt_i
                                     possible_target_detection.tx_satID = refl_obj.tx_satID
                                     possible_target_detection.rx_satID = refl_obj.rx_satID
@@ -494,7 +508,7 @@ class MovingTargetDetection:
                                     if self.ship_dimensions is not None:
                                         ship_position_ll = (pos_tgt_i.y, pos_tgt_i.x)
                                         pr_ship_w, rcs_ship_m2 = self._compute_ship_pr_at_event(
-                                            refl_obj, reflection_index, gnss_name, time_tgt_i, ship_position_ll,
+                                            refl_obj, reflection_index, frequency_hz, tx_eirp_dbw, time_tgt_i, ship_position_ll,
                                         )
                                         possible_target_detection.pr_ship_w = pr_ship_w
                                         possible_target_detection.rcs_ship_m2 = rcs_ship_m2
@@ -609,7 +623,8 @@ class MovingTargetDetection:
         self,
         refl_obj: Reflection | Backscatter,
         reflection_index: int,
-        gnss_name: str,
+        frequency_hz: float,
+        tx_eirp_dbw: float,
         detection_time: dt.datetime,
         ship_position_ll: tuple[float, float],
     ) -> tuple[float, float]:
@@ -655,7 +670,7 @@ class MovingTargetDetection:
             return nan_pair
 
         geometry = lb.build_bistatic_geometry(tx_pos, rx_pos, ship_pos_eci, ship_surface_normal_eci)
-        wavelength_m = Constants.SPEED_OF_LIGHT / self.link_budget_frequency_hz
+        wavelength_m = Constants.SPEED_OF_LIGHT / frequency_hz
 
         ship_target = ShipTarget.from_dict(self.ship_dimensions, heading_eci=heading_eci[np.newaxis, :])
         rcs_result = ship_target.compute_rcs(geometry, wavelength_m)
@@ -671,7 +686,7 @@ class MovingTargetDetection:
         )
         rx_gain_dbi = self.sat_antenna.get_gain_dbi_for_direction(
             look_dir_a,
-            self.link_budget_frequency_hz / 1e6,
+            frequency_hz / 1e6,
         )
 
         link_budget = lb.compute_bistatic_link_budget(
@@ -679,8 +694,8 @@ class MovingTargetDetection:
             range_rx_m=geometry.range_rx_m,
             rx_gain_dbi=np.array([rx_gain_dbi]),
             rcs_m2=np.array([rcs_ship_m2]),
-            frequency_hz=self.link_budget_frequency_hz,
-            tx_eirp_dbw=self.tx_eirp_dbw_per_constellation[gnss_name],
+            frequency_hz=frequency_hz,
+            tx_eirp_dbw=tx_eirp_dbw,
             settings=self.link_budget_settings,
         )
         pr_ship_w = float(link_budget["received_power_w"][0])
@@ -690,7 +705,8 @@ class MovingTargetDetection:
         self,
         refl_obj: Reflection | Backscatter,
         reflection_index: int,
-        gnss_name: str,
+        frequency_hz: float,
+        tx_eirp_dbw: float,
     ) -> tuple[float, float]:
         """
         Compute the ocean-clutter received power and RCS at one reflection sample.
@@ -712,8 +728,8 @@ class MovingTargetDetection:
             reflection_positions_eci=refl_obj.refl_ECI_vec[idx:idx + 1, :],
             incidence_deg=refl_obj.refl_ang_vec[idx:idx + 1],
             antenna=self.sat_antenna,
-            frequency_hz=self.link_budget_frequency_hz,
-            tx_eirp_dbw=self.tx_eirp_dbw_per_constellation[gnss_name],
+            frequency_hz=frequency_hz,
+            tx_eirp_dbw=tx_eirp_dbw,
             settings=self.link_budget_settings,
             surface_normals_eci=surface_normals_eci,
         )
@@ -1780,7 +1796,8 @@ class MovingTargetDetectionStruct:
     time: dt = None
     footprint_shape: float = np.nan
     refl_obj: Reflection | Backscatter = None  # Reference to the reflection object that caused the detection
-    frequency: float = np.nan
+    frequency: float = np.nan              # carrier frequency [MHz]
+    band: str | None = None                # constellation-specific band name (e.g. L1, E1, B1I)
     # Per-event link budget split (populated when ship_dimensions is supplied to MovingTargetDetection).
     pr_ocean_w: float | None = None        # ocean clutter received power [W]
     pr_ship_w: float | None = None         # ship signal received power [W]

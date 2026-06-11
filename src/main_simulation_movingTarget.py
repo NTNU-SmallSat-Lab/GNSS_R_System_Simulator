@@ -96,6 +96,7 @@ def run_moving_target_detection(settings: dict):
         max_central_angle_deg=settings["max_central_angle_deg"],
         max_incidence_angle_deg=settings["max_incidence_angle_deg"],
         ship_dimensions=settings["ship"],
+        selected_signals=settings["selected_signals"],
     )
 
     # Optimize: only compute and propagate for visible windows
