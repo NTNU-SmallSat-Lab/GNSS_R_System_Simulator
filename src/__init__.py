@@ -9,6 +9,7 @@ if not hasattr(datetime, "UTC"):
 from dataclasses import fields
 from datetime import UTC, datetime
 import json as json
+import logging
 import os
 import re
 import sys
@@ -39,6 +40,8 @@ from object_definitions.Constants_def import Constants
 
 ## UPDATE THE SIMULATIOR VERSION HERE ##
 __version__ = "0.1.0"
+
+logger = logging.getLogger(__name__)
 
 
 def _check_python_version() -> None:
@@ -324,7 +327,35 @@ def initialize(config_file_name="Configuration.ini"):
             "[GNSS CONSTELLATIONS].gnss_tle_files is empty — the simulation needs at least one GNSS constellation."
         )
 
-
+    #[ANTENNA] band selection -> per-(constellation, band) signal plan
+    # Each configured band is a constellation-specific signal (L1=GPS, E1=Galileo, ...). Validate
+    # each against the band table and the loaded constellations; warn and drop invalid entries
+    # instead of stopping, so a typo or an unmatched band never aborts the run.
+    selected_signals = []
+    loaded_by_upper = {name.upper(): name for name in gnss_constellation}  # canonical name -> actual dict key
+    for band in antenna_bands or []:
+        if band not in Constants.BANDS_CENTER_FREQUENCIES_Hz:
+            logger.warning("Band %r is not a known GNSS band; skipping it. Known bands: %s.", band, sorted(Constants.BANDS_CENTER_FREQUENCIES_Hz))
+            continue
+        owner = Constants.get_constellation_for_band(band)  # canonical constellation name, or None when no EIRP entry
+        if owner is None:
+            logger.warning("Band %r has no transmit-EIRP entry (no constellation defined for it); skipping it.", band)
+            continue
+        if owner not in loaded_by_upper:
+            logger.warning(
+                "Band %r belongs to constellation %s, which is not among the loaded GNSS constellations %s; skipping it.",
+                band, owner, sorted(loaded_by_upper),
+            )
+            continue
+        constellation = loaded_by_upper[owner]  # use the key as it appears in gnss_constellation for downstream lookups
+        selected_signals.append(
+            {
+                "band": band,
+                "constellation": constellation,
+                "freq_hz": float(Constants.BANDS_CENTER_FREQUENCIES_Hz[band]),
+                "eirp_dbw": Constants.get_tx_eirp_dbw_for_band(constellation, band),
+            }
+        )
 
     #[REFLECTION] (REQUIRED SECTION)
     # max_central_angle_deg is required always; max_incidence_angle_deg only when
@@ -469,6 +500,7 @@ def initialize(config_file_name="Configuration.ini"):
         "No_satellites": len(orbits_input),
         #[GNSS CONSTELLATIONS]
         "GNSS_constellations": gnss_constellation,
+        "selected_signals": selected_signals,
         #[COVERAGE]
         "shapefile_path": coverage_file_path,
         "grid_size_m": grid_size_m,

@@ -146,6 +146,12 @@ class Constants:
         "QZSS":    {"QZSS_L1": 27.0, "QZSS_L1C": 27.0, "QZSS_L2C": 25.0, "QZSS_L5": 29.1, "QZSS_L6": 35.0},
     }
 
+    # Reverse map band -> owning constellation, inverted from GNSS_EIRP_DBW.
+    # Band names are unique across constellations (L1 is GPS-only, E1 Galileo-only, ...),
+    # so the inversion is unambiguous. Bands present in BANDS_CENTER_FREQUENCIES_Hz but
+    # absent from GNSS_EIRP_DBW (e.g. NavIC) have no entry here -> get_constellation_for_band -> None.
+    BAND_TO_CONSTELLATION = {band: constellation for constellation, table in GNSS_EIRP_DBW.items() for band in table}
+
     @classmethod
     def get_tx_eirp_dbw(cls, constellation: str, frequency_hz: float, freq_tolerance_hz: float = 1.0e6) -> float:
         """Return the transmit EIRP [dBW] for `constellation` at carrier `frequency_hz`.
@@ -173,6 +179,22 @@ class Constants:
             f"{frequency_hz / 1e6:.3f} MHz. Available bands for this constellation: "
             f"{[(b, cls.BANDS_CENTER_FREQUENCIES_Hz.get(b)) for b in table]}."
         )
+
+    @classmethod
+    def get_constellation_for_band(cls, band: str) -> str | None:
+        """Return the GNSS constellation transmitting `band`, or None if the band has no EIRP entry."""
+        return cls.BAND_TO_CONSTELLATION.get(band)
+
+    @classmethod
+    def get_tx_eirp_dbw_for_band(cls, constellation: str, band: str) -> float:
+        """Return the transmit EIRP [dBW] for (constellation, band). Raises KeyError if not configured."""
+        constellation = constellation.upper()
+        table = cls.GNSS_EIRP_DBW.get(constellation)
+        if table is None:
+            raise KeyError(f"No EIRP table for constellation {constellation!r}. Known constellations: {sorted(cls.GNSS_EIRP_DBW)}.")
+        if band not in table:
+            raise KeyError(f"No EIRP entry for band {band!r} on constellation {constellation!r}. Available bands: {sorted(table)}.")
+        return float(table[band])
 
     ###########################
     # 3rd Party Libraries and Tools
