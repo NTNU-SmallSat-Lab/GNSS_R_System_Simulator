@@ -91,24 +91,33 @@ def run_area_coverage_simulation(sim_settings):
         max_central_angle_deg=sim_settings["max_central_angle_deg"],
         selected_signals=sim_settings["selected_signals"],
     )
-    if not coverage.signals:
-        raise ValueError("No usable (constellation, band) signals for coverage. Check [ANTENNA].bands and the loaded GNSS constellations.")
+    if not coverage.coverage_constellations:
+        raise ValueError("No usable constellations for coverage. Check [ANTENNA].bands and the loaded GNSS constellations.")
 
     ####################################
-    # 6/7. Per-(constellation, band): compute coverage, plot reflection/coverage maps, print stats.
+    # 6/7. Per-constellation geometric coverage: compute, plot reflection/coverage maps, print stats.
+    #      Coverage is band-independent; [ANTENNA].bands only selects which constellations participate.
     ####################################
-    for sig in coverage.signals:
-        band, constellation = sig["band"], sig["constellation"]
-        coverage.compute_coverage_for_signal(
-            band=band,
+    for sig in coverage.coverage_constellations:
+        constellation = sig["constellation"]
+        coverage.compute_coverage_for_constellation(
             constellation=constellation,
             freq_hz=sig["freq_hz"],
             eirp_dbw=sig["eirp_dbw"],
             verbose=True,
         )
-        coverage.plot_coverage_shapefile(gnss_constellation=constellation, file_name=f"Coverage_{constellation}_{band}.png")
-        coverage.plot_coverage_gridded_shapefile(gnss_constellation=constellation, file_name=f"Coverage_grid_{constellation}_{band}.png")
+        coverage.plot_coverage_shapefile(gnss_constellation=constellation, file_name=f"Coverage_{constellation}.png")
+        coverage.plot_coverage_gridded_shapefile(gnss_constellation=constellation, file_name=f"Coverage_grid_{constellation}.png")
         coverage.calculate_statistics(gnss_constellation=constellation)
+
+    ####################################
+    # 7.5. Combined regional coverage across all computed constellations (overlaid on one map).
+    ####################################
+    present_consts = sorted({sig["constellation"] for sig in coverage.coverage_constellations})
+    combined_filter = ", ".join(present_consts)
+    coverage.plot_coverage_shapefile(gnss_constellation=combined_filter, file_name="Coverage_all_configurations.png")
+    coverage.plot_coverage_gridded_shapefile(gnss_constellation=combined_filter, file_name="Coverage_grid_all_configurations.png")
+    coverage.calculate_statistics(gnss_constellation=combined_filter)
 
     ####################################
     # 8. Whole-earth reflection-trace plots for every computed constellation (geometry is band-independent).

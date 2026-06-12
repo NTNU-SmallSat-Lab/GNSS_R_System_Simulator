@@ -81,10 +81,20 @@ class Coverage:
         self.gnss_constellation = gnss_const  # Dictionary with GNSS constellation objects
         self.link_budget_settings = link_budget_settings
         self.max_central_angle_deg = float(max_central_angle_deg)
-        # Per-(constellation, band) signal plan from the validated INI band selection. Coverage is
-        # computed one band at a time via compute_coverage_for_signal (each band carries its own
-        # carrier frequency and transmit EIRP). Empty when constructed without a plan (e.g. unit tests).
-        self.signals = [s for s in (selected_signals or []) if s["constellation"] in self.gnss_constellation]
+        # Area coverage is a GEOMETRIC metric (specular-reflection revisits per cell), so it is computed
+        # per CONSTELLATION, not per band -- the band's frequency/EIRP only feed the antenna-FOV finiteness
+        # gate, not a detection threshold (see TODO.md "Area coverage: geometric now, detectable later").
+        # [ANTENNA].bands selects which constellations participate; dedupe to the first selected band per
+        # constellation for the representative freq/EIRP. Empty when constructed without a plan (e.g. tests).
+        self.coverage_constellations = []
+        _seen_constellations = set()
+        for s in selected_signals or []:
+            constellation = s["constellation"]
+            if constellation in self.gnss_constellation and constellation not in _seen_constellations:
+                _seen_constellations.add(constellation)
+                self.coverage_constellations.append(
+                    {"constellation": constellation, "freq_hz": s["freq_hz"], "eirp_dbw": s["eirp_dbw"]}
+                )
         if earth_model not in ["spherical", "elliptical"]:
             raise ValueError("earth_model must be either 'spherical' or 'elliptical'")
         else:
@@ -221,20 +231,20 @@ class Coverage:
                             self.coverage_dict[gnss_name][rect_idx].angles.append(angle)
                             self.coverage_dict[gnss_name][rect_idx].power.append(power)
 
-    def compute_coverage_for_signal(self, band, constellation, freq_hz, eirp_dbw, verbose=False):
+    def compute_coverage_for_constellation(self, constellation, freq_hz, eirp_dbw, verbose=False):
         """
         =========================================================================================================
-        Compute reflection points and per-cell coverage for one (constellation, band) signal.
+        Compute reflection points and per-cell GEOMETRIC coverage for one GNSS constellation.
 
-        Geometry is solved per (LEO, GNSS) pair for `constellation`; the link budget is evaluated at
-        `freq_hz` / `eirp_dbw`. Resets the reflection dictionary and this constellation's coverage vector,
-        so each call holds exactly the current signal -- the caller plots / saves before the next call.
+        Geometry is solved per (LEO, GNSS) pair for `constellation`; the link budget at `freq_hz` /
+        `eirp_dbw` is used only as the antenna-FOV finiteness gate (coverage is geometric, not
+        detectability-gated -- see TODO.md). Resets this constellation's coverage vector; reflections
+        accumulate across calls so the whole-earth reflection plots show every computed constellation.
 
         INPUTS:
-            band:          [str]     Band name (for progress labels and output filenames)
-            constellation: [str]     GNSS constellation transmitting this band
-            freq_hz:       [float]   Carrier frequency [Hz]
-            eirp_dbw:      [float]   Transmit EIRP [dBW]
+            constellation: [str]     GNSS constellation to cover
+            freq_hz:       [float]   Representative carrier frequency [Hz] (antenna-FOV gate only)
+            eirp_dbw:      [float]   Representative transmit EIRP [dBW]
             verbose:       [bool]    Print progress (default: False)
         =========================================================================================================
         """
@@ -246,17 +256,17 @@ class Coverage:
         self.coverage_dict[constellation] = self._fresh_coverage_vector()
 
         total_computations = len(self.sat_constellation.satellites) * len(gnss_const.satellites)
-        with tqdm(total=total_computations, desc=f"Reflections {constellation} {band}", unit="reflection") as pbar:
+        with tqdm(total=total_computations, desc=f"Reflections {constellation}", unit="reflection") as pbar:
             if verbose:
-                print(f'\nCalculating reflections for {constellation} band {band} ({freq_hz / 1e6:.2f} MHz)')
+                print(f'\nCalculating reflections for {constellation} ({freq_hz / 1e6:.2f} MHz)')
             reflections_vec = []
             for sat_no, sat in enumerate(self.sat_constellation.satellites):
-                pbar.set_description(f"GNSS-R Sat-{sat_no + 1} with {constellation} {band}")
+                pbar.set_description(f"GNSS-R Sat-{sat_no + 1} with {constellation}")
                 antenna_obj = sat.gnss_r_antenna if hasattr(sat, "gnss_r_antenna") else None
 
                 for i, gnss_sat in enumerate(gnss_const.satellites):
                     if i % 5 == 0:
-                        pbar.set_description(f"GNSS-R Sat-{sat_no + 1} with {constellation} {band} [{i}/{len(gnss_const.satellites)}]")
+                        pbar.set_description(f"GNSS-R Sat-{sat_no + 1} with {constellation} [{i}/{len(gnss_const.satellites)}]")
                     refl_gnss = Reflection(
                         gnss_sat.satID,
                         sat.satID,
