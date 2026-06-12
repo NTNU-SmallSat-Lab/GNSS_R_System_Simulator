@@ -21,9 +21,10 @@ class BistaticLinkBudgetSettings:
     Configuration values for the bistatic GNSS-R link budget.
 
     Field-by-field source of truth for the `[LINK BUDGET]` + `[OCEAN]` INI sections;
-    field names and units defined here mirror the INI keys. The INI loader is strict
-    (every key required, missing keys raise) and never falls back to the field defaults
-    below — those apply only to direct construction (e.g. the `settings=None` convenience path).
+    field names and units defined here mirror the INI keys. Every field is mandatory --
+    there are no defaults, so a missing value raises instead of silently falling back.
+    The INI loader is strict (every key required, missing keys raise), and direct
+    construction must supply all fields too (`settings=None` is not accepted).
 
     ATTRIBUTES:
         system_losses_db:          [float]  Lumped implementation losses [dB]
@@ -39,24 +40,28 @@ class BistaticLinkBudgetSettings:
     `Constants.GNSS_EIRP_DBW` — it is not a link-budget config knob.
     """
 
-    system_losses_db: float = 2.0
-    polarization_losses_db: float = 0.5
-    ocean_wave_height_m: float = 1.5
-    ocean_wind_speed_m_s: float = 7.0
-    ocean_wind_direction_deg: float = 270.0
-    ocean_sea_temperature_c: float = 15.0
-    ocean_salinity_psu: float = 35.0
-    ocean_inverse_wave_age: float = 0.84
+    system_losses_db: float
+    polarization_losses_db: float
+    ocean_wave_height_m: float
+    ocean_wind_speed_m_s: float
+    ocean_wind_direction_deg: float
+    ocean_sea_temperature_c: float
+    ocean_salinity_psu: float
+    ocean_inverse_wave_age: float
 
 
-def coerce_link_budget_settings(settings: dict | BistaticLinkBudgetSettings | None) -> BistaticLinkBudgetSettings:
-    if settings is None:
-        return BistaticLinkBudgetSettings()
+def coerce_link_budget_settings(settings: dict | BistaticLinkBudgetSettings) -> BistaticLinkBudgetSettings:
     if isinstance(settings, BistaticLinkBudgetSettings):
         return settings
     if isinstance(settings, dict):
         return BistaticLinkBudgetSettings(**settings)
-    raise TypeError("settings must be None, dict, or BistaticLinkBudgetSettings")
+    if settings is None:
+        raise ValueError(
+            "Link-budget/ocean settings are required but none were provided. Supply a "
+            "BistaticLinkBudgetSettings (or the [LINK BUDGET] + [OCEAN] INI values) with every "
+            "field set; there are no default fallbacks."
+        )
+    raise TypeError("settings must be a dict or BistaticLinkBudgetSettings")
 
 
 @dataclass(frozen=True, slots=True)

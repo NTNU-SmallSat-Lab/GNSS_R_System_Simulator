@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from _link_budget_settings import link_budget_settings
 from functions.link_budget import compute_reflection_link_budget
 from object_definitions.MovingTargetDetection_def import (
     MovingTargetDetection,
@@ -126,7 +127,7 @@ class TestComputeShipPrAtEvent:
     def test_returns_nan_when_ship_is_stationary(self, mtd, detection_time):
         mtd.ship_dimensions = {"length_m": 100.0, "beam_m": 15.0, "freeboard_m": 5.0}
         mtd.moving_target_object = _trajectory([(60.0, 5.0)] * 5)
-        mtd.link_budget_settings = None
+        mtd.link_budget_settings = link_budget_settings()
         mtd.sat_antenna = _constant_gain_antenna()
         refl_obj = _build_refl_obj_mock()
         pr_ship_w, rcs_ship_m2 = mtd._compute_ship_pr_at_event(refl_obj, 0, 1.57542e9, 27.0, detection_time, (0.0, 0.0))
@@ -136,7 +137,7 @@ class TestComputeShipPrAtEvent:
     def test_returns_finite_pr_for_well_formed_event(self, mtd, detection_time):
         mtd.ship_dimensions = {"length_m": 100.0, "beam_m": 15.0, "freeboard_m": 5.0}
         mtd.moving_target_object = _trajectory([(0.0, 0.1 * i) for i in range(5)])
-        mtd.link_budget_settings = None
+        mtd.link_budget_settings = link_budget_settings()
         mtd.sat_antenna = _constant_gain_antenna()
         refl_obj = _build_refl_obj_mock()
         pr_ship_w, rcs_ship_m2 = mtd._compute_ship_pr_at_event(refl_obj, 0, 1.57542e9, 27.0, detection_time, (0.0, 0.0))
@@ -187,7 +188,7 @@ def _build_multi_sample_refl_obj(n=4):
 def _ocean_mtd(mtd, antenna):
     mtd.earth_model = "spherical"
     mtd.sat_antenna = antenna
-    mtd.link_budget_settings = None
+    mtd.link_budget_settings = link_budget_settings()
     return mtd
 
 
@@ -201,7 +202,7 @@ def _full_series_budget(refl_obj, antenna):
         antenna=antenna,
         frequency_hz=1.57542e9,
         tx_eirp_dbw=27.0,
-        settings=None,
+        settings=link_budget_settings(),
     )
 
 

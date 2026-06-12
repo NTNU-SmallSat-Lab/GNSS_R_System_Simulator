@@ -5,6 +5,7 @@ import dataclasses
 import numpy as np
 import pytest
 
+from _link_budget_settings import link_budget_settings
 from functions.link_budget import (
     BistaticLinkBudgetSettings,
     build_bistatic_geometry,
@@ -100,7 +101,7 @@ class TestOceanTargetConstruction:
         assert isinstance(target.wave_height_m, float)
 
     def test_from_settings_roundtrips_ocean_params(self):
-        settings = BistaticLinkBudgetSettings()
+        settings = link_budget_settings()
         target = OceanTarget.from_settings(settings)
         assert target.wave_height_m == settings.ocean_wave_height_m
         assert target.wind_speed_m_s == settings.ocean_wind_speed_m_s
@@ -276,9 +277,9 @@ class TestComputeReflectionLinkBudgetIntegration:
             antenna=None,
             frequency_hz=1.57542e9,
             tx_eirp_dbw=27.0,
-            settings=None,
+            settings=link_budget_settings(),
         )
-        ocean = OceanTarget.from_settings(BistaticLinkBudgetSettings())
+        ocean = OceanTarget.from_settings(link_budget_settings())
         lb_explicit = compute_reflection_link_budget(
             tx_positions_eci=tx,
             rx_positions_eci=rx,
@@ -288,7 +289,7 @@ class TestComputeReflectionLinkBudgetIntegration:
             antenna=None,
             frequency_hz=1.57542e9,
             tx_eirp_dbw=27.0,
-            settings=None,
+            settings=link_budget_settings(),
             target=ocean,
         )
         np.testing.assert_allclose(lb_default["received_power_w"], lb_explicit["received_power_w"], rtol=1e-12)
@@ -306,7 +307,7 @@ class TestComputeReflectionLinkBudgetIntegration:
             antenna=None,
             frequency_hz=1.57542e9,
             tx_eirp_dbw=27.0,
-            settings=None,
+            settings=link_budget_settings(),
         )
         for key in (
             "incidence_deg",
@@ -336,7 +337,7 @@ class TestComputeReflectionLinkBudgetIntegration:
             antenna=None,
             frequency_hz=1.57542e9,
             tx_eirp_dbw=27.0,
-            settings=None,
+            settings=link_budget_settings(),
             target=FixedRcs(),
         )
         np.testing.assert_allclose(lb["rcs_m2"], [100.0])
@@ -362,7 +363,7 @@ class TestComputeReflectionLinkBudgetIntegration:
             antenna=None,
             frequency_hz=1.57542e9,
             tx_eirp_dbw=27.0,
-            settings=None,
+            settings=link_budget_settings(),
             target=FixedRcs(50.0),
         )
         lb_b = compute_reflection_link_budget(
@@ -374,7 +375,33 @@ class TestComputeReflectionLinkBudgetIntegration:
             antenna=None,
             frequency_hz=1.57542e9,
             tx_eirp_dbw=27.0,
-            settings=None,
+            settings=link_budget_settings(),
             target=FixedRcs(100.0),
         )
         np.testing.assert_allclose(lb_b["received_power_w"] / lb_a["received_power_w"], [2.0], rtol=1e-12)
+
+
+class TestLinkBudgetSettingsAreMandatory:
+    """Production has no default fallbacks: a missing settings value must raise, not silently default."""
+
+    def test_construction_without_fields_raises(self):
+        with pytest.raises(TypeError):
+            BistaticLinkBudgetSettings()  # every field is mandatory -> missing required arguments
+
+    def test_compute_with_none_settings_raises(self):
+        tx = np.array([[8.0e6], [0.0], [0.0]])
+        rx = np.array([[7.1e6], [1.0e5], [0.0]])
+        rx_vel = np.array([[0.0], [7.5e3], [0.0]])
+        refl = np.array([[6.371e6, 0.0, 0.0]])
+        with pytest.raises(ValueError, match="settings are required"):
+            compute_reflection_link_budget(
+                tx_positions_eci=tx,
+                rx_positions_eci=rx,
+                rx_velocities_eci=rx_vel,
+                reflection_positions_eci=refl,
+                incidence_deg=np.array([5.0]),
+                antenna=None,
+                frequency_hz=1.57542e9,
+                tx_eirp_dbw=27.0,
+                settings=None,
+            )
