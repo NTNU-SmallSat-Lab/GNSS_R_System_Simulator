@@ -1707,7 +1707,7 @@ class MovingTargetDetection:
         ax.set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
 
         gnss_const_str = ", ".join(gnss_const).replace("[", "").replace("]", "").replace(", ", " and ")
-        title = f"Detection Points for GNSS Constellations {gnss_const_str}"
+        title = f"Footprint Overlap for GNSS Constellations {gnss_const_str}"
         if band is not None:
             title += f" (band {band})"
         plt.title(title)
@@ -1750,7 +1750,7 @@ class MovingTargetDetection:
                     pos_ll = detect_struct.position_ll
                     if pos_ll is not None and not np.any(np.isnan(pos_ll)):
                         # Label only the first plotted point of each constellation so the color legend is complete
-                        point_label = f"{gnss_name} Detection" if gnss_name not in labeled_constellations else ""
+                        point_label = f"{gnss_name} footprint overlap" if gnss_name not in labeled_constellations else ""
                         labeled_constellations.add(gnss_name)
                         # Plot the point
                         ax.scatter(

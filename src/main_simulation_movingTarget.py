@@ -112,30 +112,32 @@ def run_moving_target_detection(settings: dict):
     # 5. Output & Visualization ---
     mtd.calculate_moving_target_reflection_intersection()
 
-    # 6. Per-(constellation, band) detection map + Pr breakdown (one set of files per signal).
+    # 6. Per-(constellation, band) footprint-overlap map + Pr breakdown (one set of files per signal).
+    # NOTE: the maps show where the antenna footprint overlaps the target -- not a detectability gate
+    # (no SCR/SNR threshold is applied), hence "footprint overlap" rather than "detection".
     footprint_db_label = _format_footprint_db_label(settings.get("footprint_dB"))
     for gnss_name, sigs in mtd.signals_per_constellation.items():
         for sig in sigs:
             band = sig["band"]
-            # Detection-point map, scoped to this constellation and band.
-            output_plot = f"Detection_points_{mtd.reflection_mode}_{gnss_name}_{band}_footprint_{footprint_db_label}.png"
+            # Footprint-overlap map, scoped to this constellation and band.
+            output_plot = f"Footprint_overlap_{mtd.reflection_mode}_{gnss_name}_{band}_{footprint_db_label}.png"
             mtd.show_track_and_detection_points(
                 gnss_constellation=gnss_name, file_name=output_plot, show_figure=False, band=band
             )
-            print(f"Detection plot saved as: {output_plot}")
+            print(f"Footprint-overlap plot saved as: {output_plot}")
 
-            # Pr breakdown: ocean clutter vs ship signal per detection event, this constellation and band.
+            # Pr breakdown: ocean clutter vs ship signal per footprint-overlap event, this constellation and band.
             contributions_plot = f"Detection_Pr_breakdown_{mtd.reflection_mode}_{gnss_name}_{band}.png"
             mtd.show_link_budget_contributions(file_name=contributions_plot, show_figure=False, band=band)
             print(f"Pr breakdown plot saved as: {contributions_plot}")
 
     # 6b. Combined plots: all constellations and bands together, color-coded by constellation.
     constellations_with_signals = [name for name, sigs in mtd.signals_per_constellation.items() if sigs]
-    combined_plot = f"Detection_points_{mtd.reflection_mode}_combined_footprint_{footprint_db_label}.png"
+    combined_plot = f"Footprint_overlap_{mtd.reflection_mode}_combined_{footprint_db_label}.png"
     mtd.show_track_and_detection_points(
         gnss_constellation=constellations_with_signals, file_name=combined_plot, show_figure=False, band=None
     )
-    print(f"Combined detection plot saved as: {combined_plot}")
+    print(f"Combined footprint-overlap plot saved as: {combined_plot}")
 
     combined_contributions_plot = f"Detection_Pr_breakdown_{mtd.reflection_mode}_combined.png"
     mtd.show_link_budget_contributions(file_name=combined_contributions_plot, show_figure=False, band=None)
