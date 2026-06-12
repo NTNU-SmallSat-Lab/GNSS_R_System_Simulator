@@ -829,7 +829,8 @@ class MovingTargetDetection:
         ax_hist.grid(True, alpha=0.3)
 
         if band is not None:
-            fig.suptitle(f"Band {band}", fontweight="bold")
+            owner = Constants.get_constellation_for_band(band)
+            fig.suptitle(f"{owner} -- Band {band}" if owner else f"Band {band}", fontweight="bold")
         plt.tight_layout()
 
         if file_name is not None:
@@ -1123,12 +1124,23 @@ class MovingTargetDetection:
         west, east = min_lon - buffer_deg, max_lon + buffer_deg
         south, north = min_lat - buffer_deg, max_lat + buffer_deg
 
-        all_refl_times = sorted({t for refls in self.reflection_dict_timeSorted.values() for t in refls})
+        # Only animate constellations that have a selected band: one with no band contributes
+        # reflection geometry but no detection, so it must not appear in the animation.
+        shown_constellations = [
+            name for name, sigs in self.signals_per_constellation.items()
+            if sigs and self.reflection_dict_timeSorted.get(name)
+        ]
+        if not shown_constellations:
+            logger.warning("No constellation has both a selected band and reflections; skipping animation.")
+            return
+        shown_refl_dicts = [self.reflection_dict_timeSorted[name] for name in shown_constellations]
+
+        all_refl_times = sorted({t for refls in shown_refl_dicts for t in refls})
 
         time_points = []
         for t in all_refl_times:
             in_view = False
-            for refls in self.reflection_dict_timeSorted.values():
+            for refls in shown_refl_dicts:
                 for ref in refls.get(t, ()):
                     lat, lon = ref.refl_obj.refl_LL_vec[ref.time_index]   # reflection point at this sample
                     if np.isfinite(lat) and np.isfinite(lon) and west <= lon <= east and south <= lat <= north:
@@ -1151,6 +1163,7 @@ class MovingTargetDetection:
             try:
                 img_array = self.show_reflections_and_target_position_at_time_i(
                     time_i=time_point,
+                    gnss_constellation_name=shown_constellations,
                     file_name=None,  # return image instead of saving
                     show=False,
                     label_reflections=False,
