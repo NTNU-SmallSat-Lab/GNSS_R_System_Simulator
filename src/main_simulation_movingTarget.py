@@ -112,26 +112,34 @@ def run_moving_target_detection(settings: dict):
     # 5. Output & Visualization ---
     mtd.calculate_moving_target_reflection_intersection()
 
-    # 6. Per-band detection plots + link-budget breakdown (one set of files per configured band).
+    # 6. Per-(constellation, band) detection map + Pr breakdown (one set of files per signal).
     footprint_db_label = _format_footprint_db_label(settings.get("footprint_dB"))
-    bands = sorted({sig["band"] for sigs in mtd.signals_per_constellation.values() for sig in sigs})
-    for band in bands:
-        output_plot = f"Detection_points_{mtd.reflection_mode}_{band}_footprint_{footprint_db_label}.png"
-        mtd.show_track_and_detection_points(file_name=output_plot, show_figure=False, band=band)
-        print(f"Detection plot saved as: {output_plot}")
+    for gnss_name, sigs in mtd.signals_per_constellation.items():
+        for sig in sigs:
+            band = sig["band"]
+            # Detection-point map, scoped to this constellation and band.
+            output_plot = f"Detection_points_{mtd.reflection_mode}_{gnss_name}_{band}_footprint_{footprint_db_label}.png"
+            mtd.show_track_and_detection_points(
+                gnss_constellation=gnss_name, file_name=output_plot, show_figure=False, band=band
+            )
+            print(f"Detection plot saved as: {output_plot}")
 
-        # Link-budget breakdown: ocean clutter vs ship signal per detection event.
-        contributions_plot = f"Detection_Pr_breakdown_{mtd.reflection_mode}_{band}.png"
-        mtd.show_link_budget_contributions(file_name=contributions_plot, show_figure=False, band=band)
-        print(f"Pr breakdown plot saved as: {contributions_plot}")
+            # Pr breakdown: ocean clutter vs ship signal per detection event, this constellation and band.
+            contributions_plot = f"Detection_Pr_breakdown_{mtd.reflection_mode}_{gnss_name}_{band}.png"
+            mtd.show_link_budget_contributions(file_name=contributions_plot, show_figure=False, band=band)
+            print(f"Pr breakdown plot saved as: {contributions_plot}")
 
-    # 6b. Combined detection plot: all bands and constellations on one map, color-coded by constellation.
+    # 6b. Combined plots: all constellations and bands together, color-coded by constellation.
     constellations_with_signals = [name for name, sigs in mtd.signals_per_constellation.items() if sigs]
-    combined_plot = f"Detection_points_{mtd.reflection_mode}_all_bands_footprint_{footprint_db_label}.png"
+    combined_plot = f"Detection_points_{mtd.reflection_mode}_combined_footprint_{footprint_db_label}.png"
     mtd.show_track_and_detection_points(
         gnss_constellation=constellations_with_signals, file_name=combined_plot, show_figure=False, band=None
     )
     print(f"Combined detection plot saved as: {combined_plot}")
+
+    combined_contributions_plot = f"Detection_Pr_breakdown_{mtd.reflection_mode}_combined.png"
+    mtd.show_link_budget_contributions(file_name=combined_contributions_plot, show_figure=False, band=None)
+    print(f"Combined Pr breakdown plot saved as: {combined_contributions_plot}")
 
     # 7. Reflection animation (band-independent: reflection geometry is the same across bands).
     if settings["create_animation"]:
