@@ -1721,6 +1721,7 @@ class MovingTargetDetection:
         # Plot detection points (filtered)
         plotted_count = 0
         skipped_count = 0
+        labeled_constellations = set()  # one legend entry per constellation, set on its first plotted point
 
         for gnss_name in gnss_const:
             if gnss_name in self.target_detect_dict:
@@ -1735,12 +1736,15 @@ class MovingTargetDetection:
 
                     pos_ll = detect_struct.position_ll
                     if pos_ll is not None and not np.any(np.isnan(pos_ll)):
+                        # Label only the first plotted point of each constellation so the color legend is complete
+                        point_label = f"{gnss_name} Detection" if gnss_name not in labeled_constellations else ""
+                        labeled_constellations.add(gnss_name)
                         # Plot the point
                         ax.scatter(
                             pos_ll[1], pos_ll[0],
                             c=fn.color_gnss_const(gnss_name),
                             s=30, marker="o", alpha=0.7,
-                            label=f"{gnss_name} Detection" if idx == 0 else "",
+                            label=point_label,
                             transform=ccrs.PlateCarree()
                         )
 
