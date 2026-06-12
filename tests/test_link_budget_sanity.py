@@ -14,6 +14,7 @@ Run with `pytest -s tests/test_link_budget_sanity.py` to see the Pr table on std
 import numpy as np
 import pytest
 
+from _link_budget_settings import link_budget_settings
 from functions.link_budget import compute_reflection_link_budget
 from object_definitions.Constants_def import Constants
 from object_definitions.OceanTarget_def import OceanTarget
@@ -54,7 +55,7 @@ def _specular_scenario(theta_inc_deg: float, tx_eirp_dbw: float, frequency_hz: f
         antenna=None,
         frequency_hz=frequency_hz,
         tx_eirp_dbw=tx_eirp_dbw,
-        settings=None,
+        settings=link_budget_settings(),
         target=DEFAULT_OCEAN,
     )
 
@@ -79,7 +80,7 @@ def _backscatter_scenario(theta_inc_deg: float, tx_eirp_dbw: float, frequency_hz
         antenna=None,
         frequency_hz=frequency_hz,
         tx_eirp_dbw=tx_eirp_dbw,
-        settings=None,
+        settings=link_budget_settings(),
         target=DEFAULT_OCEAN,
     )
 
@@ -101,7 +102,7 @@ def _oblique_backscatter_scenario(theta_inc_deg: float, tx_eirp_dbw: float, freq
         antenna=None,
         frequency_hz=frequency_hz,
         tx_eirp_dbw=tx_eirp_dbw,
-        settings=None,
+        settings=link_budget_settings(),
         target=DEFAULT_OCEAN,
     )
 

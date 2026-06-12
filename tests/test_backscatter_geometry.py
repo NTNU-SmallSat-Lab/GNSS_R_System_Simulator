@@ -13,6 +13,7 @@ the Earth ellipsoid — i.e. the retroreflector geometry.
 import datetime as dt
 import types
 
+from _link_budget_settings import link_budget_settings
 from antenna_fixture import make_test_antenna
 import numpy as np
 import pytest
@@ -142,6 +143,7 @@ class TestAntennaFovPreGate:
             antenna=antenna,
             frequency_hz=1575.42e6,
             tx_eirp_dbw=27.0,
+            link_budget_settings=link_budget_settings(),
         )
         assert np.isfinite(brp.refl_LL_vec).all()
 
@@ -161,6 +163,7 @@ class TestAntennaFovPreGate:
             antenna=antenna,
             frequency_hz=1575.42e6,
             tx_eirp_dbw=27.0,
+            link_budget_settings=link_budget_settings(),
         )
         assert np.isnan(brp.refl_LL_vec).all()
 
@@ -175,5 +178,6 @@ class TestAntennaFovPreGate:
             antenna=None,
             frequency_hz=1575.42e6,
             tx_eirp_dbw=27.0,
+            link_budget_settings=link_budget_settings(),
         )
         assert np.isfinite(brp.refl_LL_vec).all()

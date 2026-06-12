@@ -20,7 +20,7 @@ sys.path.insert(0, str(_REPO_ROOT / "SRC"))
 
 import numpy as np
 
-from functions.link_budget import compute_reflection_link_budget
+from functions.link_budget import BistaticLinkBudgetSettings, compute_reflection_link_budget
 from object_definitions.Constants_def import Constants
 from object_definitions.OceanTarget_def import OceanTarget
 
@@ -62,6 +62,16 @@ def _fixture_scenario():
         sea_temperature_c=15.0,
         salinity_psu=35.0,
     )
+    settings = BistaticLinkBudgetSettings(
+        system_losses_db=2.0,
+        polarization_losses_db=0.5,
+        ocean_wave_height_m=1.5,
+        ocean_wind_speed_m_s=7.0,
+        ocean_wind_direction_deg=270.0,
+        ocean_sea_temperature_c=15.0,
+        ocean_salinity_psu=35.0,
+        ocean_inverse_wave_age=0.84,
+    )
     return {
         "tx_positions_eci": tx_pos,
         "rx_positions_eci": rx_pos,
@@ -71,7 +81,7 @@ def _fixture_scenario():
         "antenna": None,
         "frequency_hz": 1.57542e9,
         "tx_eirp_dbw": 27.0,
-        "settings": None,
+        "settings": settings,
         "target": target,
     }
 
