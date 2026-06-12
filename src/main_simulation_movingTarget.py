@@ -143,6 +143,10 @@ def run_moving_target_detection(settings: dict):
     mtd.show_link_budget_contributions(file_name=combined_contributions_plot, show_figure=False, band=None)
     print(f"Combined Pr breakdown plot saved as: {combined_contributions_plot}")
 
+    combined_contributions_plot = f"Detection_Pr_breakdown_{mtd.reflection_mode}_combined.png"
+    mtd.show_link_budget_contributions(file_name=combined_contributions_plot, show_figure=False, band=None)
+    print(f"Combined Pr breakdown plot saved as: {combined_contributions_plot}")
+
     # 7. Reflection animation (band-independent: reflection geometry is the same across bands).
     if settings["create_animation"]:
         mtd.create_reflection_animation(**settings["animation_settings"])
