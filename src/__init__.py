@@ -213,6 +213,16 @@ def initialize(config_file_name="Configuration.ini"):
     # keep antenna_pattern_folder = None -- the flag main_simulation_areaCoverage.py uses to skip the antenna.
     antenna_pattern_folder = Constants.antenna_pattern_folder if ("ANTENNA" in config or "ANTENNA PATTERN" in config) else None
 
+    # [ANTENNA].bands parsed up-front: the bands are the single source of truth for which carrier
+    # frequencies the antenna patterns must cover. [ANTENNA PATTERN] below derives its frequencies from
+    # them, so there is no separate freqs key to keep in sync (and no silent frequency snapping).
+    # [ANTENNA] absent -> antenna_bands is None (no antenna configured).
+    if "ANTENNA" in config:
+        bands_raw = config["ANTENNA"].get("bands")
+        antenna_bands = [b.strip().strip('"') for b in bands_raw[1:-1].split(",") if b.strip()] if bands_raw else []
+    else:
+        antenna_bands = None
+
     #[ANTENNA PATTERN]
     # Parameters for AntennaPatternGenerator. Parsed up-front so the generator
     # can run (and rebuild stale JSONs) before [ANTENNA] is consumed below.
@@ -220,17 +230,34 @@ def initialize(config_file_name="Configuration.ini"):
     expected_antenna_pattern_files = None
     if "ANTENNA PATTERN" in config:
         section = config["ANTENNA PATTERN"]
-        required_keys = ("elements_along_x", "elements_along_y", "d_x", "d_y", "freqs", "azimuth_steering", "elevation_steering")
+        required_keys = ("elements_along_x", "elements_along_y", "d_x", "d_y", "azimuth_steering", "elevation_steering")
         missing = [k for k in required_keys if k not in section]
         if missing:
             raise KeyError(f"Missing required key(s) in [ANTENNA PATTERN] section: {missing}")
+
+        # Carrier frequencies are DERIVED from [ANTENNA].bands (the single source of truth), so a
+        # generated pattern always exists for every selected band and the gain lookup never silently
+        # snaps to a different frequency. Unknown band names are skipped here -- they warn-and-drop
+        # later in build_selected_signals.
+        band_freqs_mhz = sorted(
+            {
+                Constants.BANDS_CENTER_FREQUENCIES_Hz[b] / Constants.MHZ_TO_HZ
+                for b in (antenna_bands or [])
+                if b in Constants.BANDS_CENTER_FREQUENCIES_Hz
+            }
+        )
+        if not band_freqs_mhz:
+            raise ValueError(
+                "[ANTENNA PATTERN] is configured but no carrier frequencies could be derived from "
+                '[ANTENNA].bands. List at least one known band, e.g. bands = ["L1"].'
+            )
         try:
             antenna_pattern_settings = {
                 "elements_along_x": int(section["elements_along_x"]),
                 "elements_along_y": int(section["elements_along_y"]),
                 "d_x": float(section["d_x"]),
                 "d_y": float(section["d_y"]),
-                "freqs": [float(f) for f in ast.literal_eval(section["freqs"])],
+                "freqs": band_freqs_mhz,
                 "azimuth_steering": ast.literal_eval(section["azimuth_steering"]),
                 "elevation_steering": ast.literal_eval(section["elevation_steering"]),
                 "theta_resolution": int(section.get("theta_resolution", "180")),
@@ -249,14 +276,7 @@ def initialize(config_file_name="Configuration.ini"):
 
     #[ANTENNA]
     try:
-        antenna_patterns = {}  # Initialize the dictionary here
-        bands = config["ANTENNA"]["bands"] if ("ANTENNA" in config and "bands" in config["ANTENNA"]) else None  # Antenna bands
-        if bands is None:
-            bands = []
-            antenna_bands = []
-        else:
-            # Remove square brackets, quotes and split
-            antenna_bands = [band.strip().strip('"') for band in bands[1:-1].split(",")]
+        antenna_patterns = {}  # Initialize the dictionary here (antenna_bands was parsed up-front, above)
 
         # If antenna is initialzied in the ini-file:
         if "ANTENNA" in config:
