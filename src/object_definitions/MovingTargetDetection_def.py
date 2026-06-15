@@ -678,15 +678,28 @@ class MovingTargetDetection:
         if not np.isfinite(rcs_ship_m2):
             return nan_pair
 
-        look_dir_a = lb.compute_rx_look_direction_antenna_frame(
+        look_dir_center_a = lb.compute_rx_look_direction_antenna_frame(
+            rx_pos[:, 0],
+            rx_vel,
+            refl_obj.refl_ECI_vec[reflection_index],
+            self.sat_antenna,
+        )
+        steering_angles = self.sat_antenna.resolve_steering_angles_for_direction(look_dir_center_a)
+        if steering_angles is None:
+            return nan_pair
+        steering_azimuth_deg, steering_elevation_deg = steering_angles
+
+        look_dir_ship_a = lb.compute_rx_look_direction_antenna_frame(
             rx_pos[:, 0],
             rx_vel,
             ship_pos_eci[0],
             self.sat_antenna,
         )
         rx_gain_dbi = self.sat_antenna.get_gain_dbi_for_direction(
-            look_dir_a,
+            look_dir_ship_a,
             frequency_hz / 1e6,
+            azimuth_deg=steering_azimuth_deg,
+            elevation_deg=steering_elevation_deg,
         )
 
         link_budget = lb.compute_bistatic_link_budget(
