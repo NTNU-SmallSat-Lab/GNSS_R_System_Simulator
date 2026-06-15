@@ -7,10 +7,11 @@ so we don't need a propagated constellation or a real ShipTrajectory shapefile.
 import datetime as dt
 from types import SimpleNamespace
 
+from _link_budget_settings import link_budget_settings
 import numpy as np
 import pytest
 
-from _link_budget_settings import link_budget_settings
+import functions.link_budget as lb
 from functions.link_budget import compute_reflection_link_budget
 from object_definitions.MovingTargetDetection_def import (
     MovingTargetDetection,
@@ -109,10 +110,39 @@ def _build_refl_obj_mock():
 
 
 def _constant_gain_antenna():
-    return SimpleNamespace(
-        R_antenna_to_body=np.eye(3),
-        get_gain_dbi_for_direction=lambda direction, frequency_mhz: 10.0 if np.isfinite(direction).all() else np.nan,
-    )
+    class ConstantGainAntenna:
+        R_antenna_to_body = np.eye(3)
+
+        def resolve_steering_angles_for_direction(self, direction):
+            return (0.0, 0.0) if np.isfinite(direction).all() else None
+
+        def get_gain_dbi_for_direction(self, direction, frequency_mhz, azimuth_deg=None, elevation_deg=None):
+            return 10.0 if np.isfinite(direction).all() else np.nan
+
+    return ConstantGainAntenna()
+
+
+class _RecordingFixedSteerAntenna:
+    R_antenna_to_body = np.eye(3)
+
+    def __init__(self):
+        self.resolved_direction = None
+        self.gain_calls = []
+
+    def resolve_steering_angles_for_direction(self, direction):
+        self.resolved_direction = np.asarray(direction, dtype=float)
+        return (11.0, -7.0)
+
+    def get_gain_dbi_for_direction(self, direction, frequency_mhz, azimuth_deg=None, elevation_deg=None):
+        self.gain_calls.append(
+            {
+                "direction": np.asarray(direction, dtype=float),
+                "frequency_mhz": frequency_mhz,
+                "azimuth_deg": azimuth_deg,
+                "elevation_deg": elevation_deg,
+            }
+        )
+        return 6.0
 
 
 class TestComputeShipPrAtEvent:
@@ -146,6 +176,33 @@ class TestComputeShipPrAtEvent:
         assert rcs_ship_m2 > 0.0
         assert np.isfinite(pr_ship_w)
         assert pr_ship_w > 0.0
+
+    def test_ship_gain_uses_reflection_point_steering(self, mtd, detection_time, monkeypatch):
+        center_direction = np.array([0.0, 0.0, 1.0])
+        ship_direction = np.array([0.2, 0.0, np.sqrt(1.0 - 0.2**2)])
+
+        def fake_look_direction(_sat_pos_eci, _sat_vel_eci, target_pos_eci, _antenna, q_sat=None):
+            if np.allclose(target_pos_eci, refl_obj.refl_ECI_vec[0]):
+                return center_direction
+            return ship_direction
+
+        mtd.ship_dimensions = {"length_m": 100.0, "beam_m": 15.0, "freeboard_m": 5.0}
+        mtd.moving_target_object = _trajectory([(0.0, 0.1 * i) for i in range(5)])
+        mtd.link_budget_settings = link_budget_settings()
+        mtd.sat_antenna = _RecordingFixedSteerAntenna()
+        refl_obj = _build_refl_obj_mock()
+        monkeypatch.setattr(lb, "compute_rx_look_direction_antenna_frame", fake_look_direction)
+
+        pr_ship_w, rcs_ship_m2 = mtd._compute_ship_pr_at_event(refl_obj, 0, 1.57542e9, 27.0, detection_time, (0.0, 0.0))
+
+        assert np.isfinite(pr_ship_w)
+        assert np.isfinite(rcs_ship_m2)
+        np.testing.assert_allclose(mtd.sat_antenna.resolved_direction, center_direction)
+        assert len(mtd.sat_antenna.gain_calls) == 1
+        gain_call = mtd.sat_antenna.gain_calls[0]
+        np.testing.assert_allclose(gain_call["direction"], ship_direction)
+        assert gain_call["azimuth_deg"] == 11.0
+        assert gain_call["elevation_deg"] == -7.0
 
 
 class TestDetectionStructDefaults:
