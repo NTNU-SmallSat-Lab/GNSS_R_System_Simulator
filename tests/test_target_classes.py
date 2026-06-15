@@ -2,10 +2,10 @@
 
 import dataclasses
 
+from _link_budget_settings import link_budget_settings
 import numpy as np
 import pytest
 
-from _link_budget_settings import link_budget_settings
 from functions.link_budget import (
     BistaticLinkBudgetSettings,
     build_bistatic_geometry,
@@ -160,6 +160,9 @@ class TestOceanTargetComputeRcs:
             "slope_upwind",
             "slope_crosswind",
             "fresnel_area_m2",
+            "glistening_area_m2",
+            "effective_glistening_area_m2",
+            "illuminated_area_m2",
             "rayleigh_roughness_kappa",
             "nrcs",
             "nrcs_bragg_RL",
@@ -206,6 +209,35 @@ class TestOceanTargetComputeRcs:
         a_calm = OceanTarget(1.0, 3.0, 0.0, 15.0, 35.0).compute_rcs(geom, 0.19).info["glistening_area_m2"][0]
         a_rough = OceanTarget(1.0, 15.0, 0.0, 15.0, 35.0).compute_rcs(geom, 0.19).info["glistening_area_m2"][0]
         assert a_rough > a_calm
+
+    def test_forward_glistening_area_is_capped_by_supplied_illuminated_area(self):
+        geom = _mirror_geometry(theta_deg=20.0)
+        ocean = _default_ocean()
+        res_uncapped = ocean.compute_rcs(geom, 0.19)
+        cap_area = res_uncapped.info["glistening_area_m2"] * 0.1
+
+        res_capped = ocean.compute_rcs(geom, 0.19, illuminated_area_m2=cap_area)
+
+        assert res_capped.info["glistening_area_m2"][0] == res_uncapped.info["glistening_area_m2"][0]
+        np.testing.assert_allclose(res_capped.info["effective_glistening_area_m2"], cap_area)
+        assert res_capped.info["rcs_incoherent_m2"][0] < res_uncapped.info["rcs_incoherent_m2"][0]
+
+    def test_forward_glistening_area_uses_analytic_area_when_cap_is_larger(self):
+        geom = _mirror_geometry(theta_deg=20.0)
+        ocean = _default_ocean()
+        res_uncapped = ocean.compute_rcs(geom, 0.19)
+        cap_area = res_uncapped.info["glistening_area_m2"] * 10.0
+
+        res_capped = ocean.compute_rcs(geom, 0.19, illuminated_area_m2=cap_area)
+
+        np.testing.assert_allclose(
+            res_capped.info["effective_glistening_area_m2"],
+            res_uncapped.info["glistening_area_m2"],
+        )
+        np.testing.assert_allclose(
+            res_capped.info["rcs_incoherent_m2"],
+            res_uncapped.info["rcs_incoherent_m2"],
+        )
 
     def test_nan_geometry_propagates_to_nan_rcs(self):
         surf = np.array([[0.0, 0.0, 0.0]])

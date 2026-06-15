@@ -12,7 +12,9 @@
     - P_slope is the Cox-Munk 2-D Gaussian slope PDF
     - |R_pol|^2 is the RHCP -> LHCP power reflectivity at the carrier frequency, from a
       Klein-Swift seawater permittivity at the configured temperature and salinity
-    - A_glistening is the effective glistening-zone area at the specular peak
+    - A_glistening is the effective glistening-zone area at the specular peak, capped by
+      the receiver illuminated area when supplied so a narrow antenna beam does not collect
+      the full analytic glistening zone.
 
     Bragg (rough-surface resonant backscatter), added only at near-backscatter geometry where the GO
     term collapses: a first-order small-perturbation NRCS over the Elfouhaily spectrum, gated so the
@@ -27,6 +29,10 @@
 
     For typical sea state (sigma_h >> lambda) kappa is large and the coherent term collapses, leaving
     the incoherent glistening-zone return; for very calm water the coherent term dominates.
+
+    NOTE: The more physical model is a patch-wise footprint / delay-Doppler integration with
+    per-patch antenna gain, ranges and slope PDF. The current model is the cheaper v1 cap:
+    analytic glistening-zone area limited by the receiver illuminated footprint area.
 """
 
 from __future__ import annotations
@@ -197,19 +203,29 @@ class OceanTarget(Target):
         nrcs_bragg = np.where(bragg_active, bragg_nrcs_RL, 0.0)            # RHCP -> LHCP cross-pol (consumed)
         nrcs_bragg_co = np.where(bragg_active, bragg_nrcs_RR, 0.0)         # RHCP -> RHCP co-pol (polarization-hook diagnostic)
 
-        # Backscatter illuminated area: unlike the forward glistening zone (slope-limited, sea-state
-        # dependent), the diffuse backscatter return is collected over the receiver-limited footprint,
-        # which does not depend on sea state. Wind dependence of the Bragg return therefore enters only
-        # through its NRCS, not its area. Use the antenna-beam footprint when supplied; otherwise an
-        # isotropic geometric proxy from the ranges.
+        # Receiver-limited illuminated area. This v1 cap prevents the analytic glistening zone from
+        # contributing more diffuse clutter than the antenna footprint can observe. A more complete
+        # future model should integrate the surface patch-by-patch over the footprint / delay-Doppler cell.
         if illuminated_area_m2 is None:
+            illuminated_area = None
+            effective_glistening_area = glistening_area
             bragg_area = np.pi * reduced_range ** 2 / cos_inc_safe ** 3
         else:
-            bragg_area = np.asarray(illuminated_area_m2, dtype=float)
+            illuminated_area = np.asarray(illuminated_area_m2, dtype=float)
+            if illuminated_area.shape != glistening_area.shape:
+                try:
+                    illuminated_area = np.broadcast_to(illuminated_area, glistening_area.shape)
+                except ValueError as exc:
+                    raise ValueError(
+                        f"illuminated_area_m2 must broadcast to shape {glistening_area.shape}; got {illuminated_area.shape}"
+                    ) from exc
+            illuminated_area = np.where(np.isfinite(illuminated_area) & (illuminated_area > 0.0), illuminated_area, np.nan)
+            effective_glistening_area = np.minimum(glistening_area, illuminated_area)
+            bragg_area = illuminated_area
 
         # Incoherent contribution: forward GO over the glistening zone plus Bragg over the backscatter
         # footprint area.
-        sigma_incoherent = nrcs * glistening_area + nrcs_bragg * bragg_area    # rough-surface diffuse return
+        sigma_incoherent = nrcs * effective_glistening_area + nrcs_bragg * bragg_area    # rough-surface diffuse return
 
         # Coherent contribution: smooth-surface specular reflection from the mean surface, suppressed
         # by Rayleigh roughness exp(-kappa) and gated to geometries where the required facet slope is
@@ -251,6 +267,12 @@ class OceanTarget(Target):
                 "slope_crosswind": np.where(valid, s_c, np.nan),
                 "fresnel_area_m2": np.where(valid, fresnel_area, np.nan),
                 "glistening_area_m2": np.where(valid, glistening_area, np.nan),
+                "effective_glistening_area_m2": np.where(valid, effective_glistening_area, np.nan),
+                "illuminated_area_m2": (
+                    np.full(n_samples, np.nan)
+                    if illuminated_area is None
+                    else np.where(valid, illuminated_area, np.nan)
+                ),
                 "rayleigh_roughness_kappa": np.where(valid, rayleigh_kappa, np.nan),
                 "nrcs": np.where(valid, nrcs, np.nan),
                 "nrcs_bragg_RL": np.where(valid, nrcs_bragg, np.nan),
