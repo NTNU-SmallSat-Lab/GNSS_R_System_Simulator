@@ -143,3 +143,7 @@ class TestComputeBistaticLinkBudgetNoise:
                 noise_bandwidth_hz=noise_bandwidth_hz,
                 system_noise_temperature_k=system_noise_temperature_k,
             )
+
+    def test_non_finite_detection_threshold_raises(self):
+        with pytest.raises(ValueError, match="detection_sinr_threshold_db"):
+            link_budget_settings(detection_sinr_threshold_db=np.nan)

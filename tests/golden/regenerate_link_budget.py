@@ -67,6 +67,7 @@ def _fixture_scenario():
         polarization_losses_db=0.5,
         noise_bandwidth_hz=2.0e6,
         system_noise_temperature_k=290.0,
+        detection_sinr_threshold_db=0.0,
         ocean_wave_height_m=1.5,
         ocean_wind_speed_m_s=7.0,
         ocean_wind_direction_deg=270.0,

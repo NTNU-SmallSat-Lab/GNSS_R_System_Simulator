@@ -11,10 +11,10 @@ current implementation.
 Run with `pytest -s tests/test_link_budget_sanity.py` to see the Pr table on stdout.
 """
 
+from _link_budget_settings import link_budget_settings
 import numpy as np
 import pytest
 
-from _link_budget_settings import link_budget_settings
 from functions.link_budget import compute_reflection_link_budget
 from object_definitions.Constants_def import Constants
 from object_definitions.OceanTarget_def import OceanTarget

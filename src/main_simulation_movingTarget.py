@@ -126,10 +126,10 @@ def run_moving_target_detection(settings: dict):
             )
             print(f"Footprint-overlap plot saved as: {output_plot}")
 
-            # Pr breakdown: ocean clutter vs ship signal per footprint-overlap event, this constellation and band.
-            contributions_plot = f"Detection_Pr_breakdown_{mtd.reflection_mode}_{gnss_name}_{band}.png"
+            # Link-budget breakdown: ocean clutter, ship signal, noise floor, and SINR qualification.
+            contributions_plot = f"Link_budget_breakdown_{mtd.reflection_mode}_{gnss_name}_{band}.png"
             mtd.show_link_budget_contributions(file_name=contributions_plot, show_figure=False, band=band)
-            print(f"Pr breakdown plot saved as: {contributions_plot}")
+            print(f"Link-budget breakdown plot saved as: {contributions_plot}")
 
     # 6b. Combined plots: all constellations and bands together, color-coded by constellation.
     constellations_with_signals = [name for name, sigs in mtd.signals_per_constellation.items() if sigs]
@@ -139,13 +139,9 @@ def run_moving_target_detection(settings: dict):
     )
     print(f"Combined footprint-overlap plot saved as: {combined_plot}")
 
-    combined_contributions_plot = f"Detection_Pr_breakdown_{mtd.reflection_mode}_combined.png"
+    combined_contributions_plot = f"Link_budget_breakdown_{mtd.reflection_mode}_combined.png"
     mtd.show_link_budget_contributions(file_name=combined_contributions_plot, show_figure=False, band=None)
-    print(f"Combined Pr breakdown plot saved as: {combined_contributions_plot}")
-
-    combined_contributions_plot = f"Detection_Pr_breakdown_{mtd.reflection_mode}_combined.png"
-    mtd.show_link_budget_contributions(file_name=combined_contributions_plot, show_figure=False, band=None)
-    print(f"Combined Pr breakdown plot saved as: {combined_contributions_plot}")
+    print(f"Combined link-budget breakdown plot saved as: {combined_contributions_plot}")
 
     # 7. Reflection animation (band-independent: reflection geometry is the same across bands).
     if settings["create_animation"]:

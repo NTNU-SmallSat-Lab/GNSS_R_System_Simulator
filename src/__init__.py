@@ -10,6 +10,7 @@ from dataclasses import fields
 from datetime import UTC, datetime
 import json as json
 import logging
+import math
 import os
 import re
 import sys
@@ -424,7 +425,13 @@ def initialize(config_file_name="Configuration.ini"):
         raise ValueError("[LINK BUDGET] section is required in the configuration file.")
     section = config["LINK BUDGET"]
     link_budget = {}
-    for key in ("system_losses_db", "polarization_losses_db", "noise_bandwidth_hz", "system_noise_temperature_k"):
+    for key in (
+        "system_losses_db",
+        "polarization_losses_db",
+        "noise_bandwidth_hz",
+        "system_noise_temperature_k",
+        "detection_sinr_threshold_db",
+    ):
         if key not in section:
             raise ValueError(f"[LINK BUDGET].{key} is required in the configuration file.")
         try:
@@ -434,6 +441,10 @@ def initialize(config_file_name="Configuration.ini"):
     for key in ("noise_bandwidth_hz", "system_noise_temperature_k"):
         if link_budget[key] <= 0.0:
             raise ValueError(f"[LINK BUDGET].{key} must be > 0; got {link_budget[key]}")
+    if not math.isfinite(link_budget["detection_sinr_threshold_db"]):
+        raise ValueError(
+            f"[LINK BUDGET].detection_sinr_threshold_db must be finite; got {link_budget['detection_sinr_threshold_db']}"
+        )
 
     #[OCEAN] (REQUIRED SECTION)
     # Sea-state and water-property inputs for the bistatic ocean RCS model. INI-strict.

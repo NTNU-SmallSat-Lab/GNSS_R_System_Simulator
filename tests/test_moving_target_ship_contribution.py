@@ -13,6 +13,7 @@ import pytest
 
 import functions.link_budget as lb
 from functions.link_budget import compute_reflection_link_budget
+from object_definitions.Constants_def import Constants
 from object_definitions.MovingTargetDetection_def import (
     MovingTargetDetection,
     MovingTargetDetectionStruct,
@@ -150,9 +151,13 @@ class TestComputeShipPrAtEvent:
         mtd.ship_dimensions = None
         mtd.moving_target_object = _trajectory([(60.0 + 0.1 * i, 5.0) for i in range(5)])
         refl_obj = _build_refl_obj_mock()
-        pr_ship_w, rcs_ship_m2 = mtd._compute_ship_pr_at_event(refl_obj, 0, 1.57542e9, 27.0, detection_time, (0.0, 0.0))
+        pr_ship_w, rcs_ship_m2, snr_ship_rf_db, noise_power_w = mtd._compute_ship_pr_at_event(
+            refl_obj, 0, 1.57542e9, 27.0, detection_time, (0.0, 0.0)
+        )
         assert np.isnan(pr_ship_w)
         assert np.isnan(rcs_ship_m2)
+        assert np.isnan(snr_ship_rf_db)
+        assert np.isnan(noise_power_w)
 
     def test_returns_nan_when_ship_is_stationary(self, mtd, detection_time):
         mtd.ship_dimensions = {"length_m": 100.0, "beam_m": 15.0, "freeboard_m": 5.0}
@@ -160,9 +165,13 @@ class TestComputeShipPrAtEvent:
         mtd.link_budget_settings = link_budget_settings()
         mtd.sat_antenna = _constant_gain_antenna()
         refl_obj = _build_refl_obj_mock()
-        pr_ship_w, rcs_ship_m2 = mtd._compute_ship_pr_at_event(refl_obj, 0, 1.57542e9, 27.0, detection_time, (0.0, 0.0))
+        pr_ship_w, rcs_ship_m2, snr_ship_rf_db, noise_power_w = mtd._compute_ship_pr_at_event(
+            refl_obj, 0, 1.57542e9, 27.0, detection_time, (0.0, 0.0)
+        )
         assert np.isnan(pr_ship_w)
         assert np.isnan(rcs_ship_m2)
+        assert np.isnan(snr_ship_rf_db)
+        assert np.isnan(noise_power_w)
 
     def test_returns_finite_pr_for_well_formed_event(self, mtd, detection_time):
         mtd.ship_dimensions = {"length_m": 100.0, "beam_m": 15.0, "freeboard_m": 5.0}
@@ -170,12 +179,16 @@ class TestComputeShipPrAtEvent:
         mtd.link_budget_settings = link_budget_settings()
         mtd.sat_antenna = _constant_gain_antenna()
         refl_obj = _build_refl_obj_mock()
-        pr_ship_w, rcs_ship_m2 = mtd._compute_ship_pr_at_event(refl_obj, 0, 1.57542e9, 27.0, detection_time, (0.0, 0.0))
+        pr_ship_w, rcs_ship_m2, snr_ship_rf_db, noise_power_w = mtd._compute_ship_pr_at_event(
+            refl_obj, 0, 1.57542e9, 27.0, detection_time, (0.0, 0.0)
+        )
         # Geometry is near-zenith with a moving ship — deck plate dominates, RCS finite and positive.
         assert np.isfinite(rcs_ship_m2)
         assert rcs_ship_m2 > 0.0
         assert np.isfinite(pr_ship_w)
         assert pr_ship_w > 0.0
+        assert np.isfinite(snr_ship_rf_db)
+        assert noise_power_w > 0.0
 
     def test_ship_gain_uses_reflection_point_steering(self, mtd, detection_time, monkeypatch):
         center_direction = np.array([0.0, 0.0, 1.0])
@@ -193,10 +206,14 @@ class TestComputeShipPrAtEvent:
         refl_obj = _build_refl_obj_mock()
         monkeypatch.setattr(lb, "compute_rx_look_direction_antenna_frame", fake_look_direction)
 
-        pr_ship_w, rcs_ship_m2 = mtd._compute_ship_pr_at_event(refl_obj, 0, 1.57542e9, 27.0, detection_time, (0.0, 0.0))
+        pr_ship_w, rcs_ship_m2, snr_ship_rf_db, noise_power_w = mtd._compute_ship_pr_at_event(
+            refl_obj, 0, 1.57542e9, 27.0, detection_time, (0.0, 0.0)
+        )
 
         assert np.isfinite(pr_ship_w)
         assert np.isfinite(rcs_ship_m2)
+        assert np.isfinite(snr_ship_rf_db)
+        assert noise_power_w > 0.0
         np.testing.assert_allclose(mtd.sat_antenna.resolved_direction, center_direction)
         assert len(mtd.sat_antenna.gain_calls) == 1
         gain_call = mtd.sat_antenna.gain_calls[0]
@@ -214,8 +231,79 @@ class TestDetectionStructDefaults:
         assert s.pr_ship_w is None
         assert s.pr_total_w is None
         assert s.scr_db is None
+        assert s.noise_power_w is None
+        assert s.snr_ocean_rf_db is None
+        assert s.snr_ship_rf_db is None
+        assert s.snr_total_rf_db is None
+        assert s.sinr_ship_db is None
+        assert s.detection_sinr_threshold_db is None
+        assert s.detection_margin_db is None
+        assert s.is_sinr_detection is None
         assert s.rcs_ocean_m2 is None
         assert s.rcs_ship_m2 is None
+
+
+class TestDetectionMetrics:
+    def test_populates_ship_sinr_and_pass_flag(self):
+        event = MovingTargetDetectionStruct(
+            pr_ocean_w=2.0,
+            pr_ship_w=8.0,
+            noise_power_w=2.0,
+            detection_sinr_threshold_db=3.0,
+        )
+
+        MovingTargetDetection._populate_detection_metrics(event)
+
+        np.testing.assert_allclose(event.pr_total_w, 10.0)
+        np.testing.assert_allclose(event.scr_db, 10.0 * np.log10(8.0 / 2.0))
+        np.testing.assert_allclose(event.snr_total_rf_db, 10.0 * np.log10(10.0 / 2.0))
+        np.testing.assert_allclose(event.sinr_ship_db, 10.0 * np.log10(8.0 / (2.0 + 2.0)))
+        np.testing.assert_allclose(event.detection_margin_db, event.sinr_ship_db - 3.0)
+        assert event.is_sinr_detection is True
+
+    def test_populates_ship_sinr_and_fail_flag(self):
+        event = MovingTargetDetectionStruct(
+            pr_ocean_w=2.0,
+            pr_ship_w=4.0,
+            noise_power_w=2.0,
+            detection_sinr_threshold_db=3.1,
+        )
+
+        MovingTargetDetection._populate_detection_metrics(event)
+
+        np.testing.assert_allclose(event.sinr_ship_db, 0.0)
+        np.testing.assert_allclose(event.detection_margin_db, -3.1)
+        assert event.is_sinr_detection is False
+
+
+class TestLinkBudgetContributionPlot:
+    def test_plot_includes_lb4c_noise_and_sinr_metrics(self, mtd, tmp_path, monkeypatch, capsys):
+        mtd.gnss_constellation = {"GPS": SimpleNamespace(), "GALILEO": SimpleNamespace()}
+        pass_event = MovingTargetDetectionStruct(
+            band="L1",
+            pr_ocean_w=1.0e-16,
+            pr_ship_w=1.0e-14,
+            noise_power_w=1.0e-15,
+            detection_sinr_threshold_db=0.0,
+        )
+        fail_event = MovingTargetDetectionStruct(
+            band="L1",
+            pr_ocean_w=1.0e-14,
+            pr_ship_w=1.0e-15,
+            noise_power_w=1.0e-15,
+            detection_sinr_threshold_db=0.0,
+        )
+        MovingTargetDetection._populate_detection_metrics(pass_event)
+        MovingTargetDetection._populate_detection_metrics(fail_event)
+        mtd.target_detect_dict = {"GPS": [pass_event, fail_event], "GALILEO": []}
+        monkeypatch.setattr(Constants, "output_folder_path", str(tmp_path))
+
+        mtd.show_link_budget_contributions(file_name="lb4c_plot.png", band="L1")
+
+        output_file = tmp_path / "lb4c_plot.png"
+        assert output_file.is_file()
+        assert output_file.stat().st_size > 0
+        assert "SINR-qualified (threshold 0.00 dB):   1 / 2" in capsys.readouterr().out
 
 
 def _build_multi_sample_refl_obj(n=4):
@@ -274,9 +362,11 @@ class TestComputeOceanPrAtEvent:
         full = _full_series_budget(refl_obj, antenna)
         _ocean_mtd(mtd, antenna)
         for i in range(refl_obj.refl_ECI_vec.shape[0]):
-            pr_evt, rcs_evt = mtd._compute_ocean_pr_at_event(refl_obj, i, 1.57542e9, 27.0)
+            pr_evt, rcs_evt, snr_evt, noise_evt = mtd._compute_ocean_pr_at_event(refl_obj, i, 1.57542e9, 27.0)
             np.testing.assert_allclose(pr_evt, full["received_power_w"][i], rtol=1e-12, atol=0.0)
             np.testing.assert_allclose(rcs_evt, full["rcs_m2"][i], rtol=1e-12, atol=0.0)
+            np.testing.assert_allclose(snr_evt, full["snr_rf_db"][i], rtol=1e-12, atol=0.0)
+            np.testing.assert_allclose(noise_evt, full["noise_power_w"], rtol=1e-12, atol=0.0)
 
     def test_invalid_sample_is_nan_in_both(self, mtd):
         # An invalid reflection point is NaN in the full series, and the per-event recompute agrees.
@@ -285,6 +375,8 @@ class TestComputeOceanPrAtEvent:
         antenna = _constant_gain_antenna()
         full = _full_series_budget(refl_obj, antenna)
         _ocean_mtd(mtd, antenna)
-        pr_evt, _ = mtd._compute_ocean_pr_at_event(refl_obj, 2, 1.57542e9, 27.0)
+        pr_evt, _, snr_evt, noise_evt = mtd._compute_ocean_pr_at_event(refl_obj, 2, 1.57542e9, 27.0)
         assert np.isnan(pr_evt)
+        assert np.isnan(snr_evt)
+        assert noise_evt > 0.0
         assert np.isnan(full["received_power_w"][2])

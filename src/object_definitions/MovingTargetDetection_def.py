@@ -105,7 +105,7 @@ class MovingTargetDetection:
         self.deltaT_sec = deltaT  # Time tolerance in seconds for matching reflection points to moving target positions (default: 60 seconds) | This should match the time step of the simulation
         self.earth_model = earth_model  # Earth model to use for the reflection calculation (default: 'spherical')
         self.reflection_mode = reflection_mode  # Either Specular reflection, or backscattering calculation
-        self.link_budget_settings = link_budget_settings
+        self.link_budget_settings = lb.coerce_link_budget_settings(link_budget_settings)
         self.bbox_buffer_deg = float(bbox_buffer_deg)
         self.max_central_angle_deg = float(max_central_angle_deg)
         if self.reflection_mode == "backscatter":
@@ -484,7 +484,9 @@ class MovingTargetDetection:
                                     # propagation. A non-finite Pr means the reflection is out of the antenna
                                     # FOV or has no valid RCS; the eager path dropped these via an empty
                                     # footprint, so skip the detection to preserve that behaviour.
-                                    pr_ocean_w, rcs_ocean_m2 = self._compute_ocean_pr_at_event(refl_obj, reflection_index, frequency_hz, tx_eirp_dbw)
+                                    pr_ocean_w, rcs_ocean_m2, snr_ocean_rf_db, noise_power_w = self._compute_ocean_pr_at_event(
+                                        refl_obj, reflection_index, frequency_hz, tx_eirp_dbw
+                                    )
                                     if not np.isfinite(pr_ocean_w):
                                         continue
 
@@ -504,18 +506,22 @@ class MovingTargetDetection:
 
                                     possible_target_detection.pr_ocean_w = pr_ocean_w
                                     possible_target_detection.rcs_ocean_m2 = rcs_ocean_m2
+                                    possible_target_detection.snr_ocean_rf_db = snr_ocean_rf_db
+                                    possible_target_detection.noise_power_w = noise_power_w
+                                    possible_target_detection.detection_sinr_threshold_db = self.link_budget_settings.detection_sinr_threshold_db
 
                                     if self.ship_dimensions is not None:
                                         ship_position_ll = (pos_tgt_i.y, pos_tgt_i.x)
-                                        pr_ship_w, rcs_ship_m2 = self._compute_ship_pr_at_event(
+                                        pr_ship_w, rcs_ship_m2, snr_ship_rf_db, ship_noise_power_w = self._compute_ship_pr_at_event(
                                             refl_obj, reflection_index, frequency_hz, tx_eirp_dbw, time_tgt_i, ship_position_ll,
                                         )
                                         possible_target_detection.pr_ship_w = pr_ship_w
                                         possible_target_detection.rcs_ship_m2 = rcs_ship_m2
-                                        if np.isfinite(pr_ocean_w) and np.isfinite(pr_ship_w):
-                                            possible_target_detection.pr_total_w = pr_ocean_w + pr_ship_w
-                                            if pr_ocean_w > 0.0:
-                                                possible_target_detection.scr_db = 10.0 * np.log10(pr_ship_w / pr_ocean_w)
+                                        possible_target_detection.snr_ship_rf_db = snr_ship_rf_db
+                                        if not np.isfinite(noise_power_w) and np.isfinite(ship_noise_power_w):
+                                            noise_power_w = ship_noise_power_w
+                                            possible_target_detection.noise_power_w = noise_power_w
+                                        self._populate_detection_metrics(possible_target_detection)
 
                                     # Append the possible target detection to the target detection list
                                     self.target_detect_dict[gnss_name].append(possible_target_detection)
@@ -534,6 +540,39 @@ class MovingTargetDetection:
         if total > 0:
             pct = rejected / total * 100.0
             logger.info(f"Footprint computations: {rejected}/{total} rejected as empty ({pct:.1f}%)")
+
+    @staticmethod
+    def _populate_detection_metrics(event: "MovingTargetDetectionStruct") -> None:
+        """
+        Populate derived ship-vs-ocean/noise metrics for one footprint-overlap event.
+
+        The moving-target detectability metric is SINR = P_ship / (P_ocean + P_noise).
+        Footprint-overlap candidates are still kept even when this threshold is not met.
+        """
+        if not (
+            event.pr_ocean_w is not None
+            and event.pr_ship_w is not None
+            and np.isfinite(event.pr_ocean_w)
+            and np.isfinite(event.pr_ship_w)
+            and event.pr_ocean_w > 0.0
+            and event.pr_ship_w > 0.0
+        ):
+            return
+
+        event.pr_total_w = event.pr_ocean_w + event.pr_ship_w
+        event.scr_db = 10.0 * np.log10(event.pr_ship_w / event.pr_ocean_w)
+
+        if not (event.noise_power_w is not None and np.isfinite(event.noise_power_w) and event.noise_power_w > 0.0):
+            return
+
+        event.snr_total_rf_db = 10.0 * np.log10(event.pr_total_w / event.noise_power_w)
+        interference_plus_noise_w = event.pr_ocean_w + event.noise_power_w
+        event.sinr_ship_db = 10.0 * np.log10(event.pr_ship_w / interference_plus_noise_w)
+
+        if event.detection_sinr_threshold_db is None or not np.isfinite(event.detection_sinr_threshold_db):
+            return
+        event.detection_margin_db = event.sinr_ship_db - event.detection_sinr_threshold_db
+        event.is_sinr_detection = bool(event.detection_margin_db >= 0.0)
 
     def _get_reflection_times(self) -> list[dt.datetime]:
         """
@@ -627,21 +666,22 @@ class MovingTargetDetection:
         tx_eirp_dbw: float,
         detection_time: dt.datetime,
         ship_position_ll: tuple[float, float],
-    ) -> tuple[float, float]:
+    ) -> tuple[float, float, float, float]:
         """
         Compute the ship's contribution to received power at one detection event.
 
         Builds a single-sample BistaticGeometry at the detected ship position, instantiates
         a ShipTarget with the ship's instantaneous heading, and runs the bistatic link budget.
-        Returns (pr_ship_w, rcs_ship_m2); NaN/NaN if heading is unavailable or geometry is invalid.
+        Returns (pr_ship_w, rcs_ship_m2, snr_ship_rf_db, noise_power_w);
+        all NaN if heading is unavailable or geometry is invalid.
         """
-        nan_pair = (float("nan"), float("nan"))
+        nan_result = (float("nan"), float("nan"), float("nan"), float("nan"))
         if self.ship_dimensions is None:
-            return nan_pair
+            return nan_result
 
         heading_eci = self._compute_ship_heading_eci(detection_time)
         if heading_eci is None:
-            return nan_pair
+            return nan_result
 
         ship_lat, ship_lon = ship_position_ll
         ship_x_ecef, ship_y_ecef, ship_z_ecef = pymap3d.geodetic2ecef(ship_lat, ship_lon, 0.0)
@@ -667,7 +707,7 @@ class MovingTargetDetection:
             and np.isfinite(ship_pos_eci).all()
             and np.isfinite(ship_surface_normal_eci).all()
         ):
-            return nan_pair
+            return nan_result
 
         geometry = lb.build_bistatic_geometry(tx_pos, rx_pos, ship_pos_eci, ship_surface_normal_eci)
         wavelength_m = Constants.SPEED_OF_LIGHT / frequency_hz
@@ -676,7 +716,7 @@ class MovingTargetDetection:
         rcs_result = ship_target.compute_rcs(geometry, wavelength_m)
         rcs_ship_m2 = float(rcs_result.rcs_m2[0])
         if not np.isfinite(rcs_ship_m2):
-            return nan_pair
+            return nan_result
 
         look_dir_center_a = lb.compute_rx_look_direction_antenna_frame(
             rx_pos[:, 0],
@@ -686,7 +726,7 @@ class MovingTargetDetection:
         )
         steering_angles = self.sat_antenna.resolve_steering_angles_for_direction(look_dir_center_a)
         if steering_angles is None:
-            return nan_pair
+            return nan_result
         steering_azimuth_deg, steering_elevation_deg = steering_angles
 
         look_dir_ship_a = lb.compute_rx_look_direction_antenna_frame(
@@ -712,7 +752,9 @@ class MovingTargetDetection:
             settings=self.link_budget_settings,
         )
         pr_ship_w = float(link_budget["received_power_w"][0])
-        return pr_ship_w, rcs_ship_m2
+        snr_ship_rf_db = float(link_budget["snr_rf_db"][0])
+        noise_power_w = float(link_budget["noise_power_w"])
+        return pr_ship_w, rcs_ship_m2, snr_ship_rf_db, noise_power_w
 
     def _compute_ocean_pr_at_event(
         self,
@@ -720,13 +762,13 @@ class MovingTargetDetection:
         reflection_index: int,
         frequency_hz: float,
         tx_eirp_dbw: float,
-    ) -> tuple[float, float]:
+    ) -> tuple[float, float, float, float]:
         """
         Compute the ocean-clutter received power and RCS at one reflection sample.
 
         Re-runs the shared link budget on a single-sample slice of the reflection object, so the
         result is identical to the eager full-series value at `reflection_index`. Returns
-        (pr_ocean_w, rcs_ocean_m2).
+        (pr_ocean_w, rcs_ocean_m2, snr_ocean_rf_db, noise_power_w).
         """
         idx = reflection_index
         if self.earth_model == "elliptical" and refl_obj.refl_ECEF_vec is not None:
@@ -748,20 +790,24 @@ class MovingTargetDetection:
         )
         pr_ocean_w = float(link_budget["received_power_w"][0])
         rcs_ocean_m2 = float(link_budget["rcs_m2"][0])
-        return pr_ocean_w, rcs_ocean_m2
+        snr_ocean_rf_db = float(link_budget["snr_rf_db"][0])
+        noise_power_w = float(link_budget["noise_power_w"])
+        return pr_ocean_w, rcs_ocean_m2, snr_ocean_rf_db, noise_power_w
 
     def show_link_budget_contributions(self, file_name: str | None = None, show_figure: bool = False, band: str | None = None) -> None:
         """
         =========================================================================================================
-        Visualise per-detection-event ocean clutter vs ship signal contributions to the link budget.
+        Visualise per-footprint-overlap ocean clutter, ship signal, noise, and SINR link-budget metrics.
 
-        Two-panel figure:
-            - Left:  scatter of Pr_ship_dBm vs Pr_ocean_dBm, with the SCR = 0 dB diagonal. Points
-                     above the diagonal mean the ship dominates the received power.
-            - Right: histogram of SCR_dB per GNSS constellation.
+        Four-panel figure:
+            - Received-power scatter of Pr_ship_dBm vs Pr_ocean_dBm, with the SCR = 0 dB diagonal
+              and the configured thermal-noise floor.
+            - Histogram of SCR_dB per GNSS constellation.
+            - Histogram of ship SINR per GNSS constellation, with the configured SINR threshold.
+            - Per-event SINR margin relative to that threshold.
 
-        Also prints a per-constellation summary (event counts, SCR min/median/max, ship-dominant vs
-        ocean-dominant counts) to stdout.
+        Also prints a per-constellation summary (event counts, SCR min/median/max, SINR min/median/max,
+        and SINR-qualified counts) to stdout.
 
         INPUTS:
             file_name:   [str | None]   Output filename in Constants.output_folder_path; None => don't save
@@ -769,7 +815,18 @@ class MovingTargetDetection:
             band:        [str | None]   Restrict to one band (default: all bands combined)
         =========================================================================================================
         """
-        # Collect detection events that have a finite ship-Pr and ocean-Pr pair.
+        def _power_w_to_dbm(power_w: float) -> float:
+            return float(10.0 * np.log10(power_w) + 30.0)
+
+        def _finite_values(events: list, attr_name: str) -> list[float]:
+            values = []
+            for event in events:
+                value = getattr(event, attr_name)
+                if value is not None and np.isfinite(value):
+                    values.append(float(value))
+            return values
+
+        # Collect footprint-overlap events that have a finite ship-Pr and ocean-Pr pair.
         events_by_const: dict[str, list] = {}
         for gnss_name, events in self.target_detect_dict.items():
             kept = []
@@ -784,7 +841,7 @@ class MovingTargetDetection:
             events_by_const[gnss_name] = kept
 
         if not any(events_by_const.values()):
-            logger.warning("No detection events with finite ship Pr -- skipping link budget contribution plot.")
+            logger.warning("No footprint-overlap events with finite ship Pr -- skipping link budget contribution plot.")
             return
 
         color_cycle = plt.rcParams["axes.prop_cycle"].by_key()["color"]
@@ -793,29 +850,51 @@ class MovingTargetDetection:
             for i, name in enumerate(self.gnss_constellation.keys())
         }
 
-        fig, (ax_scatter, ax_hist) = plt.subplots(1, 2, figsize=(14, 6))
+        fig, ((ax_power, ax_scr_hist), (ax_sinr_hist, ax_margin)) = plt.subplots(2, 2, figsize=(16, 11))
 
         # Scatter: Pr_ship_dBm vs Pr_ocean_dBm
         all_dbm = []
+        all_noise_dbm = []
         for gnss_name, events in events_by_const.items():
             if not events:
                 continue
-            pr_ocean_dbm = np.array([10.0 * np.log10(e.pr_ocean_w) + 30.0 for e in events])
-            pr_ship_dbm = np.array([10.0 * np.log10(e.pr_ship_w) + 30.0 for e in events])
-            ax_scatter.scatter(
-                pr_ocean_dbm, pr_ship_dbm,
-                color=const_color[gnss_name], label=gnss_name, alpha=0.7, s=60, edgecolors="black",
+            pr_ocean_dbm = np.array([_power_w_to_dbm(e.pr_ocean_w) for e in events])
+            pr_ship_dbm = np.array([_power_w_to_dbm(e.pr_ship_w) for e in events])
+            ax_power.scatter(
+                pr_ocean_dbm,
+                pr_ship_dbm,
+                color=const_color[gnss_name],
+                label=gnss_name,
+                alpha=0.7,
+                s=60,
+                edgecolors="black",
             )
             all_dbm.extend(pr_ocean_dbm.tolist() + pr_ship_dbm.tolist())
+            all_noise_dbm.extend(
+                _power_w_to_dbm(e.noise_power_w)
+                for e in events
+                if e.noise_power_w is not None and np.isfinite(e.noise_power_w) and e.noise_power_w > 0.0
+            )
+
+        if all_noise_dbm:
+            noise_floor_dbm = float(np.median(all_noise_dbm))
+            all_dbm.append(noise_floor_dbm)
+            ax_power.axvline(noise_floor_dbm, color="0.35", linestyle=":", linewidth=1.5, label="Thermal floor (pre-correlation)")
+            ax_power.axhline(noise_floor_dbm, color="0.35", linestyle=":", linewidth=1.5)
 
         lo, hi = min(all_dbm), max(all_dbm)
-        ax_scatter.plot([lo, hi], [lo, hi], "k--", alpha=0.5, label="SCR = 0 dB")
-        ax_scatter.set_xlabel("Pr ocean clutter [dBm]")
-        ax_scatter.set_ylabel("Pr ship signal [dBm]")
-        ax_scatter.set_title("Ship vs Ocean Received Power per Detection Event")
-        ax_scatter.legend(loc="best")
-        ax_scatter.grid(True, alpha=0.3)
-        ax_scatter.set_aspect("equal", adjustable="datalim")
+        padding = max((hi - lo) * 0.05, 1.0)
+        lo -= padding
+        hi += padding
+        ax_power.plot([lo, hi], [lo, hi], "k--", alpha=0.5, label="SCR = 0 dB")
+        ax_power.set_xlim(lo, hi)
+        ax_power.set_ylim(lo, hi)
+        ax_power.set_xlabel("Pr ocean clutter [dBm]")
+        ax_power.set_ylabel("Pr ship signal [dBm]")
+        ax_power.set_title("Received Power per Footprint-Overlap Event")
+        ax_power.legend(loc="best")
+        ax_power.grid(True, alpha=0.3)
+        ax_power.set_aspect("equal", adjustable="box")
 
         # SCR histogram
         all_scrs = []
@@ -830,16 +909,109 @@ class MovingTargetDetection:
             scrs = np.array([e.scr_db for e in events if e.scr_db is not None and np.isfinite(e.scr_db)])
             if scrs.size == 0:
                 continue
-            ax_hist.hist(
+            ax_scr_hist.hist(
                 scrs, bins=bins, color=const_color[gnss_name], alpha=0.5,
                 label=f"{gnss_name} (n={scrs.size})", edgecolor="black",
             )
-        ax_hist.axvline(0.0, color="k", linestyle="--", alpha=0.5, label="SCR = 0 dB")
-        ax_hist.set_xlabel("SCR = 10 log10(Pr_ship / Pr_ocean) [dB]")
-        ax_hist.set_ylabel("Number of detection events")
-        ax_hist.set_title("Signal-to-Clutter Ratio Distribution")
-        ax_hist.legend(loc="best")
-        ax_hist.grid(True, alpha=0.3)
+        ax_scr_hist.axvline(0.0, color="k", linestyle="--", alpha=0.5, label="SCR = 0 dB")
+        ax_scr_hist.set_xlabel("SCR = 10 log10(Pr_ship / Pr_ocean) [dB]")
+        ax_scr_hist.set_ylabel("Number of footprint-overlap events")
+        ax_scr_hist.set_title("Signal-to-Clutter Ratio Distribution")
+        ax_scr_hist.legend(loc="best")
+        ax_scr_hist.grid(True, alpha=0.3)
+
+        # SINR histogram
+        all_sinrs = []
+        all_thresholds = []
+        for events in events_by_const.values():
+            all_sinrs.extend(_finite_values(events, "sinr_ship_db"))
+            all_thresholds.extend(_finite_values(events, "detection_sinr_threshold_db"))
+
+        if all_sinrs:
+            sinr_lo = min(all_sinrs + [-5.0])
+            sinr_hi = max(all_sinrs + [5.0])
+            sinr_bin_count = max(10, min(30, len(all_sinrs)))
+            sinr_bins = np.linspace(sinr_lo - 5.0, sinr_hi + 5.0, sinr_bin_count + 1)
+            for gnss_name, events in events_by_const.items():
+                sinrs = np.array(_finite_values(events, "sinr_ship_db"))
+                if sinrs.size == 0:
+                    continue
+                ax_sinr_hist.hist(
+                    sinrs, bins=sinr_bins, color=const_color[gnss_name], alpha=0.5,
+                    label=f"{gnss_name} (n={sinrs.size})", edgecolor="black",
+                )
+            if all_thresholds:
+                threshold_db = float(np.median(all_thresholds))
+                ax_sinr_hist.axvline(
+                    threshold_db,
+                    color="k",
+                    linestyle="--",
+                    alpha=0.6,
+                    label=f"Threshold {threshold_db:.1f} dB",
+                )
+            ax_sinr_hist.legend(loc="best")
+        else:
+            ax_sinr_hist.text(0.5, 0.5, "No finite SINR values", transform=ax_sinr_hist.transAxes, ha="center", va="center")
+        ax_sinr_hist.set_xlabel("Ship SINR = 10 log10(Pr_ship / (Pr_ocean + noise)) [dB]")
+        ax_sinr_hist.set_ylabel("Number of footprint-overlap events")
+        ax_sinr_hist.set_title("Ship SINR Distribution")
+        ax_sinr_hist.grid(True, alpha=0.3)
+
+        # SINR detection margin per event. The margin is SINR - threshold, so 0 dB is the qualification boundary.
+        event_offset = 0
+        plotted_margin_label = set()
+        has_margins = False
+        for gnss_name, events in events_by_const.items():
+            margin_pairs = [
+                (event_offset + idx, e)
+                for idx, e in enumerate(events)
+                if e.detection_margin_db is not None and np.isfinite(e.detection_margin_db)
+            ]
+            event_offset += len(events)
+            if not margin_pairs:
+                continue
+
+            x_values = np.array([idx for idx, _ in margin_pairs], dtype=int)
+            margin_events = [e for _, e in margin_pairs]
+            margins = np.array([e.detection_margin_db for e in margin_events], dtype=float)
+            pass_mask = np.array([e.is_sinr_detection is True for e in margin_events], dtype=bool)
+            fail_mask = np.array([e.is_sinr_detection is False for e in margin_events], dtype=bool)
+
+            if np.any(pass_mask):
+                label = f"{gnss_name} pass" if gnss_name not in plotted_margin_label else None
+                ax_margin.scatter(
+                    x_values[pass_mask],
+                    margins[pass_mask],
+                    color=const_color[gnss_name],
+                    marker="o",
+                    s=48,
+                    alpha=0.75,
+                    edgecolors="black",
+                    label=label,
+                )
+            if np.any(fail_mask):
+                label = f"{gnss_name} fail" if f"{gnss_name}-fail" not in plotted_margin_label else None
+                ax_margin.scatter(
+                    x_values[fail_mask],
+                    margins[fail_mask],
+                    color=const_color[gnss_name],
+                    marker="x",
+                    s=60,
+                    alpha=0.85,
+                    label=label,
+                )
+                plotted_margin_label.add(f"{gnss_name}-fail")
+            plotted_margin_label.add(gnss_name)
+            has_margins = True
+
+        ax_margin.axhline(0.0, color="k", linestyle="--", alpha=0.6, label="SINR threshold")
+        if not has_margins:
+            ax_margin.text(0.5, 0.5, "No finite SINR margins", transform=ax_margin.transAxes, ha="center", va="center")
+        ax_margin.set_xlabel("Footprint-overlap event index")
+        ax_margin.set_ylabel("SINR margin [dB]")
+        ax_margin.set_title("Ship SINR Qualification Margin")
+        ax_margin.legend(loc="best")
+        ax_margin.grid(True, alpha=0.3)
 
         if band is not None:
             owner = Constants.get_constellation_for_band(band)
@@ -857,7 +1029,7 @@ class MovingTargetDetection:
         # Console summary.
         print()
         print("=" * 64)
-        header = "LINK BUDGET CONTRIBUTION SUMMARY (ship vs ocean per detection)"
+        header = "LINK BUDGET CONTRIBUTION SUMMARY (ship vs ocean/noise per footprint overlap)"
         if band is not None:
             header += f" -- band {band}"
         print(header)
@@ -872,12 +1044,12 @@ class MovingTargetDetection:
             kept = events_by_const.get(gnss_name, [])
             n_finite = len(kept)
             if n_finite == 0:
-                print(f"  {gnss_name:8s}: {total:4d} detections, 0 with finite ship Pr")
+                print(f"  {gnss_name:8s}: {total:4d} footprint overlaps, 0 with finite ship Pr")
                 continue
             scrs = np.array([e.scr_db for e in kept if e.scr_db is not None and np.isfinite(e.scr_db)])
             ship_dominant = int(np.sum(scrs > 0))
             ocean_dominant = int(np.sum(scrs <= 0))
-            print(f"  {gnss_name:8s}: {total:4d} detections, {n_finite:3d} with finite ship Pr")
+            print(f"  {gnss_name:8s}: {total:4d} footprint overlaps, {n_finite:3d} with finite ship Pr")
             if scrs.size > 0:
                 print(
                     f"    SCR [dB]    min={scrs.min():7.2f}  median={np.median(scrs):7.2f}  max={scrs.max():7.2f}"
@@ -885,6 +1057,16 @@ class MovingTargetDetection:
                 print(
                     f"    ship-dominant (SCR > 0): {ship_dominant:3d} / {n_finite:<3d}    "
                     f"ocean-dominant: {ocean_dominant:3d} / {n_finite:<3d}"
+                )
+            sinrs = np.array([e.sinr_ship_db for e in kept if e.sinr_ship_db is not None and np.isfinite(e.sinr_ship_db)])
+            if sinrs.size > 0:
+                threshold = kept[0].detection_sinr_threshold_db
+                n_sinr_detected = sum(1 for e in kept if e.is_sinr_detection is True)
+                print(
+                    f"    SINR [dB]   min={sinrs.min():7.2f}  median={np.median(sinrs):7.2f}  max={sinrs.max():7.2f}"
+                )
+                print(
+                    f"    SINR-qualified (threshold {threshold:.2f} dB): {n_sinr_detected:3d} / {n_finite:<3d}"
                 )
         print("=" * 64)
 
@@ -1854,5 +2036,13 @@ class MovingTargetDetectionStruct:
     pr_ship_w: float | None = None         # ship signal received power [W]
     pr_total_w: float | None = None        # pr_ocean_w + pr_ship_w [W]
     scr_db: float | None = None            # signal-to-clutter ratio = 10 log10(pr_ship / pr_ocean) [dB]
+    noise_power_w: float | None = None     # thermal noise power in configured noise bandwidth [W]
+    snr_ocean_rf_db: float | None = None   # ocean clutter RF SNR = 10 log10(pr_ocean / noise) [dB]
+    snr_ship_rf_db: float | None = None    # ship RF SNR = 10 log10(pr_ship / noise) [dB]
+    snr_total_rf_db: float | None = None   # total RF SNR = 10 log10((pr_ocean + pr_ship) / noise) [dB]
+    sinr_ship_db: float | None = None      # ship SINR = 10 log10(pr_ship / (pr_ocean + noise)) [dB]
+    detection_sinr_threshold_db: float | None = None  # configured ship SINR threshold [dB]
+    detection_margin_db: float | None = None          # sinr_ship_db - detection_sinr_threshold_db [dB]
+    is_sinr_detection: bool | None = None             # True when detection_margin_db >= 0
     rcs_ocean_m2: float | None = None      # ocean RCS at the reflection point [m^2]
     rcs_ship_m2: float | None = None       # ship RCS (combined plates + dihedrals) [m^2]

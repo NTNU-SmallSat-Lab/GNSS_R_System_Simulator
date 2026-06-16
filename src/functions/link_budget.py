@@ -31,6 +31,7 @@ class BistaticLinkBudgetSettings:
         polarization_losses_db:    [float]  Receiver-side polarization mismatch losses [dB]
         noise_bandwidth_hz:        [float]  Thermal-noise bandwidth used for SNR [Hz]
         system_noise_temperature_k:[float]  Equivalent input/system noise temperature [K]
+        detection_sinr_threshold_db:[float] Ship detectability threshold for P_ship / (P_ocean + P_noise) [dB]
         ocean_wave_height_m:       [float]  RMS wave height [m]  (Rayleigh roughness diagnostic)
         ocean_wind_speed_m_s:      [float]  Wind speed at 10 m [m/s]  (drives Cox-Munk slope variances)
         ocean_wind_direction_deg:  [float]  Wind direction (meteorological FROM bearing) [deg]
@@ -46,6 +47,7 @@ class BistaticLinkBudgetSettings:
     polarization_losses_db: float
     noise_bandwidth_hz: float
     system_noise_temperature_k: float
+    detection_sinr_threshold_db: float
     ocean_wave_height_m: float
     ocean_wind_speed_m_s: float
     ocean_wind_direction_deg: float
@@ -58,6 +60,8 @@ class BistaticLinkBudgetSettings:
             raise ValueError(f"noise_bandwidth_hz must be > 0; got {self.noise_bandwidth_hz}")
         if self.system_noise_temperature_k <= 0.0:
             raise ValueError(f"system_noise_temperature_k must be > 0; got {self.system_noise_temperature_k}")
+        if not np.isfinite(self.detection_sinr_threshold_db):
+            raise ValueError(f"detection_sinr_threshold_db must be finite; got {self.detection_sinr_threshold_db}")
 
 
 def coerce_link_budget_settings(settings: dict | BistaticLinkBudgetSettings) -> BistaticLinkBudgetSettings:
