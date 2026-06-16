@@ -300,9 +300,11 @@ class TestLinkBudgetContributionPlot:
 
         mtd.show_link_budget_contributions(file_name="lb4c_plot.png", band="L1")
 
-        output_file = tmp_path / "lb4c_plot.png"
-        assert output_file.is_file()
-        assert output_file.stat().st_size > 0
+        # Each metric is written to its own suffixed figure.
+        for suffix in ("power", "scr_hist", "sinr_hist", "margin"):
+            panel_file = tmp_path / f"lb4c_plot_{suffix}.png"
+            assert panel_file.is_file()
+            assert panel_file.stat().st_size > 0
         assert "SINR-qualified (threshold 0.00 dB):   1 / 2" in capsys.readouterr().out
 
 

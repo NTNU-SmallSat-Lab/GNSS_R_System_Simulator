@@ -799,18 +799,18 @@ class MovingTargetDetection:
         =========================================================================================================
         Visualise per-footprint-overlap ocean clutter, ship signal, noise, and SINR link-budget metrics.
 
-        Four-panel figure:
-            - Received-power scatter of Pr_ship_dBm vs Pr_ocean_dBm, with the SCR = 0 dB diagonal
-              and the configured thermal-noise floor.
-            - Histogram of SCR_dB per GNSS constellation.
-            - Histogram of ship SINR per GNSS constellation, with the configured SINR threshold.
-            - Per-event SINR margin relative to that threshold.
+        Saves four separate figures, each the base file_name with a per-metric suffix:
+            - <stem>_power<ext>:     Pr_ship_dBm vs Pr_ocean_dBm scatter, SCR = 0 dB diagonal, thermal floor.
+            - <stem>_scr_hist<ext>:  SCR_dB histogram per GNSS constellation.
+            - <stem>_sinr_hist<ext>: ship SINR histogram per GNSS constellation, with the SINR threshold.
+            - <stem>_margin<ext>:    per-event SINR margin relative to that threshold.
 
         Also prints a per-constellation summary (event counts, SCR min/median/max, SINR min/median/max,
         and SINR-qualified counts) to stdout.
 
         INPUTS:
-            file_name:   [str | None]   Output filename in Constants.output_folder_path; None => don't save
+            file_name:   [str | None]   Base output filename in Constants.output_folder_path; each metric
+                                        is saved as <stem>_<metric><ext>. None => don't save.
             show_figure: [bool]         Display interactively (default: False)
             band:        [str | None]   Restrict to one band (default: all bands combined)
         =========================================================================================================
@@ -850,9 +850,28 @@ class MovingTargetDetection:
             for i, name in enumerate(self.gnss_constellation.keys())
         }
 
-        fig, ((ax_power, ax_scr_hist), (ax_sinr_hist, ax_margin)) = plt.subplots(2, 2, figsize=(16, 11))
+        # Each metric is saved as its own figure: the base file_name gets a per-panel suffix.
+        def _panel_file(suffix: str) -> str | None:
+            if file_name is None:
+                return None
+            stem, ext = os.path.splitext(file_name)
+            return f"{stem}_{suffix}{ext}"
 
-        # Scatter: Pr_ship_dBm vs Pr_ocean_dBm
+        def _finalize(fig, suffix: str) -> None:
+            if band is not None:
+                owner = Constants.get_constellation_for_band(band)
+                fig.suptitle(f"{owner} -- Band {band}" if owner else f"Band {band}", fontweight="bold")
+            fig.tight_layout()
+            panel_file = _panel_file(suffix)
+            if panel_file is not None:
+                fig.savefig(os.path.join(Constants.output_folder_path, panel_file), dpi=300, bbox_inches="tight")
+                logger.info(f"Figure saved as {panel_file}")
+            if show_figure:
+                plt.show(block=True)
+            plt.close(fig)
+
+        # Received-power scatter: Pr_ship_dBm vs Pr_ocean_dBm.
+        fig, ax_power = plt.subplots(figsize=(8, 8))
         all_dbm = []
         all_noise_dbm = []
         for gnss_name, events in events_by_const.items():
@@ -895,8 +914,10 @@ class MovingTargetDetection:
         ax_power.legend(loc="best")
         ax_power.grid(True, alpha=0.3)
         ax_power.set_aspect("equal", adjustable="box")
+        _finalize(fig, "power")
 
-        # SCR histogram
+        # SCR histogram.
+        fig, ax_scr_hist = plt.subplots(figsize=(8, 6))
         all_scrs = []
         for events in events_by_const.values():
             all_scrs.extend(e.scr_db for e in events if e.scr_db is not None and np.isfinite(e.scr_db))
@@ -919,8 +940,10 @@ class MovingTargetDetection:
         ax_scr_hist.set_title("Signal-to-Clutter Ratio Distribution")
         ax_scr_hist.legend(loc="best")
         ax_scr_hist.grid(True, alpha=0.3)
+        _finalize(fig, "scr_hist")
 
-        # SINR histogram
+        # SINR histogram.
+        fig, ax_sinr_hist = plt.subplots(figsize=(8, 6))
         all_sinrs = []
         all_thresholds = []
         for events in events_by_const.values():
@@ -956,8 +979,10 @@ class MovingTargetDetection:
         ax_sinr_hist.set_ylabel("Number of footprint-overlap events")
         ax_sinr_hist.set_title("Ship SINR Distribution")
         ax_sinr_hist.grid(True, alpha=0.3)
+        _finalize(fig, "sinr_hist")
 
         # SINR detection margin per event. The margin is SINR - threshold, so 0 dB is the qualification boundary.
+        fig, ax_margin = plt.subplots(figsize=(8, 6))
         event_offset = 0
         plotted_margin_label = set()
         has_margins = False
@@ -978,7 +1003,7 @@ class MovingTargetDetection:
             fail_mask = np.array([e.is_sinr_detection is False for e in margin_events], dtype=bool)
 
             if np.any(pass_mask):
-                label = f"{gnss_name} pass" if gnss_name not in plotted_margin_label else None
+                label = gnss_name if gnss_name not in plotted_margin_label else None
                 ax_margin.scatter(
                     x_values[pass_mask],
                     margins[pass_mask],
@@ -990,7 +1015,7 @@ class MovingTargetDetection:
                     label=label,
                 )
             if np.any(fail_mask):
-                label = f"{gnss_name} fail" if f"{gnss_name}-fail" not in plotted_margin_label else None
+                # Below-threshold points are left unlabeled: the dashed SINR-threshold line makes them obvious.
                 ax_margin.scatter(
                     x_values[fail_mask],
                     margins[fail_mask],
@@ -998,9 +1023,7 @@ class MovingTargetDetection:
                     marker="x",
                     s=60,
                     alpha=0.85,
-                    label=label,
                 )
-                plotted_margin_label.add(f"{gnss_name}-fail")
             plotted_margin_label.add(gnss_name)
             has_margins = True
 
@@ -1012,19 +1035,7 @@ class MovingTargetDetection:
         ax_margin.set_title("Ship SINR Qualification Margin")
         ax_margin.legend(loc="best")
         ax_margin.grid(True, alpha=0.3)
-
-        if band is not None:
-            owner = Constants.get_constellation_for_band(band)
-            fig.suptitle(f"{owner} -- Band {band}" if owner else f"Band {band}", fontweight="bold")
-        plt.tight_layout()
-
-        if file_name is not None:
-            file_path = os.path.join(Constants.output_folder_path, file_name)
-            plt.savefig(file_path, dpi=300, bbox_inches="tight")
-            logger.info(f"Figure saved as {file_name}")
-        if show_figure:
-            plt.show(block=True)
-        plt.close(fig)
+        _finalize(fig, "margin")
 
         # Console summary.
         print()
