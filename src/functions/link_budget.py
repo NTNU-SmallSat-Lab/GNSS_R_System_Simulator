@@ -556,8 +556,8 @@ def compute_bistatic_link_budget(
     noise_density_dbw_hz = float(10.0 * np.log10(noise_density_w_hz))
     noise_power_dbw = float(10.0 * np.log10(noise_power_w))
     noise_power_dbm = noise_power_dbw + 30.0
-    cn0_db_hz = pr_dbw - noise_density_dbw_hz
-    snr_db = pr_dbw - noise_power_dbw
+    cn0_db_hz = pr_dbw - noise_density_dbw_hz       # C/N0 = Pr / (k T), bandwidth-independent [dB-Hz]
+    snr_rf_db = pr_dbw - noise_power_dbw            # SNR in noise_bandwidth_hz; pre-correlation, excludes despreading/integration gain
 
     return {
         "frequency_hz": float(frequency_hz),
@@ -581,5 +581,5 @@ def compute_bistatic_link_budget(
         "noise_power_dbw": noise_power_dbw,
         "noise_power_dbm": noise_power_dbm,
         "cn0_db_hz": cn0_db_hz,
-        "snr_db": snr_db,
+        "snr_rf_db": snr_rf_db,
     }

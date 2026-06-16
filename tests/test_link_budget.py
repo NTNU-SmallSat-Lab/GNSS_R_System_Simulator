@@ -113,7 +113,7 @@ class TestComputeBistaticLinkBudgetNoise:
         lb = self._budget(noise_bandwidth_hz=2.0e6, system_noise_temperature_k=290.0)
 
         np.testing.assert_allclose(
-            lb["snr_db"],
+            lb["snr_rf_db"],
             lb["received_power_dbw"] - lb["noise_power_dbw"],
             rtol=1e-15,
         )
@@ -128,7 +128,7 @@ class TestComputeBistaticLinkBudgetNoise:
         wide = self._budget(noise_bandwidth_hz=2.0e6)
 
         np.testing.assert_allclose(narrow["cn0_db_hz"], wide["cn0_db_hz"], atol=1e-12)
-        np.testing.assert_allclose(narrow["snr_db"] - wide["snr_db"], 10.0 * np.log10(2.0), atol=1e-12)
+        np.testing.assert_allclose(narrow["snr_rf_db"] - wide["snr_rf_db"], 10.0 * np.log10(2.0), atol=1e-12)
 
     @pytest.mark.parametrize(
         ("noise_bandwidth_hz", "system_noise_temperature_k", "match"),
