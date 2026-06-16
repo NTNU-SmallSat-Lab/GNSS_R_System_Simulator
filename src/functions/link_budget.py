@@ -29,6 +29,8 @@ class BistaticLinkBudgetSettings:
     ATTRIBUTES:
         system_losses_db:          [float]  Lumped implementation losses [dB]
         polarization_losses_db:    [float]  Receiver-side polarization mismatch losses [dB]
+        noise_bandwidth_hz:        [float]  Thermal-noise bandwidth used for SNR [Hz]
+        system_noise_temperature_k:[float]  Equivalent input/system noise temperature [K]
         ocean_wave_height_m:       [float]  RMS wave height [m]  (Rayleigh roughness diagnostic)
         ocean_wind_speed_m_s:      [float]  Wind speed at 10 m [m/s]  (drives Cox-Munk slope variances)
         ocean_wind_direction_deg:  [float]  Wind direction (meteorological FROM bearing) [deg]
@@ -42,12 +44,20 @@ class BistaticLinkBudgetSettings:
 
     system_losses_db: float
     polarization_losses_db: float
+    noise_bandwidth_hz: float
+    system_noise_temperature_k: float
     ocean_wave_height_m: float
     ocean_wind_speed_m_s: float
     ocean_wind_direction_deg: float
     ocean_sea_temperature_c: float
     ocean_salinity_psu: float
     ocean_inverse_wave_age: float
+
+    def __post_init__(self) -> None:
+        if self.noise_bandwidth_hz <= 0.0:
+            raise ValueError(f"noise_bandwidth_hz must be > 0; got {self.noise_bandwidth_hz}")
+        if self.system_noise_temperature_k <= 0.0:
+            raise ValueError(f"system_noise_temperature_k must be > 0; got {self.system_noise_temperature_k}")
 
 
 def coerce_link_budget_settings(settings: dict | BistaticLinkBudgetSettings) -> BistaticLinkBudgetSettings:
@@ -541,6 +551,14 @@ def compute_bistatic_link_budget(
     pr_dbw = _db_from_linear(pr_w)
     pr_dbm = pr_dbw + 30.0
 
+    noise_density_w_hz = Constants.BOLTZMANN_CONSTANT * settings_obj.system_noise_temperature_k
+    noise_power_w = noise_density_w_hz * settings_obj.noise_bandwidth_hz
+    noise_density_dbw_hz = float(10.0 * np.log10(noise_density_w_hz))
+    noise_power_dbw = float(10.0 * np.log10(noise_power_w))
+    noise_power_dbm = noise_power_dbw + 30.0
+    cn0_db_hz = pr_dbw - noise_density_dbw_hz
+    snr_db = pr_dbw - noise_power_dbw
+
     return {
         "frequency_hz": float(frequency_hz),
         "wavelength_m": float(wavelength_m),
@@ -555,4 +573,13 @@ def compute_bistatic_link_budget(
         "received_power_w": pr_w,
         "received_power_dbw": pr_dbw,
         "received_power_dbm": pr_dbm,
+        "noise_bandwidth_hz": float(settings_obj.noise_bandwidth_hz),
+        "system_noise_temperature_k": float(settings_obj.system_noise_temperature_k),
+        "noise_density_w_hz": float(noise_density_w_hz),
+        "noise_density_dbw_hz": noise_density_dbw_hz,
+        "noise_power_w": float(noise_power_w),
+        "noise_power_dbw": noise_power_dbw,
+        "noise_power_dbm": noise_power_dbm,
+        "cn0_db_hz": cn0_db_hz,
+        "snr_db": snr_db,
     }

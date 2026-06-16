@@ -1,9 +1,12 @@
 """Unit tests for functions/link_budget.py::compute_rx_look_direction_antenna_frame."""
 
+from _link_budget_settings import link_budget_settings
 import numpy as np
+import pytest
 
-from functions.link_budget import compute_rx_look_direction_antenna_frame
+from functions.link_budget import compute_bistatic_link_budget, compute_rx_look_direction_antenna_frame
 from functions.rotations import eci_to_antenna_rotation_from_state
+from object_definitions.Constants_def import Constants
 
 
 class _FakeAntenna:
@@ -78,3 +81,65 @@ class TestComputeRxLookDirectionAntennaFrame:
         expected = R @ n_ar_eci
         expected = expected / np.linalg.norm(expected)
         np.testing.assert_allclose(result, expected, atol=1e-12)
+
+
+class TestComputeBistaticLinkBudgetNoise:
+    def _budget(self, *, noise_bandwidth_hz=2.0e6, system_noise_temperature_k=290.0):
+        return compute_bistatic_link_budget(
+            range_tx_m=np.array([20.0e6]),
+            range_rx_m=np.array([720.0e3]),
+            rx_gain_dbi=np.array([5.0]),
+            rcs_m2=np.array([1.0e6]),
+            frequency_hz=1.57542e9,
+            tx_eirp_dbw=27.0,
+            settings=link_budget_settings(
+                noise_bandwidth_hz=noise_bandwidth_hz,
+                system_noise_temperature_k=system_noise_temperature_k,
+            ),
+        )
+
+    def test_noise_power_uses_k_t_b(self):
+        lb = self._budget(noise_bandwidth_hz=2.0e6, system_noise_temperature_k=290.0)
+
+        expected_density = Constants.BOLTZMANN_CONSTANT * 290.0
+        expected_power = expected_density * 2.0e6
+
+        np.testing.assert_allclose(lb["noise_density_w_hz"], expected_density, rtol=1e-15)
+        np.testing.assert_allclose(lb["noise_power_w"], expected_power, rtol=1e-15)
+        np.testing.assert_allclose(lb["noise_power_dbw"], 10.0 * np.log10(expected_power), rtol=1e-15)
+        np.testing.assert_allclose(lb["noise_power_dbm"], 10.0 * np.log10(expected_power) + 30.0, rtol=1e-15)
+
+    def test_snr_and_cn0_are_derived_from_received_power(self):
+        lb = self._budget(noise_bandwidth_hz=2.0e6, system_noise_temperature_k=290.0)
+
+        np.testing.assert_allclose(
+            lb["snr_db"],
+            lb["received_power_dbw"] - lb["noise_power_dbw"],
+            rtol=1e-15,
+        )
+        np.testing.assert_allclose(
+            lb["cn0_db_hz"],
+            lb["received_power_dbw"] - lb["noise_density_dbw_hz"],
+            rtol=1e-15,
+        )
+
+    def test_doubling_bandwidth_reduces_snr_but_not_cn0(self):
+        narrow = self._budget(noise_bandwidth_hz=1.0e6)
+        wide = self._budget(noise_bandwidth_hz=2.0e6)
+
+        np.testing.assert_allclose(narrow["cn0_db_hz"], wide["cn0_db_hz"], atol=1e-12)
+        np.testing.assert_allclose(narrow["snr_db"] - wide["snr_db"], 10.0 * np.log10(2.0), atol=1e-12)
+
+    @pytest.mark.parametrize(
+        ("noise_bandwidth_hz", "system_noise_temperature_k", "match"),
+        [
+            (0.0, 290.0, "noise_bandwidth_hz"),
+            (2.0e6, 0.0, "system_noise_temperature_k"),
+        ],
+    )
+    def test_non_positive_noise_settings_raise(self, noise_bandwidth_hz, system_noise_temperature_k, match):
+        with pytest.raises(ValueError, match=match):
+            link_budget_settings(
+                noise_bandwidth_hz=noise_bandwidth_hz,
+                system_noise_temperature_k=system_noise_temperature_k,
+            )

@@ -60,6 +60,8 @@ MINIMAL_LINK_BUDGET = dedent(
     [LINK BUDGET]
     system_losses_db = 2.0
     polarization_losses_db = 0.5
+    noise_bandwidth_hz = 2.0e6
+    system_noise_temperature_k = 290.0
     """
 )
 
@@ -434,6 +436,8 @@ class TestOptionalSections:
         _, settings = initialize(path)
         assert settings["link_budget"]["system_losses_db"] == 2.0
         assert settings["link_budget"]["polarization_losses_db"] == 0.5
+        assert settings["link_budget"]["noise_bandwidth_hz"] == 2.0e6
+        assert settings["link_budget"]["system_noise_temperature_k"] == 290.0
         assert "tx_eirp_dbw" not in settings["link_budget"]  # EIRP lives in Constants.GNSS_EIRP_DBW now.
 
     def test_no_link_budget_section_raises(self, tmp_path):
@@ -459,10 +463,26 @@ class TestOptionalSections:
             [LINK BUDGET]
             system_losses_db = not_a_number
             polarization_losses_db = 0.5
+            noise_bandwidth_hz = 2.0e6
+            system_noise_temperature_k = 290.0
             """
         )
         path = write_config(tmp_path, minimal_config_body(link_budget_section=lb))
         with pytest.raises(ValueError, match="system_losses_db"):
+            initialize(path)
+
+    def test_link_budget_non_positive_noise_value_raises(self, tmp_path):
+        lb = dedent(
+            """\
+            [LINK BUDGET]
+            system_losses_db = 2.0
+            polarization_losses_db = 0.5
+            noise_bandwidth_hz = 0.0
+            system_noise_temperature_k = 290.0
+            """
+        )
+        path = write_config(tmp_path, minimal_config_body(link_budget_section=lb))
+        with pytest.raises(ValueError, match="noise_bandwidth_hz must be > 0"):
             initialize(path)
 
     def test_ocean_values_parsed(self, tmp_path):

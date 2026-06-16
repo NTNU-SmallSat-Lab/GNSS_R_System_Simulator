@@ -424,13 +424,16 @@ def initialize(config_file_name="Configuration.ini"):
         raise ValueError("[LINK BUDGET] section is required in the configuration file.")
     section = config["LINK BUDGET"]
     link_budget = {}
-    for key in ("system_losses_db", "polarization_losses_db"):
+    for key in ("system_losses_db", "polarization_losses_db", "noise_bandwidth_hz", "system_noise_temperature_k"):
         if key not in section:
             raise ValueError(f"[LINK BUDGET].{key} is required in the configuration file.")
         try:
             link_budget[key] = float(section[key])
         except ValueError:
             raise ValueError(f"Invalid value for '{key}' in [LINK BUDGET]: {section[key]}") from None
+    for key in ("noise_bandwidth_hz", "system_noise_temperature_k"):
+        if link_budget[key] <= 0.0:
+            raise ValueError(f"[LINK BUDGET].{key} must be > 0; got {link_budget[key]}")
 
     #[OCEAN] (REQUIRED SECTION)
     # Sea-state and water-property inputs for the bistatic ocean RCS model. INI-strict.

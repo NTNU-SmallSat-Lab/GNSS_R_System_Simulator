@@ -348,6 +348,9 @@ class TestComputeReflectionLinkBudgetIntegration:
             "rcs_m2",
             "target_info",
             "received_power_w",
+            "noise_power_w",
+            "cn0_db_hz",
+            "snr_db",
         ):
             assert key in lb
         assert "fresnel_reflectivity_RL_sq" in lb["target_info"]

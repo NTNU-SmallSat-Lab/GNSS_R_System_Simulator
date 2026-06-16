@@ -21,6 +21,7 @@ class Constants:
     # Physical constants
     ###########################
     SPEED_OF_LIGHT = 299792458  # Speed of light in                          [m/s]
+    BOLTZMANN_CONSTANT = 1.380649e-23  # Boltzmann constant                  [J/K]
     G_CONST = 6.67430e-11  # Gravitational constant (CODATA)             [N m^2 / kg^2]
     GM_EARTH_TT = 3.986004415e14  # Earth's gravitational parameter in         [m^3/s^2]
     R_EARTH_MEAN = 6.371e6  # Earth's radius in                          [m]
