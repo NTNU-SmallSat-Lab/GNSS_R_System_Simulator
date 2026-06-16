@@ -504,6 +504,36 @@ class TestOptionalSections:
         with pytest.raises(ValueError, match="detection_sinr_threshold_db must be finite"):
             initialize(path)
 
+    def test_link_budget_noise_keys_optional_without_moving_target(self, tmp_path):
+        lb = dedent(
+            """\
+            [LINK BUDGET]
+            system_losses_db = 2.0
+            polarization_losses_db = 0.5
+            """
+        )
+        # No [MOVING TARGET] -> area-coverage mode -> noise/detection keys are not required.
+        path = write_config(tmp_path, minimal_config_body(link_budget_section=lb))
+        _, settings = initialize(path)
+        assert settings["link_budget"]["system_losses_db"] == 2.0
+        assert "noise_bandwidth_hz" not in settings["link_budget"]
+        assert "system_noise_temperature_k" not in settings["link_budget"]
+        assert "detection_sinr_threshold_db" not in settings["link_budget"]
+
+    def test_link_budget_noise_keys_required_with_moving_target(self, tmp_path):
+        lb = dedent(
+            """\
+            [LINK BUDGET]
+            system_losses_db = 2.0
+            polarization_losses_db = 0.5
+            """
+        )
+        # [MOVING TARGET] present -> the detector needs the noise/detection settings.
+        body = minimal_config_body(link_budget_section=lb, extra_sections=MINIMAL_MOVING_TARGET)
+        path = write_config(tmp_path, body)
+        with pytest.raises(ValueError, match=r"required when \[MOVING TARGET\] is present"):
+            initialize(path)
+
     def test_ocean_values_parsed(self, tmp_path):
         path = write_config(tmp_path, minimal_config_body())
         _, settings = initialize(path)

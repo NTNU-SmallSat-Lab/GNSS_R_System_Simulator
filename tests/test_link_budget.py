@@ -4,7 +4,7 @@ from _link_budget_settings import link_budget_settings
 import numpy as np
 import pytest
 
-from functions.link_budget import compute_bistatic_link_budget, compute_rx_look_direction_antenna_frame
+from functions.link_budget import BistaticLinkBudgetSettings, compute_bistatic_link_budget, compute_rx_look_direction_antenna_frame
 from functions.rotations import eci_to_antenna_rotation_from_state
 from object_definitions.Constants_def import Constants
 
@@ -147,3 +147,29 @@ class TestComputeBistaticLinkBudgetNoise:
     def test_non_finite_detection_threshold_raises(self):
         with pytest.raises(ValueError, match="detection_sinr_threshold_db"):
             link_budget_settings(detection_sinr_threshold_db=np.nan)
+
+    def test_no_noise_settings_yields_nan_noise_but_finite_power(self):
+        # Area-coverage style: no thermal-noise / detection settings supplied (they default to None).
+        settings = BistaticLinkBudgetSettings(
+            system_losses_db=2.0,
+            polarization_losses_db=0.5,
+            ocean_wave_height_m=1.5,
+            ocean_wind_speed_m_s=7.0,
+            ocean_wind_direction_deg=270.0,
+            ocean_sea_temperature_c=15.0,
+            ocean_salinity_psu=35.0,
+            ocean_inverse_wave_age=0.84,
+        )
+        lb = compute_bistatic_link_budget(
+            range_tx_m=np.array([20.0e6]),
+            range_rx_m=np.array([720.0e3]),
+            rx_gain_dbi=np.array([5.0]),
+            rcs_m2=np.array([1.0e6]),
+            frequency_hz=1.57542e9,
+            tx_eirp_dbw=27.0,
+            settings=settings,
+        )
+        assert np.isfinite(lb["received_power_w"]).all()
+        assert np.isnan(lb["noise_power_w"])
+        assert np.isnan(lb["cn0_db_hz"]).all()
+        assert np.isnan(lb["snr_rf_db"]).all()

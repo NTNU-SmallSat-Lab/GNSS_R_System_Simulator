@@ -425,23 +425,32 @@ def initialize(config_file_name="Configuration.ini"):
         raise ValueError("[LINK BUDGET] section is required in the configuration file.")
     section = config["LINK BUDGET"]
     link_budget = {}
-    for key in (
-        "system_losses_db",
-        "polarization_losses_db",
-        "noise_bandwidth_hz",
-        "system_noise_temperature_k",
-        "detection_sinr_threshold_db",
-    ):
+    # Rx-system losses feed the link equation in both analysis modes -> always required.
+    for key in ("system_losses_db", "polarization_losses_db"):
         if key not in section:
             raise ValueError(f"[LINK BUDGET].{key} is required in the configuration file.")
         try:
             link_budget[key] = float(section[key])
         except ValueError:
             raise ValueError(f"Invalid value for '{key}' in [LINK BUDGET]: {section[key]}") from None
+    # Thermal-noise + detection-threshold settings drive SNR/SINR detection, which only the
+    # moving-target analysis computes. Area coverage is geometric and ignores them, so they are
+    # required only when [MOVING TARGET] is present; parsed leniently (if supplied) otherwise.
+    detection_keys = ("noise_bandwidth_hz", "system_noise_temperature_k", "detection_sinr_threshold_db")
+    moving_target_mode = "MOVING TARGET" in config
+    for key in detection_keys:
+        if key not in section:
+            if moving_target_mode:
+                raise ValueError(f"[LINK BUDGET].{key} is required when [MOVING TARGET] is present.")
+            continue
+        try:
+            link_budget[key] = float(section[key])
+        except ValueError:
+            raise ValueError(f"Invalid value for '{key}' in [LINK BUDGET]: {section[key]}") from None
     for key in ("noise_bandwidth_hz", "system_noise_temperature_k"):
-        if link_budget[key] <= 0.0:
+        if key in link_budget and link_budget[key] <= 0.0:
             raise ValueError(f"[LINK BUDGET].{key} must be > 0; got {link_budget[key]}")
-    if not math.isfinite(link_budget["detection_sinr_threshold_db"]):
+    if "detection_sinr_threshold_db" in link_budget and not math.isfinite(link_budget["detection_sinr_threshold_db"]):
         raise ValueError(
             f"[LINK BUDGET].detection_sinr_threshold_db must be finite; got {link_budget['detection_sinr_threshold_db']}"
         )
@@ -466,12 +475,17 @@ def initialize(config_file_name="Configuration.ini"):
         except ValueError:
             raise ValueError(f"Invalid value for '{key}' in [OCEAN]: {section[key]}") from None
 
-    # Guard: keys parsed from the INI must exactly cover BistaticLinkBudgetSettings.
+    # Guard: parsed keys must stay in sync with BistaticLinkBudgetSettings. The detection_keys are
+    # optional (absent for area coverage); every other field must be present.
     expected_fields = {f.name for f in fields(BistaticLinkBudgetSettings)}
-    if expected_fields != set(link_budget.keys()):
+    parsed_keys = set(link_budget.keys())
+    unknown_keys = parsed_keys - expected_fields
+    missing_required = (expected_fields - set(detection_keys)) - parsed_keys
+    if unknown_keys or missing_required:
         raise RuntimeError(
-            f"BistaticLinkBudgetSettings fields {sorted(expected_fields)} do not match parsed "
-            f"keys {sorted(link_budget.keys())}. Update the loader and the dataclass together."
+            f"Parsed [LINK BUDGET]+[OCEAN] keys {sorted(parsed_keys)} are out of sync with "
+            f"BistaticLinkBudgetSettings fields {sorted(expected_fields)} "
+            f"(optional: {sorted(detection_keys)}). Update the loader and the dataclass together."
         )
 
     #[SHIP] (REQUIRED with [MOVING TARGET])

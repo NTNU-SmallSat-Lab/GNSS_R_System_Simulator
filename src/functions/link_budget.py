@@ -23,21 +23,22 @@ class BistaticLinkBudgetSettings:
     Field-by-field source of truth for the `[LINK BUDGET]` + `[OCEAN]` INI sections;
     field names and units defined here mirror the INI keys. Every field is mandatory --
     there are no defaults, so a missing value raises instead of silently falling back.
-    The INI loader is strict (every key required, missing keys raise), and direct
-    construction must supply all fields too (`settings=None` is not accepted).
+    The INI loader is strict (missing keys raise); the thermal-noise + detection-threshold fields
+    are consumed only by the moving-target detector and default to None (they are omitted from the
+    area-coverage config, which is geometric). Direct construction with `settings=None` is not accepted.
 
     ATTRIBUTES:
         system_losses_db:          [float]  Lumped implementation losses [dB]
         polarization_losses_db:    [float]  Receiver-side polarization mismatch losses [dB]
-        noise_bandwidth_hz:        [float]  Thermal-noise bandwidth used for SNR [Hz]
-        system_noise_temperature_k:[float]  Equivalent input/system noise temperature [K]
-        detection_sinr_threshold_db:[float] Ship detectability threshold for P_ship / (P_ocean + P_noise) [dB]
         ocean_wave_height_m:       [float]  RMS wave height [m]  (Rayleigh roughness diagnostic)
         ocean_wind_speed_m_s:      [float]  Wind speed at 10 m [m/s]  (drives Cox-Munk slope variances)
         ocean_wind_direction_deg:  [float]  Wind direction (meteorological FROM bearing) [deg]
         ocean_sea_temperature_c:   [float]  Sea surface temperature [degC]
         ocean_salinity_psu:        [float]  Salinity (practical salinity units) [psu]
         ocean_inverse_wave_age:    [float]  Inverse wave age Omega_c [-] (0.84 fully developed; drives the Elfouhaily Bragg spectrum)
+        noise_bandwidth_hz:        [float | None]  Thermal-noise bandwidth for SNR [Hz] (moving-target only; None for area coverage)
+        system_noise_temperature_k:[float | None]  Equivalent input/system noise temperature [K] (moving-target only)
+        detection_sinr_threshold_db:[float | None] Ship detectability threshold for P_ship / (P_ocean + P_noise) [dB] (moving-target only)
 
     NOTE: GNSS transmitter EIRP is per-(constellation, band) and lives in
     `Constants.GNSS_EIRP_DBW` — it is not a link-budget config knob.
@@ -45,22 +46,25 @@ class BistaticLinkBudgetSettings:
 
     system_losses_db: float
     polarization_losses_db: float
-    noise_bandwidth_hz: float
-    system_noise_temperature_k: float
-    detection_sinr_threshold_db: float
     ocean_wave_height_m: float
     ocean_wind_speed_m_s: float
     ocean_wind_direction_deg: float
     ocean_sea_temperature_c: float
     ocean_salinity_psu: float
     ocean_inverse_wave_age: float
+    # Thermal-noise + detection-threshold settings: consumed only by the moving-target detector.
+    # Area coverage is geometric and ignores them, so they are optional (omitted from that INI).
+    noise_bandwidth_hz: float | None = None
+    system_noise_temperature_k: float | None = None
+    detection_sinr_threshold_db: float | None = None
 
     def __post_init__(self) -> None:
-        if self.noise_bandwidth_hz <= 0.0:
+        # Validate the noise/detection settings only when supplied (moving-target mode).
+        if self.noise_bandwidth_hz is not None and self.noise_bandwidth_hz <= 0.0:
             raise ValueError(f"noise_bandwidth_hz must be > 0; got {self.noise_bandwidth_hz}")
-        if self.system_noise_temperature_k <= 0.0:
+        if self.system_noise_temperature_k is not None and self.system_noise_temperature_k <= 0.0:
             raise ValueError(f"system_noise_temperature_k must be > 0; got {self.system_noise_temperature_k}")
-        if not np.isfinite(self.detection_sinr_threshold_db):
+        if self.detection_sinr_threshold_db is not None and not np.isfinite(self.detection_sinr_threshold_db):
             raise ValueError(f"detection_sinr_threshold_db must be finite; got {self.detection_sinr_threshold_db}")
 
 
@@ -555,10 +559,18 @@ def compute_bistatic_link_budget(
     pr_dbw = _db_from_linear(pr_w)
     pr_dbm = pr_dbw + 30.0
 
-    noise_density_w_hz = Constants.BOLTZMANN_CONSTANT * settings_obj.system_noise_temperature_k
-    noise_power_w = noise_density_w_hz * settings_obj.noise_bandwidth_hz
-    noise_density_dbw_hz = float(10.0 * np.log10(noise_density_w_hz))
-    noise_power_dbw = float(10.0 * np.log10(noise_power_w))
+    # Thermal noise (moving-target mode only). Area coverage supplies no noise settings; emit NaN so
+    # the geometric path never depends on a noise floor it does not model.
+    if settings_obj.noise_bandwidth_hz is not None and settings_obj.system_noise_temperature_k is not None:
+        noise_density_w_hz = Constants.BOLTZMANN_CONSTANT * settings_obj.system_noise_temperature_k   # N0 = k T [W/Hz]
+        noise_power_w = noise_density_w_hz * settings_obj.noise_bandwidth_hz                           # N = k T B [W]
+        noise_density_dbw_hz = float(10.0 * np.log10(noise_density_w_hz))
+        noise_power_dbw = float(10.0 * np.log10(noise_power_w))
+        noise_bandwidth_hz_out = float(settings_obj.noise_bandwidth_hz)
+        system_noise_temperature_k_out = float(settings_obj.system_noise_temperature_k)
+    else:
+        noise_density_w_hz = noise_power_w = noise_density_dbw_hz = noise_power_dbw = float("nan")
+        noise_bandwidth_hz_out = system_noise_temperature_k_out = float("nan")
     noise_power_dbm = noise_power_dbw + 30.0
     cn0_db_hz = pr_dbw - noise_density_dbw_hz       # C/N0 = Pr / (k T), bandwidth-independent [dB-Hz]
     snr_rf_db = pr_dbw - noise_power_dbw            # SNR in noise_bandwidth_hz; pre-correlation, excludes despreading/integration gain
@@ -577,8 +589,8 @@ def compute_bistatic_link_budget(
         "received_power_w": pr_w,
         "received_power_dbw": pr_dbw,
         "received_power_dbm": pr_dbm,
-        "noise_bandwidth_hz": float(settings_obj.noise_bandwidth_hz),
-        "system_noise_temperature_k": float(settings_obj.system_noise_temperature_k),
+        "noise_bandwidth_hz": noise_bandwidth_hz_out,
+        "system_noise_temperature_k": system_noise_temperature_k_out,
         "noise_density_w_hz": float(noise_density_w_hz),
         "noise_density_dbw_hz": noise_density_dbw_hz,
         "noise_power_w": float(noise_power_w),
