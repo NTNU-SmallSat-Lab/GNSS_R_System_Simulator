@@ -63,6 +63,8 @@ MINIMAL_LINK_BUDGET = dedent(
     noise_bandwidth_hz = 2.0e6
     system_noise_temperature_k = 290.0
     detection_sinr_threshold_db = 0.0
+    ocean_patch_integration_enabled = true
+    ocean_patch_grid_size = 9
     """
 )
 
@@ -440,6 +442,8 @@ class TestOptionalSections:
         assert settings["link_budget"]["noise_bandwidth_hz"] == 2.0e6
         assert settings["link_budget"]["system_noise_temperature_k"] == 290.0
         assert settings["link_budget"]["detection_sinr_threshold_db"] == 0.0
+        assert settings["link_budget"]["ocean_patch_integration_enabled"] is True
+        assert settings["link_budget"]["ocean_patch_grid_size"] == 9
         assert "tx_eirp_dbw" not in settings["link_budget"]  # EIRP lives in Constants.GNSS_EIRP_DBW now.
 
     def test_no_link_budget_section_raises(self, tmp_path):

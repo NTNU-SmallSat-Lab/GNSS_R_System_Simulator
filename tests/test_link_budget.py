@@ -148,6 +148,11 @@ class TestComputeBistaticLinkBudgetNoise:
         with pytest.raises(ValueError, match="detection_sinr_threshold_db"):
             link_budget_settings(detection_sinr_threshold_db=np.nan)
 
+    @pytest.mark.parametrize("grid_size", [2, 102])
+    def test_invalid_patch_grid_size_raises(self, grid_size):
+        with pytest.raises(ValueError, match="ocean_patch_grid_size"):
+            link_budget_settings(ocean_patch_grid_size=grid_size)
+
     def test_no_noise_settings_yields_nan_noise_but_finite_power(self):
         # Area-coverage style: no thermal-noise / detection settings supplied (they default to None).
         settings = BistaticLinkBudgetSettings(

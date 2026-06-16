@@ -12,9 +12,11 @@
     - P_slope is the Cox-Munk 2-D Gaussian slope PDF
     - |R_pol|^2 is the RHCP -> LHCP power reflectivity at the carrier frequency, from a
       Klein-Swift seawater permittivity at the configured temperature and salinity
-    - A_glistening is the effective glistening-zone area at the specular peak, capped by
-      the receiver illuminated area when supplied so a narrow antenna beam does not collect
-      the full analytic glistening zone.
+    - A_glistening is the effective glistening-zone area at the specular peak. In scalar fallback
+      mode this is capped by the receiver illuminated area when supplied so a narrow antenna beam
+      does not collect the full analytic glistening zone. In LB-2b patch-integration mode, the
+      link-budget layer supplies each finite surface patch as its own illuminated area and sums
+      the resulting per-patch power with per-patch antenna gain and ranges.
 
     Bragg (rough-surface resonant backscatter), added only at near-backscatter geometry where the GO
     term collapses: a first-order small-perturbation NRCS over the Elfouhaily spectrum, gated so the
@@ -30,9 +32,8 @@
     For typical sea state (sigma_h >> lambda) kappa is large and the coherent term collapses, leaving
     the incoherent glistening-zone return; for very calm water the coherent term dominates.
 
-    NOTE: The more physical model is a patch-wise footprint / delay-Doppler integration with
-    per-patch antenna gain, ranges and slope PDF. The current model is the cheaper v1 cap:
-    analytic glistening-zone area limited by the receiver illuminated footprint area.
+    NOTE: Delay-Doppler filtering is still not modelled here. LB-2b integrates over the receiver
+    footprint; adding a delay-Doppler mask would further restrict which patches contribute.
 """
 
 from __future__ import annotations
@@ -203,9 +204,10 @@ class OceanTarget(Target):
         nrcs_bragg = np.where(bragg_active, bragg_nrcs_RL, 0.0)            # RHCP -> LHCP cross-pol (consumed)
         nrcs_bragg_co = np.where(bragg_active, bragg_nrcs_RR, 0.0)         # RHCP -> RHCP co-pol (polarization-hook diagnostic)
 
-        # Receiver-limited illuminated area. This v1 cap prevents the analytic glistening zone from
-        # contributing more diffuse clutter than the antenna footprint can observe. A more complete
-        # future model should integrate the surface patch-by-patch over the footprint / delay-Doppler cell.
+        # Receiver-limited illuminated area. In scalar mode this cap prevents the analytic glistening zone
+        # from contributing more diffuse clutter than the antenna footprint can observe. In LB-2b patch
+        # mode the caller supplies one small patch area per sample, so this expression becomes the
+        # per-patch diffuse RCS contribution used by the power integration.
         if illuminated_area_m2 is None:
             illuminated_area = None
             effective_glistening_area = glistening_area

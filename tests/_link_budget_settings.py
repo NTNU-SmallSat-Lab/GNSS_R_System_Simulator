@@ -1,8 +1,8 @@
 """Canonical fully-specified BistaticLinkBudgetSettings for tests.
 
-Production has no default fallbacks (every field is mandatory), so tests must supply a
-complete settings object. This helper is the single place that holds the standard test
-values; override individual fields via keyword arguments where a test needs to vary one.
+Production has no default fallbacks for physical ocean/loss inputs, so tests supply a
+complete settings object for those values. Optional noise/patch controls can still be
+overridden here where a test needs to vary one.
 """
 
 from functions.link_budget import BistaticLinkBudgetSettings

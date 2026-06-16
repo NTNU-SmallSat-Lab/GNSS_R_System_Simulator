@@ -11,6 +11,7 @@ from functions.link_budget import (
     build_bistatic_geometry,
     compute_reflection_link_budget,
 )
+from object_definitions.Constants_def import Constants
 from object_definitions.OceanTarget_def import OceanTarget
 from object_definitions.Target_def import Target, TargetRcs
 
@@ -58,6 +59,74 @@ def _oblique_backscatter_geometry(theta_deg: float):
     rx = (surf[0] + 7.0e5 / np.cos(th) * look).reshape(3, 1)
     geom = build_bistatic_geometry(tx, rx, surf, normal)
     return dataclasses.replace(geom, incidence_angle_deg=np.array([float(theta_deg)]))
+
+
+class _ConePatchAntenna:
+    R_antenna_to_body = np.eye(3)
+
+    def __init__(self, half_angle_deg=1.5, gain_dbi=10.0):
+        self.half_angle_deg = float(half_angle_deg)
+        self.gain_dbi = float(gain_dbi)
+        self.gain_calls = []
+
+    @staticmethod
+    def _basis(direction):
+        direction = np.asarray(direction, dtype=float)
+        direction = direction / np.linalg.norm(direction)
+        ref = np.array([1.0, 0.0, 0.0])
+        if abs(np.dot(ref, direction)) > 0.9:
+            ref = np.array([0.0, 1.0, 0.0])
+        e1 = ref - np.dot(ref, direction) * direction
+        e1 /= np.linalg.norm(e1)
+        e2 = np.cross(direction, e1)
+        return direction, e1, e2
+
+    def resolve_steering_angles_for_direction(self, direction):
+        direction = np.asarray(direction, dtype=float)
+        if direction.shape != (3,) or not np.isfinite(direction).all() or direction[2] <= 0.0:
+            return None
+        return 0.0, 0.0
+
+    def _get_antenna_footprint(self, refl_dir_antenna_frame, frequency):
+        direction, e1, e2 = self._basis(refl_dir_antenna_frame)
+        half_angle_rad = np.radians(self.half_angle_deg)
+        psi = np.linspace(0.0, 2.0 * np.pi, 48, endpoint=False)
+        return np.array([
+            np.cos(half_angle_rad) * direction + np.sin(half_angle_rad) * (np.cos(p) * e1 + np.sin(p) * e2)
+            for p in psi
+        ])
+
+    def get_gain_dbi_for_direction(self, direction, frequency_mhz, azimuth_deg=None, elevation_deg=None):
+        self.gain_calls.append((np.asarray(direction, dtype=float), azimuth_deg, elevation_deg))
+        direction = np.asarray(direction, dtype=float)
+        if direction.shape != (3,) or not np.isfinite(direction).all() or direction[2] <= 0.0:
+            return np.nan
+        return self.gain_dbi
+
+
+def _specular_patch_inputs(theta_deg=30.0):
+    radius = Constants.RADIUS_EARTH_EQUAT
+    leo_alt = 720e3
+    th = np.radians(theta_deg)
+    surf = np.array([[radius, 0.0, 0.0]])
+    tx_dir = np.array([np.cos(th), 0.0, np.sin(th)])
+    rx_dir = np.array([np.cos(th), 0.0, -np.sin(th)])
+    tx = (surf[0] + 26.5e6 * tx_dir).reshape(3, 1)
+    rx = (surf[0] + leo_alt / np.cos(th) * rx_dir).reshape(3, 1)
+    rx_vel = np.array([[0.0], [7.5e3], [0.0]])
+    return tx, rx, rx_vel, surf, np.array([theta_deg])
+
+
+def _backscatter_patch_inputs(theta_deg=30.0):
+    radius = Constants.RADIUS_EARTH_EQUAT
+    leo_alt = 720e3
+    th = np.radians(theta_deg)
+    surf = np.array([[radius, 0.0, 0.0]])
+    look = np.array([np.cos(th), 0.0, np.sin(th)])
+    tx = (surf[0] + 26.5e6 * look).reshape(3, 1)
+    rx = (surf[0] + leo_alt / np.cos(th) * look).reshape(3, 1)
+    rx_vel = np.array([[0.0], [7.5e3], [0.0]])
+    return tx, rx, rx_vel, surf, np.array([theta_deg])
 
 
 class TestTargetABC:
@@ -416,8 +485,75 @@ class TestComputeReflectionLinkBudgetIntegration:
         np.testing.assert_allclose(lb_b["received_power_w"] / lb_a["received_power_w"], [2.0], rtol=1e-12)
 
 
+class TestOceanPatchIntegration:
+    def test_specular_uses_patch_integrated_power_with_fixed_center_steering(self):
+        tx, rx, rx_vel, refl, incidence_deg = _specular_patch_inputs(theta_deg=30.0)
+        antenna = _ConePatchAntenna()
+
+        lb = compute_reflection_link_budget(
+            tx_positions_eci=tx,
+            rx_positions_eci=rx,
+            rx_velocities_eci=rx_vel,
+            reflection_positions_eci=refl,
+            incidence_deg=incidence_deg,
+            antenna=antenna,
+            frequency_hz=1.57542e9,
+            tx_eirp_dbw=27.0,
+            settings=link_budget_settings(ocean_patch_integration_enabled=True, ocean_patch_grid_size=7),
+            target=_default_ocean(),
+        )
+
+        info = lb["target_info"]
+        assert info["patch_integration_used"][0]
+        assert info["patch_count"][0] > 0
+        assert info["patch_bragg_rcs_sum_m2"][0] == 0.0
+        np.testing.assert_allclose(lb["received_power_w"][0], info["patch_total_received_power_w"][0], rtol=1e-12)
+        assert any(call[1] == 0.0 and call[2] == 0.0 for call in antenna.gain_calls)
+
+    def test_oblique_backscatter_patch_integration_uses_bragg_kernel(self):
+        tx, rx, rx_vel, refl, incidence_deg = _backscatter_patch_inputs(theta_deg=30.0)
+
+        lb = compute_reflection_link_budget(
+            tx_positions_eci=tx,
+            rx_positions_eci=rx,
+            rx_velocities_eci=rx_vel,
+            reflection_positions_eci=refl,
+            incidence_deg=incidence_deg,
+            antenna=_ConePatchAntenna(),
+            frequency_hz=1.57542e9,
+            tx_eirp_dbw=27.0,
+            settings=link_budget_settings(ocean_patch_integration_enabled=True, ocean_patch_grid_size=7),
+            target=_default_ocean(),
+        )
+
+        info = lb["target_info"]
+        assert info["patch_integration_used"][0]
+        assert info["patch_count"][0] > 0
+        assert info["patch_bragg_rcs_sum_m2"][0] > 0.0
+        np.testing.assert_allclose(lb["received_power_w"][0], info["patch_total_received_power_w"][0], rtol=1e-12)
+
+    def test_disabled_patch_integration_uses_scalar_cap_path(self):
+        tx, rx, rx_vel, refl, incidence_deg = _specular_patch_inputs(theta_deg=30.0)
+
+        lb = compute_reflection_link_budget(
+            tx_positions_eci=tx,
+            rx_positions_eci=rx,
+            rx_velocities_eci=rx_vel,
+            reflection_positions_eci=refl,
+            incidence_deg=incidence_deg,
+            antenna=_ConePatchAntenna(),
+            frequency_hz=1.57542e9,
+            tx_eirp_dbw=27.0,
+            settings=link_budget_settings(ocean_patch_integration_enabled=False),
+            target=_default_ocean(),
+        )
+
+        assert "patch_integration_used" not in lb["target_info"]
+        assert np.isfinite(lb["received_power_w"][0])
+
+
 class TestLinkBudgetSettingsAreMandatory:
-    """Production has no default fallbacks: a missing settings value must raise, not silently default."""
+    """Production has no default fallbacks for physical ocean/loss inputs."""
 
     def test_construction_without_fields_raises(self):
         with pytest.raises(TypeError):

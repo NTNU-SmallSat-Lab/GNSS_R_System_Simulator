@@ -21,11 +21,12 @@ class BistaticLinkBudgetSettings:
     Configuration values for the bistatic GNSS-R link budget.
 
     Field-by-field source of truth for the `[LINK BUDGET]` + `[OCEAN]` INI sections;
-    field names and units defined here mirror the INI keys. Every field is mandatory --
-    there are no defaults, so a missing value raises instead of silently falling back.
+    field names and units defined here mirror the INI keys. The physical ocean/loss fields are
+    mandatory so a missing value raises instead of silently falling back.
     The INI loader is strict (missing keys raise); the thermal-noise + detection-threshold fields
     are consumed only by the moving-target detector and default to None (they are omitted from the
-    area-coverage config, which is geometric). Direct construction with `settings=None` is not accepted.
+    area-coverage config, which is geometric). Patch-integration controls have conservative defaults
+    and can be overridden from `[LINK BUDGET]`. Direct construction with `settings=None` is not accepted.
 
     ATTRIBUTES:
         system_losses_db:          [float]  Lumped implementation losses [dB]
@@ -39,6 +40,8 @@ class BistaticLinkBudgetSettings:
         noise_bandwidth_hz:        [float | None]  Thermal-noise bandwidth for SNR [Hz] (moving-target only; None for area coverage)
         system_noise_temperature_k:[float | None]  Equivalent input/system noise temperature [K] (moving-target only)
         detection_sinr_threshold_db:[float | None] Ship detectability threshold for P_ship / (P_ocean + P_noise) [dB] (moving-target only)
+        ocean_patch_integration_enabled:[bool] Enable footprint patch integration for antenna-limited ocean clutter.
+        ocean_patch_grid_size:     [int]    Number of cells per tangent-plane footprint axis for patch integration.
 
     NOTE: GNSS transmitter EIRP is per-(constellation, band) and lives in
     `Constants.GNSS_EIRP_DBW` — it is not a link-budget config knob.
@@ -57,8 +60,21 @@ class BistaticLinkBudgetSettings:
     noise_bandwidth_hz: float | None = None
     system_noise_temperature_k: float | None = None
     detection_sinr_threshold_db: float | None = None
+    # LB-2b patch integration: when enabled and an Rx antenna is present, ocean clutter is summed
+    # over finite surface patches with per-patch geometry and off-axis antenna gain. The scalar
+    # glistening-area cap remains the fallback for antenna=None, custom targets, or invalid footprints.
+    ocean_patch_integration_enabled: bool = False
+    ocean_patch_grid_size: int = 9
 
     def __post_init__(self) -> None:
+        if not isinstance(self.ocean_patch_integration_enabled, bool):
+            raise TypeError("ocean_patch_integration_enabled must be a bool")
+        if not isinstance(self.ocean_patch_grid_size, int):
+            raise TypeError("ocean_patch_grid_size must be an int")
+        if self.ocean_patch_grid_size < 3:
+            raise ValueError(f"ocean_patch_grid_size must be >= 3; got {self.ocean_patch_grid_size}")
+        if self.ocean_patch_grid_size > 101:
+            raise ValueError(f"ocean_patch_grid_size must be <= 101 to avoid accidental runaway runtimes; got {self.ocean_patch_grid_size}")
         # Validate the noise/detection settings only when supplied (moving-target mode).
         if self.noise_bandwidth_hz is not None and self.noise_bandwidth_hz <= 0.0:
             raise ValueError(f"noise_bandwidth_hz must be > 0; got {self.noise_bandwidth_hz}")
@@ -289,6 +305,436 @@ def ellipsoid_surface_normals_eci(surface_positions_ecef: np.ndarray, times) -> 
     return normals_eci
 
 
+def _surface_tangent_basis(surface_normal: np.ndarray, reference_vector: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray] | None:
+    normal = np.asarray(surface_normal, dtype=float)
+    if normal.shape != (3,) or not np.isfinite(normal).all():
+        return None
+    normal_mag = np.linalg.norm(normal)
+    if normal_mag <= 0.0:
+        return None
+    n_hat = normal / normal_mag
+
+    if reference_vector is not None and np.asarray(reference_vector).shape == (3,) and np.isfinite(reference_vector).all():
+        ref = np.asarray(reference_vector, dtype=float)
+        e1 = ref - np.dot(ref, n_hat) * n_hat
+    else:
+        e1 = np.zeros(3, dtype=float)
+
+    if np.linalg.norm(e1) <= 1e-9:
+        fallback = np.array([0.0, 0.0, 1.0])
+        if abs(np.dot(fallback, n_hat)) > 0.9:
+            fallback = np.array([1.0, 0.0, 0.0])
+        e1 = fallback - np.dot(fallback, n_hat) * n_hat
+
+    e1_mag = np.linalg.norm(e1)
+    if e1_mag <= 0.0:
+        return None
+    e1 /= e1_mag
+
+    e2 = np.cross(n_hat, e1)
+    e2_mag = np.linalg.norm(e2)
+    if e2_mag <= 0.0:
+        return None
+    e2 /= e2_mag
+    return e1, e2
+
+
+def _intersect_sphere_rays(origin_eci: np.ndarray, directions_eci: np.ndarray, radius_m: float) -> np.ndarray:
+    origin = np.asarray(origin_eci, dtype=float)
+    directions = np.asarray(directions_eci, dtype=float)
+    intersections = np.full(directions.shape, np.nan, dtype=float)
+
+    if origin.shape != (3,) or directions.ndim != 2 or directions.shape[1] != 3:
+        return intersections
+    if not (np.isfinite(origin).all() and np.isfinite(radius_m) and radius_m > 0.0):
+        return intersections
+
+    direction_norms = np.linalg.norm(directions, axis=1)
+    valid_dir = np.isfinite(direction_norms) & (direction_norms > 0.0)
+    dirs = np.full_like(directions, np.nan, dtype=float)
+    dirs[valid_dir] = directions[valid_dir] / direction_norms[valid_dir, None]
+
+    b_quad = 2.0 * np.einsum("ij,j->i", dirs, origin)
+    c_quad = np.dot(origin, origin) - radius_m**2
+    discriminant = b_quad**2 - 4.0 * c_quad
+    valid_disc = valid_dir & np.isfinite(discriminant) & (discriminant >= 0.0)
+    if not valid_disc.any():
+        return intersections
+
+    sqrt_disc = np.sqrt(discriminant[valid_disc])
+    roots_1 = (-b_quad[valid_disc] - sqrt_disc) / 2.0
+    roots_2 = (-b_quad[valid_disc] + sqrt_disc) / 2.0
+    positive_roots = np.column_stack((roots_1, roots_2))
+    positive_roots = np.where(positive_roots > 0.0, positive_roots, np.nan)
+    has_root = np.isfinite(positive_roots).any(axis=1)
+    if not has_root.any():
+        return intersections
+
+    valid_indices = np.where(valid_disc)[0][has_root]
+    t_vals = np.nanmin(positive_roots[has_root], axis=1)
+    intersections[valid_indices] = origin + t_vals[:, None] * dirs[valid_indices]
+    return intersections
+
+
+def _polygon_area_xy(polygon_xy: np.ndarray) -> float:
+    xy = np.asarray(polygon_xy, dtype=float)
+    if xy.ndim != 2 or xy.shape[0] < 3 or xy.shape[1] != 2:
+        return float("nan")
+    x = xy[:, 0]
+    y = xy[:, 1]
+    return float(0.5 * abs(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))))
+
+
+def _points_in_polygon_xy(points_xy: np.ndarray, polygon_xy: np.ndarray) -> np.ndarray:
+    points = np.asarray(points_xy, dtype=float)
+    polygon = np.asarray(polygon_xy, dtype=float)
+    if points.ndim != 2 or points.shape[1] != 2 or polygon.ndim != 2 or polygon.shape[0] < 3 or polygon.shape[1] != 2:
+        return np.zeros(points.shape[0], dtype=bool)
+
+    x = points[:, 0]
+    y = points[:, 1]
+    poly_x = polygon[:, 0]
+    poly_y = polygon[:, 1]
+    inside = np.zeros(points.shape[0], dtype=bool)
+    j = polygon.shape[0] - 1
+    for i in range(polygon.shape[0]):
+        yi = poly_y[i]
+        yj = poly_y[j]
+        xi = poly_x[i]
+        xj = poly_x[j]
+        crosses = (yi > y) != (yj > y)
+        x_intersect = (xj - xi) * (y - yi) / (yj - yi + 1e-300) + xi
+        inside ^= crosses & (x < x_intersect)
+        j = i
+    return inside
+
+
+def _project_tangent_offsets_to_local_sphere(center_eci: np.ndarray, offsets_eci: np.ndarray, radius_m: float) -> tuple[np.ndarray, np.ndarray]:
+    candidates = center_eci[np.newaxis, :] + offsets_eci
+    norms = np.linalg.norm(candidates, axis=1)
+    valid = np.isfinite(norms) & (norms > 0.0) & np.isfinite(radius_m) & (radius_m > 0.0)
+
+    positions = np.full_like(candidates, np.nan, dtype=float)
+    normals = np.full_like(candidates, np.nan, dtype=float)
+    positions[valid] = radius_m * candidates[valid] / norms[valid, None]
+    normals[valid] = positions[valid] / radius_m
+    return positions, normals
+
+
+def _sample_antenna_footprint_patches(
+    *,
+    rx_pos_eci: np.ndarray,
+    rx_vel_eci: np.ndarray,
+    center_eci: np.ndarray,
+    center_normal_eci: np.ndarray,
+    antenna: RxAntenna,
+    frequency_mhz: float,
+    q_sat: np.ndarray,
+    grid_size: int,
+) -> dict | None:
+    """Return tangent-plane patch samples inside the steered receiver footprint."""
+    look_center_a = compute_rx_look_direction_antenna_frame(rx_pos_eci, rx_vel_eci, center_eci, antenna, q_sat=q_sat)
+    steering_angles = antenna.resolve_steering_angles_for_direction(look_center_a)
+    if steering_angles is None:
+        return None
+
+    try:
+        contour_dirs_a = antenna._get_antenna_footprint(look_center_a, frequency_mhz)
+    except (AttributeError, ValueError):
+        return None
+    if contour_dirs_a.ndim != 2 or contour_dirs_a.shape[0] < 4 or contour_dirs_a.shape[1] != 3:
+        return None
+
+    r_eci_to_antenna = eci_to_antenna_rotation_from_state(rx_pos_eci, rx_vel_eci, antenna, q_sat)
+    if r_eci_to_antenna is None:
+        return None
+    contour_dirs_eci = (r_eci_to_antenna.T @ contour_dirs_a.T).T
+
+    radius_m = np.linalg.norm(center_eci)
+    contour_eci = _intersect_sphere_rays(rx_pos_eci, contour_dirs_eci, radius_m)
+    valid_contour = np.isfinite(contour_eci).all(axis=1)
+    contour_eci = contour_eci[valid_contour]
+    if contour_eci.shape[0] < 4:
+        return None
+
+    basis = _surface_tangent_basis(center_normal_eci, rx_vel_eci)
+    if basis is None:
+        return None
+    e1, e2 = basis
+    contour_offsets = contour_eci - center_eci[np.newaxis, :]
+    contour_xy = np.column_stack((contour_offsets @ e1, contour_offsets @ e2))
+    if not np.isfinite(contour_xy).all():
+        return None
+
+    footprint_area_m2 = _polygon_area_xy(contour_xy)
+    if not np.isfinite(footprint_area_m2) or footprint_area_m2 <= 0.0:
+        return None
+
+    x_min, y_min = np.min(contour_xy, axis=0)
+    x_max, y_max = np.max(contour_xy, axis=0)
+    if not (np.isfinite([x_min, x_max, y_min, y_max]).all() and x_max > x_min and y_max > y_min):
+        return None
+
+    x_edges = np.linspace(x_min, x_max, int(grid_size) + 1)
+    y_edges = np.linspace(y_min, y_max, int(grid_size) + 1)
+    dx = float(x_edges[1] - x_edges[0])
+    dy = float(y_edges[1] - y_edges[0])
+    if dx <= 0.0 or dy <= 0.0:
+        return None
+
+    x_centers = 0.5 * (x_edges[:-1] + x_edges[1:])
+    y_centers = 0.5 * (y_edges[:-1] + y_edges[1:])
+    grid_x, grid_y = np.meshgrid(x_centers, y_centers, indexing="xy")
+    candidate_xy = np.column_stack((grid_x.ravel(), grid_y.ravel()))
+    inside = _points_in_polygon_xy(candidate_xy, contour_xy)
+    if not inside.any():
+        return None
+
+    patch_xy = candidate_xy[inside]
+    offsets_eci = patch_xy[:, 0, None] * e1[np.newaxis, :] + patch_xy[:, 1, None] * e2[np.newaxis, :]
+    patch_positions_eci, patch_normals_eci = _project_tangent_offsets_to_local_sphere(center_eci, offsets_eci, radius_m)
+    valid_patch = np.isfinite(patch_positions_eci).all(axis=1) & np.isfinite(patch_normals_eci).all(axis=1)
+    if not valid_patch.any():
+        return None
+
+    cell_area_m2 = dx * dy
+    patch_positions_eci = patch_positions_eci[valid_patch]
+    patch_normals_eci = patch_normals_eci[valid_patch]
+    patch_areas_m2 = np.full(patch_positions_eci.shape[0], cell_area_m2, dtype=float)
+
+    return {
+        "patch_positions_eci": patch_positions_eci,
+        "patch_normals_eci": patch_normals_eci,
+        "patch_areas_m2": patch_areas_m2,
+        "steering_azimuth_deg": float(steering_angles[0]),
+        "steering_elevation_deg": float(steering_angles[1]),
+        "footprint_area_m2": float(footprint_area_m2),
+        "sampled_area_m2": float(patch_areas_m2.sum()),
+    }
+
+
+def _equivalent_rcs_from_received_power(
+    *,
+    received_power_w: float,
+    range_tx_m: float,
+    range_rx_m: float,
+    rx_gain_dbi: float,
+    wavelength_m: float,
+    tx_eirp_dbw: float,
+    settings: BistaticLinkBudgetSettings,
+) -> float:
+    if not (
+        np.isfinite(received_power_w)
+        and received_power_w > 0.0
+        and np.isfinite(range_tx_m)
+        and range_tx_m > 0.0
+        and np.isfinite(range_rx_m)
+        and range_rx_m > 0.0
+        and np.isfinite(rx_gain_dbi)
+        and np.isfinite(wavelength_m)
+        and wavelength_m > 0.0
+    ):
+        return float("nan")
+
+    tx_eirp_w = _linear_from_db(tx_eirp_dbw)
+    rx_gain_lin = _linear_from_db(rx_gain_dbi)
+    total_losses_lin = _linear_from_db(settings.system_losses_db + settings.polarization_losses_db)
+    denom = tx_eirp_w * rx_gain_lin * wavelength_m**2
+    if not np.isfinite(denom) or denom <= 0.0:
+        return float("nan")
+
+    return float(received_power_w * ((4.0 * np.pi) ** 3) * range_tx_m**2 * range_rx_m**2 * total_losses_lin / denom)
+
+
+def _center_rx_gain_dbi(
+    rx_pos_eci: np.ndarray,
+    rx_vel_eci: np.ndarray,
+    surface_pos_eci: np.ndarray,
+    antenna: RxAntenna,
+    frequency_mhz: float,
+    q_sat: np.ndarray,
+) -> float:
+    look_center_a = compute_rx_look_direction_antenna_frame(rx_pos_eci, rx_vel_eci, surface_pos_eci, antenna, q_sat=q_sat)
+    return antenna.get_gain_dbi_for_direction(look_center_a, frequency_mhz)
+
+
+def _compute_patch_integrated_ocean_rcs(
+    *,
+    target,
+    center_geometry: BistaticGeometry,
+    center_target_rcs,
+    surface_positions_eci: np.ndarray,
+    tx_positions_eci: np.ndarray,
+    rx_positions_eci: np.ndarray,
+    rx_velocities_eci: np.ndarray,
+    antenna: RxAntenna,
+    frequency_hz: float,
+    tx_eirp_dbw: float,
+    settings: BistaticLinkBudgetSettings,
+    q_sat: np.ndarray,
+) -> object:
+    """Replace scalar ocean-area RCS with equivalent RCS from patch-summed received power."""
+    from object_definitions.Target_def import TargetRcs
+
+    num_positions = center_geometry.range_tx_m.shape[0]
+    equivalent_rcs_m2 = np.array(center_target_rcs.rcs_m2, dtype=float, copy=True)
+    info = {key: np.array(value, copy=True) if isinstance(value, np.ndarray) else value for key, value in center_target_rcs.info.items()}
+
+    patch_used = np.zeros(num_positions, dtype=bool)
+    patch_count = np.zeros(num_positions, dtype=int)
+    patch_footprint_area = np.full(num_positions, np.nan, dtype=float)
+    patch_sampled_area = np.full(num_positions, np.nan, dtype=float)
+    patch_diffuse_rcs_sum = np.full(num_positions, np.nan, dtype=float)
+    patch_bragg_rcs_sum = np.full(num_positions, np.nan, dtype=float)
+    patch_diffuse_power = np.full(num_positions, np.nan, dtype=float)
+    patch_coherent_power = np.full(num_positions, np.nan, dtype=float)
+    patch_total_power = np.full(num_positions, np.nan, dtype=float)
+    patch_equiv_diffuse_rcs = np.full(num_positions, np.nan, dtype=float)
+    patch_equiv_total_rcs = np.full(num_positions, np.nan, dtype=float)
+
+    frequency_mhz = float(frequency_hz) / 1e6
+    wavelength_m = Constants.SPEED_OF_LIGHT / frequency_hz
+
+    for i in range(num_positions):
+        center_pos = np.asarray(surface_positions_eci[i], dtype=float)
+        if not (
+            np.isfinite(center_geometry.range_tx_m[i])
+            and np.isfinite(center_geometry.range_rx_m[i])
+            and np.isfinite(center_geometry.n_surface[i]).all()
+            and np.isfinite(center_pos).all()
+            and np.isfinite(tx_positions_eci[:, i]).all()
+            and np.isfinite(rx_positions_eci[:, i]).all()
+            and np.isfinite(rx_velocities_eci[:, i]).all()
+            and np.isfinite(equivalent_rcs_m2[i])
+        ):
+            continue
+
+        samples = _sample_antenna_footprint_patches(
+            rx_pos_eci=rx_positions_eci[:, i],
+            rx_vel_eci=rx_velocities_eci[:, i],
+            center_eci=center_pos,
+            center_normal_eci=center_geometry.n_surface[i],
+            antenna=antenna,
+            frequency_mhz=frequency_mhz,
+            q_sat=q_sat,
+            grid_size=settings.ocean_patch_grid_size,
+        )
+        if samples is None:
+            continue
+
+        patch_positions = samples["patch_positions_eci"]
+        patch_normals = samples["patch_normals_eci"]
+        patch_count_i = patch_positions.shape[0]
+        tx_patch = np.repeat(tx_positions_eci[:, i:i + 1], patch_count_i, axis=1)
+        rx_patch = np.repeat(rx_positions_eci[:, i:i + 1], patch_count_i, axis=1)
+
+        patch_geometry = build_bistatic_geometry(tx_patch, rx_patch, patch_positions, patch_normals)
+        patch_rcs = target.compute_rcs(
+            patch_geometry,
+            wavelength_m,
+            illuminated_area_m2=samples["patch_areas_m2"],
+        )
+
+        diffuse_rcs = np.asarray(patch_rcs.info.get("rcs_incoherent_m2", patch_rcs.rcs_m2), dtype=float)
+        diffuse_rcs = np.where(np.isfinite(diffuse_rcs) & (diffuse_rcs > 0.0), diffuse_rcs, np.nan)
+
+        patch_gain_dbi = np.full(patch_count_i, np.nan, dtype=float)
+        for patch_idx, patch_pos in enumerate(patch_positions):
+            look_patch_a = compute_rx_look_direction_antenna_frame(
+                rx_positions_eci[:, i],
+                rx_velocities_eci[:, i],
+                patch_pos,
+                antenna,
+                q_sat=q_sat,
+            )
+            patch_gain_dbi[patch_idx] = antenna.get_gain_dbi_for_direction(
+                look_patch_a,
+                frequency_mhz,
+                azimuth_deg=samples["steering_azimuth_deg"],
+                elevation_deg=samples["steering_elevation_deg"],
+            )
+
+        patch_budget = compute_bistatic_link_budget(
+            range_tx_m=patch_geometry.range_tx_m,
+            range_rx_m=patch_geometry.range_rx_m,
+            rx_gain_dbi=patch_gain_dbi,
+            rcs_m2=diffuse_rcs,
+            frequency_hz=frequency_hz,
+            tx_eirp_dbw=tx_eirp_dbw,
+            settings=settings,
+        )
+        diffuse_power_i = float(np.nansum(patch_budget["received_power_w"]))
+        if not np.isfinite(diffuse_power_i) or diffuse_power_i <= 0.0:
+            continue
+
+        coherent_rcs_i = float(center_target_rcs.info.get("rcs_coherent_m2", np.full(num_positions, 0.0))[i])
+        coherent_rcs_i = coherent_rcs_i if np.isfinite(coherent_rcs_i) and coherent_rcs_i > 0.0 else 0.0
+        if coherent_rcs_i > 0.0:
+            coherent_budget = compute_bistatic_link_budget(
+                range_tx_m=np.array([center_geometry.range_tx_m[i]]),
+                range_rx_m=np.array([center_geometry.range_rx_m[i]]),
+                rx_gain_dbi=np.array([_center_rx_gain_dbi(rx_positions_eci[:, i], rx_velocities_eci[:, i], center_pos, antenna, frequency_mhz, q_sat)]),
+                rcs_m2=np.array([coherent_rcs_i]),
+                frequency_hz=frequency_hz,
+                tx_eirp_dbw=tx_eirp_dbw,
+                settings=settings,
+            )
+            coherent_power_i = float(coherent_budget["received_power_w"][0])
+            if not np.isfinite(coherent_power_i):
+                coherent_power_i = 0.0
+        else:
+            coherent_power_i = 0.0
+
+        total_power_i = diffuse_power_i + coherent_power_i
+        diffuse_equiv_rcs_i = _equivalent_rcs_from_received_power(
+            received_power_w=diffuse_power_i,
+            range_tx_m=float(center_geometry.range_tx_m[i]),
+            range_rx_m=float(center_geometry.range_rx_m[i]),
+            rx_gain_dbi=_center_rx_gain_dbi(rx_positions_eci[:, i], rx_velocities_eci[:, i], center_pos, antenna, frequency_mhz, q_sat),
+            wavelength_m=wavelength_m,
+            tx_eirp_dbw=tx_eirp_dbw,
+            settings=settings,
+        )
+        total_equiv_rcs_i = diffuse_equiv_rcs_i + coherent_rcs_i
+        if not np.isfinite(total_equiv_rcs_i) or total_equiv_rcs_i <= 0.0:
+            continue
+
+        equivalent_rcs_m2[i] = total_equiv_rcs_i
+        patch_used[i] = True
+        patch_count[i] = patch_count_i
+        patch_footprint_area[i] = samples["footprint_area_m2"]
+        patch_sampled_area[i] = samples["sampled_area_m2"]
+        patch_diffuse_rcs_sum[i] = float(np.nansum(diffuse_rcs))
+        patch_bragg_rcs_sum[i] = float(np.nansum(patch_rcs.info.get("rcs_bragg_m2", np.full(patch_count_i, np.nan))))
+        patch_diffuse_power[i] = diffuse_power_i
+        patch_coherent_power[i] = coherent_power_i
+        patch_total_power[i] = total_power_i
+        patch_equiv_diffuse_rcs[i] = diffuse_equiv_rcs_i
+        patch_equiv_total_rcs[i] = total_equiv_rcs_i
+
+    info["patch_integration_used"] = patch_used
+    info["patch_count"] = patch_count
+    info["patch_footprint_area_m2"] = patch_footprint_area
+    info["patch_sampled_area_m2"] = patch_sampled_area
+    info["patch_diffuse_rcs_sum_m2"] = patch_diffuse_rcs_sum
+    info["patch_bragg_rcs_sum_m2"] = patch_bragg_rcs_sum
+    info["patch_diffuse_received_power_w"] = patch_diffuse_power
+    info["patch_coherent_received_power_w"] = patch_coherent_power
+    info["patch_total_received_power_w"] = patch_total_power
+    info["patch_equivalent_diffuse_rcs_m2"] = patch_equiv_diffuse_rcs
+    info["patch_equivalent_total_rcs_m2"] = patch_equiv_total_rcs
+    if "rcs_incoherent_m2" in info:
+        info["rcs_incoherent_m2"] = np.where(patch_used, patch_equiv_diffuse_rcs, info["rcs_incoherent_m2"])
+    if "rcs_bragg_m2" in info:
+        info["rcs_bragg_m2"] = np.where(patch_used, patch_bragg_rcs_sum, info["rcs_bragg_m2"])
+    if "effective_glistening_area_m2" in info:
+        info["effective_glistening_area_m2"] = np.where(patch_used, patch_sampled_area, info["effective_glistening_area_m2"])
+    if "illuminated_area_m2" in info:
+        info["illuminated_area_m2"] = np.where(patch_used, patch_sampled_area, info["illuminated_area_m2"])
+
+    return TargetRcs(rcs_m2=equivalent_rcs_m2, info=info)
+
+
 def compute_reflection_link_budget(
     tx_positions_eci: np.ndarray,
     rx_positions_eci: np.ndarray,
@@ -400,6 +846,25 @@ def compute_reflection_link_budget(
             illuminated_area_m2 = (4.0 * np.pi / g_rx_lin) * range_rx_m ** 2 / cos_inc
 
     target_rcs = target.compute_rcs(geometry, wavelength_m, illuminated_area_m2=illuminated_area_m2)
+
+    if settings_obj.ocean_patch_integration_enabled and antenna is not None:
+        from object_definitions.OceanTarget_def import OceanTarget
+
+        if isinstance(target, OceanTarget):
+            target_rcs = _compute_patch_integrated_ocean_rcs(
+                target=target,
+                center_geometry=geometry,
+                center_target_rcs=target_rcs,
+                surface_positions_eci=reflection_positions_eci,
+                tx_positions_eci=tx_positions_eci,
+                rx_positions_eci=rx_positions_eci,
+                rx_velocities_eci=rx_velocities_eci,
+                antenna=antenna,
+                frequency_hz=frequency_hz,
+                tx_eirp_dbw=tx_eirp_dbw,
+                settings=settings_obj,
+                q_sat=q_sat,
+            )
 
     link_budget = compute_bistatic_link_budget(
         range_tx_m=range_tx_m,

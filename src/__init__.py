@@ -454,6 +454,26 @@ def initialize(config_file_name="Configuration.ini"):
         raise ValueError(
             f"[LINK BUDGET].detection_sinr_threshold_db must be finite; got {link_budget['detection_sinr_threshold_db']}"
         )
+    if "ocean_patch_integration_enabled" in section:
+        try:
+            link_budget["ocean_patch_integration_enabled"] = section.getboolean("ocean_patch_integration_enabled")
+        except ValueError:
+            raise ValueError(
+                f"Invalid value for 'ocean_patch_integration_enabled' in [LINK BUDGET]: {section['ocean_patch_integration_enabled']}"
+            ) from None
+    if "ocean_patch_grid_size" in section:
+        try:
+            link_budget["ocean_patch_grid_size"] = int(section["ocean_patch_grid_size"])
+        except ValueError:
+            raise ValueError(f"Invalid value for 'ocean_patch_grid_size' in [LINK BUDGET]: {section['ocean_patch_grid_size']}") from None
+        if link_budget["ocean_patch_grid_size"] < 3:
+            raise ValueError(
+                f"[LINK BUDGET].ocean_patch_grid_size must be >= 3; got {link_budget['ocean_patch_grid_size']}"
+            )
+        if link_budget["ocean_patch_grid_size"] > 101:
+            raise ValueError(
+                f"[LINK BUDGET].ocean_patch_grid_size must be <= 101; got {link_budget['ocean_patch_grid_size']}"
+            )
 
     #[OCEAN] (REQUIRED SECTION)
     # Sea-state and water-property inputs for the bistatic ocean RCS model. INI-strict.
@@ -480,12 +500,13 @@ def initialize(config_file_name="Configuration.ini"):
     expected_fields = {f.name for f in fields(BistaticLinkBudgetSettings)}
     parsed_keys = set(link_budget.keys())
     unknown_keys = parsed_keys - expected_fields
-    missing_required = (expected_fields - set(detection_keys)) - parsed_keys
+    optional_link_budget_keys = set(detection_keys) | {"ocean_patch_integration_enabled", "ocean_patch_grid_size"}
+    missing_required = (expected_fields - optional_link_budget_keys) - parsed_keys
     if unknown_keys or missing_required:
         raise RuntimeError(
             f"Parsed [LINK BUDGET]+[OCEAN] keys {sorted(parsed_keys)} are out of sync with "
             f"BistaticLinkBudgetSettings fields {sorted(expected_fields)} "
-            f"(optional: {sorted(detection_keys)}). Update the loader and the dataclass together."
+            f"(optional: {sorted(optional_link_budget_keys)}). Update the loader and the dataclass together."
         )
 
     #[SHIP] (REQUIRED with [MOVING TARGET])
