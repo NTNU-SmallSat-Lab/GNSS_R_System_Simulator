@@ -571,6 +571,36 @@ class TestOceanPatchIntegration:
         assert "patch_integration_used" not in lb["target_info"]
         assert np.isfinite(lb["received_power_w"][0])
 
+    def test_patch_integration_converges_with_grid_size(self):
+        # Numerical-convergence rung of the V&V ladder: the patch-integrated received power is a Riemann
+        # sum over the antenna footprint, so it must stabilise as the tangent-plane grid is refined.
+        # The polygon discretisation makes the approach non-monotonic at coarse grids (which edge cells
+        # fall inside the footprint flips), so we assert Cauchy-style convergence -- the two finest grids
+        # agree to < 1% and the refinement step shrinks -- not strict monotonicity.
+        tx, rx, rx_vel, refl, incidence_deg = _specular_patch_inputs(theta_deg=30.0)
+
+        def power(grid_size):
+            lb = compute_reflection_link_budget(
+                tx_positions_eci=tx,
+                rx_positions_eci=rx,
+                rx_velocities_eci=rx_vel,
+                reflection_positions_eci=refl,
+                incidence_deg=incidence_deg,
+                antenna=_ConePatchAntenna(),
+                frequency_hz=1.57542e9,
+                tx_eirp_dbw=27.0,
+                settings=link_budget_settings(ocean_patch_integration_enabled=True, ocean_patch_grid_size=grid_size),
+                target=_default_ocean(),
+            )
+            return float(lb["received_power_w"][0])
+
+        p_coarse, p_mid, p_fine = (power(g) for g in (9, 31, 51))
+        assert all(np.isfinite(p) and p > 0.0 for p in (p_coarse, p_mid, p_fine))
+        coarse_step = abs(p_mid - p_coarse) / p_coarse
+        fine_step = abs(p_fine - p_mid) / p_mid
+        assert fine_step < 0.01, f"finest grids not converged: {p_mid:.3e} vs {p_fine:.3e} ({fine_step:.3%})"
+        assert fine_step < coarse_step, f"refinement not converging: coarse {coarse_step:.3%}, fine {fine_step:.3%}"
+
 
 class TestLinkBudgetSettingsAreMandatory:
     """Production has no default fallbacks for physical ocean/loss inputs."""

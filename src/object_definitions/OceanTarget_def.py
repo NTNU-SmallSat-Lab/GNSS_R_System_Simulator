@@ -43,11 +43,11 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from functions.ocean_physics import (
-    bragg_backscatter_nrcs,
     circular_pol_reflectivities,
     cox_munk_slope_pdf,
     cox_munk_slope_variances,
     seawater_permittivity,
+    two_scale_backscatter_nrcs,
 )
 from object_definitions.Constants_def import Constants
 from object_definitions.Target_def import Target, TargetRcs
@@ -193,16 +193,23 @@ class OceanTarget(Target):
         geom_factor[valid_q] = (q_mag[valid_q] / np.abs(q_z[valid_q])) ** 4    # (|q| / q_z)^4
         nrcs = np.pi * R_RL_sq * geom_factor * pdf
 
-        # Bragg (small-perturbation) backscatter NRCS, gated to near-backscatter geometry at oblique
-        # incidence. The GO formula above collapses there (no facets tilted enough to retroreflect);
-        # Bragg fills it in. Forward-specular and near-nadir geometries get 0, so the specular path is
-        # untouched and the quasi-specular GO term owns nadir.
-        bragg_nrcs_RL, bragg_nrcs_RR = bragg_backscatter_nrcs(
-            np.radians(incidence_deg), wavelength_m, eps_r, self.wind_speed_m_s, self.inverse_wave_age
-        )
+        # Two-scale (tilt-modulated) Bragg backscatter NRCS, gated to near-backscatter geometry at
+        # oblique incidence. The GO formula above collapses there (no facets tilted enough to
+        # retroreflect); Bragg fills it in. Forward-specular and near-nadir geometries get 0, so the
+        # specular path is untouched and the quasi-specular GO term owns nadir. The look azimuth
+        # relative to the upwind axis drives the upwind/crosswind asymmetry of the tilt average.
+        look_e = np.einsum("ij,ij->i", n_s2rx, n_east)                    # look horizontal projection, east
+        look_n = np.einsum("ij,ij->i", n_s2rx, n_north)                   # look horizontal projection, north
+        azimuth_rel_wind = np.arctan2(look_e, look_n) - theta_w           # look azimuth relative to upwind axis
         bragg_active = (bistatic_deg < _BRAGG_MAX_BISTATIC_DEG) & (incidence_deg >= _BRAGG_MIN_INCIDENCE_DEG)
-        nrcs_bragg = np.where(bragg_active, bragg_nrcs_RL, 0.0)            # RHCP -> LHCP cross-pol (consumed)
-        nrcs_bragg_co = np.where(bragg_active, bragg_nrcs_RR, 0.0)         # RHCP -> RHCP co-pol (polarization-hook diagnostic)
+        nrcs_bragg = np.zeros(n_samples)                                  # RHCP -> LHCP cross-pol (consumed)
+        nrcs_bragg_co = np.zeros(n_samples)                               # RHCP -> RHCP co-pol (polarization-hook diagnostic)
+        active = np.where(bragg_active & np.isfinite(azimuth_rel_wind))[0]
+        if active.size > 0:
+            nrcs_bragg[active], nrcs_bragg_co[active] = two_scale_backscatter_nrcs(
+                np.radians(incidence_deg[active]), azimuth_rel_wind[active],
+                wavelength_m, eps_r, self.wind_speed_m_s, self.inverse_wave_age,
+            )
 
         # Receiver-limited illuminated area. In scalar mode this cap prevents the analytic glistening zone
         # from contributing more diffuse clutter than the antenna footprint can observe. In LB-2b patch

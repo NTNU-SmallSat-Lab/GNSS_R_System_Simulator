@@ -277,3 +277,98 @@ def bragg_backscatter_nrcs(theta_inc_rad, wavelength_m, eps_r, wind_speed_m_s, i
     sigma0_RL = prefactor * np.abs(g_RL) ** 2
     sigma0_RR = prefactor * np.abs(g_RR) ** 2
     return sigma0_RL, sigma0_RR
+
+
+# Two-scale division: large-scale "tilting" waves carry k < k_radar / 3; the shorter waves above that
+# are the Bragg ripples. The factor-of-3 split follows Brown (1978). The facet-slope average uses a
+# standardized Gaussian quadrature over +/- 3 sigma.
+_TWO_SCALE_DIVISION_FACTOR = 3.0
+_TWO_SCALE_SLOPE_GRID = 15        # facet-slope quadrature points per axis (odd -> the zero-slope node is sampled)
+_TWO_SCALE_SLOPE_SPAN = 3.0       # average the slope PDF over +/- this many standard deviations
+
+
+def large_scale_slope_variances(wavelength_m, wind_speed_m_s, inverse_wave_age):
+    """Mean-square slope of the large-scale (tilting) waves below k_radar / 3, in the wind frame.
+
+    Integrates the Elfouhaily slope spectrum k^2 S(k) up to the two-scale division wavenumber for the
+    total large-scale slope variance, then splits it by the Cox-Munk upwind/crosswind anisotropy ratio.
+
+    INPUTS:
+        wavelength_m:     [float]   Radar wavelength [m]
+        wind_speed_m_s:   [scalar]  Wind speed at 10 m [m/s]
+        inverse_wave_age: [scalar]  Inverse wave age Omega_c [-]
+
+    OUTPUT:
+        s_u_L_sq, s_c_L_sq: large-scale upwind / crosswind slope variances [dimensionless].
+    """
+    k_radar = 2.0 * np.pi / wavelength_m
+    k_div = k_radar / _TWO_SCALE_DIVISION_FACTOR                       # two-scale division wavenumber
+    k = np.logspace(np.log10(k_div * 1.0e-4), np.log10(k_div), 600)   # from well below the spectral peak to k_div
+    integrand = k**2 * elfouhaily_omnidirectional_spectrum(k, wind_speed_m_s, inverse_wave_age)
+    mss_large = float(np.sum(0.5 * (integrand[1:] + integrand[:-1]) * np.diff(k)))   # trapezoid: mss = int k^2 S(k) dk
+    s_u_sq, s_c_sq = cox_munk_slope_variances(wind_speed_m_s)
+    total = s_u_sq + s_c_sq
+    return mss_large * s_u_sq / total, mss_large * s_c_sq / total      # split total by Cox-Munk anisotropy
+
+
+def two_scale_backscatter_nrcs(theta_inc_rad, azimuth_rad, wavelength_m, eps_r, wind_speed_m_s, inverse_wave_age):
+    """Two-scale (tilt-modulated) ocean backscatter NRCS for circular polarisation.
+
+    Averages the first-order Bragg NRCS over the large-scale facet-slope distribution: each tilting
+    facet presents a local incidence angle theta_local, the Bragg return is evaluated there, and the
+    result is averaged over the anisotropic large-scale slope PDF. This adds the tilt-modulation lift
+    at low incidence and the upwind/crosswind asymmetry that first-order Bragg misses, and reduces to
+    bragg_backscatter_nrcs as the large-scale slope -> 0. The out-of-plane tilt-induced polarisation
+    rotation is not yet included (a smaller correction; documented as a further refinement).
+
+    INPUTS:
+        theta_inc_rad: [scalar or array] Incidence angle from the (mean) surface normal [rad]
+        azimuth_rad:   [scalar or array] Radar look azimuth relative to the upwind axis [rad]
+        wavelength_m:  [float]           Radar wavelength [m]
+        eps_r:         [complex]         Seawater relative permittivity
+        wind_speed_m_s, inverse_wave_age: sea-state inputs (as in bragg_backscatter_nrcs)
+
+    OUTPUT:
+        sigma0_RL, sigma0_RR: tilt-averaged RHCP->LHCP and RHCP->RHCP NRCS, shape of theta_inc_rad.
+    """
+    scalar_in = np.ndim(theta_inc_rad) == 0 and np.ndim(azimuth_rad) == 0
+    theta = np.atleast_1d(np.asarray(theta_inc_rad, dtype=float))
+    phi = np.broadcast_to(np.atleast_1d(np.asarray(azimuth_rad, dtype=float)), theta.shape)
+
+    s_u_L_sq, s_c_L_sq = large_scale_slope_variances(wavelength_m, wind_speed_m_s, inverse_wave_age)
+    cos2 = np.cos(phi) ** 2
+    sin2 = np.sin(phi) ** 2
+    var_inplane = s_u_L_sq * cos2 + s_c_L_sq * sin2                    # slope variance along the look azimuth
+    var_cross = s_u_L_sq * sin2 + s_c_L_sq * cos2                      # slope variance perpendicular to it
+
+    # Standardized facet-slope nodes (same for every sample; scaled per sample by the local sigma).
+    u = np.linspace(-_TWO_SCALE_SLOPE_SPAN, _TWO_SCALE_SLOPE_SPAN, _TWO_SCALE_SLOPE_GRID)
+    Ux, Uy = np.meshgrid(u, u, indexing="ij")
+    Ux = Ux.ravel()                                                   # (M,)
+    Uy = Uy.ravel()
+    weight = np.exp(-0.5 * (Ux**2 + Uy**2))                           # (M,) standard-normal slope weight
+
+    zx = Ux[None, :] * np.sqrt(var_inplane)[:, None]                  # (N, M) in-plane facet slope
+    zy = Uy[None, :] * np.sqrt(var_cross)[:, None]                    # (N, M) cross-plane facet slope
+
+    cos_t = np.cos(theta)[:, None]
+    sin_t = np.sin(theta)[:, None]
+    cos_local = (cos_t - zx * sin_t) / np.sqrt(1.0 + zx**2 + zy**2)   # local incidence cosine on the tilted facet
+    facet_visible = cos_local > 1.0e-6                               # facet still faces the radar (not self-shadowed)
+    theta_local = np.arccos(np.clip(cos_local, -1.0, 1.0))
+
+    sigma0_RL_grid, sigma0_RR_grid = bragg_backscatter_nrcs(
+        theta_local.ravel(), wavelength_m, eps_r, wind_speed_m_s, inverse_wave_age
+    )
+    sigma0_RL_grid = sigma0_RL_grid.reshape(theta_local.shape)
+    sigma0_RR_grid = sigma0_RR_grid.reshape(theta_local.shape)
+
+    w = weight[None, :] * facet_visible                              # (N, M) zero weight on shadowed facets
+    w_sum = np.sum(w, axis=1)
+    w_sum = np.where(w_sum > 0.0, w_sum, np.nan)
+    sigma0_RL = np.sum(sigma0_RL_grid * w, axis=1) / w_sum           # slope-averaged NRCS
+    sigma0_RR = np.sum(sigma0_RR_grid * w, axis=1) / w_sum
+
+    if scalar_in:
+        return float(sigma0_RL[0]), float(sigma0_RR[0])
+    return sigma0_RL, sigma0_RR

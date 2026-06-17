@@ -12,7 +12,9 @@ from functions.ocean_physics import (
     cox_munk_slope_variances,
     elfouhaily_omnidirectional_spectrum,
     fresnel_coefficients,
+    large_scale_slope_variances,
     seawater_permittivity,
+    two_scale_backscatter_nrcs,
 )
 
 
@@ -294,6 +296,78 @@ class TestBraggBackscatterNrcs:
         rl_arr, rr_arr = bragg_backscatter_nrcs(thetas, self.LAMBDA_L1_M, self.EPS_SEAWATER_L1, 7.0, 0.84)
         for i, th in enumerate(thetas):
             rl_s, rr_s = bragg_backscatter_nrcs(float(th), self.LAMBDA_L1_M, self.EPS_SEAWATER_L1, 7.0, 0.84)
+            np.testing.assert_allclose(rl_arr[i], rl_s, rtol=1e-12)
+            np.testing.assert_allclose(rr_arr[i], rr_s, rtol=1e-12)
+        assert rl_arr.shape == thetas.shape
+
+
+class TestLargeScaleSlopeVariances:
+    LAMBDA_L1_M = 299792458.0 / 1.57542e9
+
+    def test_below_total_cox_munk_mss(self):
+        # The large-scale (k < k_radar / 3) slopes are a subset of the full wave field, so their mss
+        # must be below the total Cox-Munk mss.
+        su_L, sc_L = large_scale_slope_variances(self.LAMBDA_L1_M, 7.0, 0.84)
+        su_tot, sc_tot = cox_munk_slope_variances(7.0)
+        assert su_L > 0.0 and sc_L > 0.0
+        assert su_L + sc_L < su_tot + sc_tot
+
+    def test_increases_with_wind(self):
+        low = sum(large_scale_slope_variances(self.LAMBDA_L1_M, 5.0, 0.84))
+        high = sum(large_scale_slope_variances(self.LAMBDA_L1_M, 15.0, 0.84))
+        assert high > low
+
+    def test_upwind_variance_exceeds_crosswind(self):
+        su_L, sc_L = large_scale_slope_variances(self.LAMBDA_L1_M, 7.0, 0.84)
+        assert su_L > sc_L
+
+
+class TestTwoScaleBackscatterNrcs:
+    LAMBDA_L1_M = 299792458.0 / 1.57542e9
+    EPS_SEAWATER_L1 = seawater_permittivity(1.57542e9, 15.0, 35.0)
+
+    def _ts(self, theta_deg, azimuth_deg=0.0, wind=7.0):
+        rl, _ = two_scale_backscatter_nrcs(
+            np.radians(theta_deg), np.radians(azimuth_deg), self.LAMBDA_L1_M, self.EPS_SEAWATER_L1, wind, 0.84
+        )
+        return float(rl)
+
+    def _first_order(self, theta_deg, wind=7.0):
+        rl, _ = bragg_backscatter_nrcs(np.radians(theta_deg), self.LAMBDA_L1_M, self.EPS_SEAWATER_L1, wind, 0.84)
+        return float(rl)
+
+    def test_lifts_first_order_at_low_incidence(self):
+        # Tilt modulation raises the low-incidence backscatter above the un-tilted first-order Bragg.
+        assert self._ts(29.0) > self._first_order(29.0)
+
+    def test_tilt_lift_larger_at_low_incidence(self):
+        # The tilt lift shrinks toward grazing, where few facets improve the local geometry.
+        ratio_low = self._ts(29.0) / self._first_order(29.0)
+        ratio_high = self._ts(46.0) / self._first_order(46.0)
+        assert ratio_low > ratio_high > 1.0
+
+    def test_upwind_brighter_than_crosswind(self):
+        # Anisotropic large-scale slopes produce the upwind/crosswind asymmetry first-order Bragg lacks.
+        assert self._ts(29.0, azimuth_deg=0.0) > self._ts(29.0, azimuth_deg=90.0)
+
+    def test_stays_in_l_band_envelope_across_aquarius_beams(self):
+        # The tilt-averaged sigma0 stays in the L-band oceanic envelope (now a few dB closer to VV).
+        for th in (29.0, 38.0, 46.0):
+            sigma0_db = 10.0 * np.log10(self._ts(th))
+            assert -30.0 < sigma0_db < -10.0, f"two-scale sigma0_RL {sigma0_db:.1f} dB at {th} deg outside envelope"
+
+    def test_decreases_with_incidence(self):
+        vals = [self._ts(th) for th in (29.0, 38.0, 46.0)]
+        assert vals[0] > vals[1] > vals[2], f"two-scale sigma0_RL not decreasing with incidence: {vals}"
+
+    def test_array_matches_scalar(self):
+        thetas = np.radians(np.array([25.0, 35.0, 45.0]))
+        azis = np.radians(np.array([0.0, 45.0, 90.0]))
+        rl_arr, rr_arr = two_scale_backscatter_nrcs(thetas, azis, self.LAMBDA_L1_M, self.EPS_SEAWATER_L1, 7.0, 0.84)
+        for i in range(thetas.size):
+            rl_s, rr_s = two_scale_backscatter_nrcs(
+                float(thetas[i]), float(azis[i]), self.LAMBDA_L1_M, self.EPS_SEAWATER_L1, 7.0, 0.84
+            )
             np.testing.assert_allclose(rl_arr[i], rl_s, rtol=1e-12)
             np.testing.assert_allclose(rr_arr[i], rr_s, rtol=1e-12)
         assert rl_arr.shape == thetas.shape
