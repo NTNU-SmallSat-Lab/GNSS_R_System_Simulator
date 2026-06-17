@@ -25,6 +25,7 @@ import functions.functions as fn
 import functions.link_budget as lb
 from object_definitions.BackScattPoint_def import BRP as Backscatter
 from object_definitions.Constants_def import Constants
+from object_definitions.OceanTarget_def import OceanTarget
 from object_definitions.Reflection_def import Reflection
 from object_definitions.ShipTarget_def import ShipTarget
 from object_definitions.ShipTrajectory_def import ShipTrajectory
@@ -264,12 +265,13 @@ class MovingTargetDetection:
         # 0: Initializations                      #
         ###########################################
 
-        # Specular mode only reports the ocean forward-glint Pr and ship-in-footprint geometry; the
-        # ship SCR/SINR is a backscatter-mode metric and is not produced here.
+        # Specular mode reports the ocean forward-glint Pr and the forward-scatter shadow delta-Pr
+        # (the change the ship induces by occulting its glint patch); the ship SCR/SINR is a
+        # backscatter-mode metric and is not produced here.
         if self.reflection_mode == "specular" and self.ship_dimensions is not None:
             logger.info(
-                "Specular (forward-scatter) mode: reporting ocean glint Pr and ship-in-footprint events only; "
-                "ship SCR/SINR is a backscatter-mode metric and is not computed here."
+                "Specular (forward-scatter) mode: reporting ocean glint Pr and the forward-scatter shadow "
+                "delta-Pr; ship SCR/SINR is a backscatter-mode metric and is not computed here."
             )
 
         LightweightRef = namedtuple('LightweightRef', ['refl_obj', 'time_index', 'refl_id'])
@@ -535,6 +537,18 @@ class MovingTargetDetection:
                                             noise_power_w = ship_noise_power_w
                                             possible_target_detection.noise_power_w = noise_power_w
                                         self._populate_detection_metrics(possible_target_detection)
+                                    elif self.reflection_mode == "specular" and self.ship_dimensions is not None:
+                                        # Forward-scatter detection: the ship's signature is the change it induces in the
+                                        # ocean glint by occulting its waterline-area patch (delta_Pr = -shadow power).
+                                        ship_position_ll = (pos_tgt_i.y, pos_tgt_i.x)
+                                        pr_shadow_w, _rcs_shadow_m2, shadow_noise_power_w = self._compute_forward_shadow_delta_pr_at_event(
+                                            refl_obj, reflection_index, frequency_hz, tx_eirp_dbw, time_tgt_i, ship_position_ll,
+                                        )
+                                        possible_target_detection.forward_shadow_pr_w = pr_shadow_w
+                                        if not np.isfinite(noise_power_w) and np.isfinite(shadow_noise_power_w):
+                                            noise_power_w = shadow_noise_power_w
+                                            possible_target_detection.noise_power_w = noise_power_w
+                                        self._populate_forward_detection_metrics(possible_target_detection)
 
                                     # Append the possible target detection to the target detection list
                                     self.target_detect_dict[gnss_name].append(possible_target_detection)
@@ -768,6 +782,104 @@ class MovingTargetDetection:
         snr_ship_rf_db = float(link_budget["snr_rf_db"][0])
         noise_power_w = float(link_budget["noise_power_w"])
         return pr_ship_w, rcs_ship_m2, snr_ship_rf_db, noise_power_w
+
+    def _compute_forward_shadow_delta_pr_at_event(
+        self,
+        refl_obj: Reflection | Backscatter,
+        reflection_index: int,
+        frequency_hz: float,
+        tx_eirp_dbw: float,
+        detection_time: dt.datetime,
+        ship_position_ll: tuple[float, float],
+    ) -> tuple[float, float, float]:
+        """
+        Forward-scatter shadowing (specular mode): the ocean glint power the ship occults.
+
+        Builds the bistatic geometry at the ship position, takes the ocean *incoherent* (diffuse)
+        RCS over the ship's waterline area (length x beam), and runs the bistatic link budget. The
+        result is the glint power that patch of sea would have returned; the detectable forward
+        change is delta_Pr = -pr_shadow. The coherent-glint shadow (calm sea, ship at the specular
+        point) is a non-linear field regime deferred as a refinement; for any non-trivial sea state
+        the forward return is the diffuse term used here. Returns (pr_shadow_w, ocean_rcs_shadow_m2,
+        noise_power_w); all NaN if geometry is invalid.
+        """
+        nan_result = (float("nan"), float("nan"), float("nan"))
+        if self.ship_dimensions is None:
+            return nan_result
+        ship_area_m2 = float(self.ship_dimensions["length_m"]) * float(self.ship_dimensions["beam_m"])  # waterline plan area
+
+        ship_lat, ship_lon = ship_position_ll
+        ship_x_ecef, ship_y_ecef, ship_z_ecef = pymap3d.geodetic2ecef(ship_lat, ship_lon, 0.0)
+        ship_pos_ecef = np.array([[ship_x_ecef, ship_y_ecef, ship_z_ecef]], dtype=float)
+        ship_pos_eci = np.column_stack(
+            pymap3d.ecef2eci(np.array([ship_x_ecef]), np.array([ship_y_ecef]), np.array([ship_z_ecef]), [detection_time])
+        )
+        surface_normal_eci = lb.ellipsoid_surface_normals_eci(ship_pos_ecef, [detection_time])
+
+        tx_pos = refl_obj.gnss_pos_vec[:, reflection_index:reflection_index + 1]      # (3, 1)
+        rx_pos = refl_obj.sat_pos_vec[:, reflection_index:reflection_index + 1]       # (3, 1)
+        rx_vel = refl_obj.sat_vel_vec[:, reflection_index]
+        if not (
+            np.isfinite(tx_pos).all()
+            and np.isfinite(rx_pos).all()
+            and np.isfinite(rx_vel).all()
+            and np.isfinite(ship_pos_eci).all()
+            and np.isfinite(surface_normal_eci).all()
+        ):
+            return nan_result
+
+        geometry = lb.build_bistatic_geometry(tx_pos, rx_pos, ship_pos_eci, surface_normal_eci)
+        wavelength_m = Constants.SPEED_OF_LIGHT / frequency_hz
+
+        # Ocean diffuse RCS over the ship-sized patch: nrcs * min(glistening_area, ship_area) = nrcs * ship_area.
+        ocean_target = OceanTarget.from_settings(self.link_budget_settings)
+        rcs_result = ocean_target.compute_rcs(geometry, wavelength_m, illuminated_area_m2=np.array([ship_area_m2]))
+        ocean_rcs_shadow_m2 = float(rcs_result.info["rcs_incoherent_m2"][0])
+        if not np.isfinite(ocean_rcs_shadow_m2) or ocean_rcs_shadow_m2 <= 0.0:
+            return nan_result
+
+        look_dir_center_a = lb.compute_rx_look_direction_antenna_frame(
+            rx_pos[:, 0], rx_vel, refl_obj.refl_ECI_vec[reflection_index], self.sat_antenna
+        )
+        steering_angles = self.sat_antenna.resolve_steering_angles_for_direction(look_dir_center_a)
+        if steering_angles is None:
+            return nan_result
+        steering_azimuth_deg, steering_elevation_deg = steering_angles
+
+        look_dir_ship_a = lb.compute_rx_look_direction_antenna_frame(rx_pos[:, 0], rx_vel, ship_pos_eci[0], self.sat_antenna)
+        rx_gain_dbi = self.sat_antenna.get_gain_dbi_for_direction(
+            look_dir_ship_a, frequency_hz / 1e6, azimuth_deg=steering_azimuth_deg, elevation_deg=steering_elevation_deg
+        )
+
+        link_budget = lb.compute_bistatic_link_budget(
+            range_tx_m=geometry.range_tx_m,
+            range_rx_m=geometry.range_rx_m,
+            rx_gain_dbi=np.array([rx_gain_dbi]),
+            rcs_m2=np.array([ocean_rcs_shadow_m2]),
+            frequency_hz=frequency_hz,
+            tx_eirp_dbw=tx_eirp_dbw,
+            settings=self.link_budget_settings,
+        )
+        pr_shadow_w = float(link_budget["received_power_w"][0])
+        noise_power_w = float(link_budget["noise_power_w"])
+        return pr_shadow_w, ocean_rcs_shadow_m2, noise_power_w
+
+    @staticmethod
+    def _populate_forward_detection_metrics(event: "MovingTargetDetectionStruct") -> None:
+        """
+        Derive the forward-scatter shadow metrics from the occulted ocean glint power.
+
+        forward_delta_pr_w is the signed change in received power (negative: the ship removes glint);
+        the fraction and over-noise figures express it against the footprint glint and the thermal floor.
+        """
+        shadow = event.forward_shadow_pr_w
+        if not (shadow is not None and np.isfinite(shadow) and shadow > 0.0):
+            return
+        event.forward_delta_pr_w = -shadow                                # ship occults glint -> negative change
+        if event.pr_ocean_w is not None and np.isfinite(event.pr_ocean_w) and event.pr_ocean_w > 0.0:
+            event.forward_delta_pr_fraction_db = 10.0 * np.log10(shadow / event.pr_ocean_w)
+        if event.noise_power_w is not None and np.isfinite(event.noise_power_w) and event.noise_power_w > 0.0:
+            event.forward_delta_pr_over_noise_db = 10.0 * np.log10(shadow / event.noise_power_w)
 
     def _compute_ocean_pr_at_event(
         self,
@@ -1096,6 +1208,42 @@ class MovingTargetDetection:
                 print(
                     f"    SINR-qualified (threshold {threshold:.2f} dB): {n_sinr_detected:3d} / {n_finite:<3d}"
                 )
+        print("=" * 64)
+        return True
+
+    def show_forward_shadow_summary(self, band: str | None = None) -> bool:
+        """
+        Print the forward-scatter shadow delta-Pr per constellation (specular mode).
+
+        Reports, per GNSS constellation, the change the ship induces in the ocean glint by occulting
+        its waterline-area patch: delta-Pr relative to the footprint glint and relative to the thermal
+        floor. Returns True if any constellation had a finite shadow delta-Pr, False otherwise.
+        """
+        rows = []
+        for gnss_name in self.gnss_constellation:
+            events = self.target_detect_dict.get(gnss_name, [])
+            if band is not None:
+                events = [e for e in events if e.band == band]
+            fractions = [e.forward_delta_pr_fraction_db for e in events if e.forward_delta_pr_fraction_db is not None and np.isfinite(e.forward_delta_pr_fraction_db)]
+            over_noise = [e.forward_delta_pr_over_noise_db for e in events if e.forward_delta_pr_over_noise_db is not None and np.isfinite(e.forward_delta_pr_over_noise_db)]
+            if fractions:
+                rows.append((gnss_name, len(events), np.array(fractions), np.array(over_noise)))
+        if not rows:
+            return False
+
+        print()
+        print("=" * 64)
+        header = "FORWARD-SCATTER SHADOW SUMMARY (ship glint occultation, specular mode)"
+        if band is not None:
+            header += f" -- band {band}"
+        print(header)
+        print("=" * 64)
+        for gnss_name, n_events, fr, on in rows:
+            print(f"  {gnss_name:8s}: {n_events:4d} footprint overlaps, {fr.size:3d} with finite shadow delta-Pr")
+            print(f"    delta-Pr / footprint glint [dB]  min={fr.min():7.2f}  median={np.median(fr):7.2f}  max={fr.max():7.2f}")
+            if on.size > 0:
+                n_above = int(np.sum(on > 0.0))
+                print(f"    delta-Pr / noise [dB]            min={on.min():7.2f}  median={np.median(on):7.2f}  max={on.max():7.2f}  (above noise: {n_above}/{on.size})")
         print("=" * 64)
         return True
 
@@ -2075,3 +2223,8 @@ class MovingTargetDetectionStruct:
     is_sinr_detection: bool | None = None             # True when detection_margin_db >= 0
     rcs_ocean_m2: float | None = None      # ocean RCS at the reflection point [m^2]
     rcs_ship_m2: float | None = None       # ship RCS (combined plates + dihedrals) [m^2]
+    # Forward-scatter (specular mode): the ship shadows its waterline-area patch of the ocean glint.
+    forward_shadow_pr_w: float | None = None             # ocean glint power the ship occults [W]
+    forward_delta_pr_w: float | None = None              # signed change in received power = -forward_shadow_pr_w [W]
+    forward_delta_pr_fraction_db: float | None = None    # 10 log10(forward_shadow_pr / pr_ocean footprint) [dB]
+    forward_delta_pr_over_noise_db: float | None = None  # 10 log10(forward_shadow_pr / noise) [dB]

@@ -222,6 +222,57 @@ class TestComputeShipPrAtEvent:
         assert gain_call["elevation_deg"] == -7.0
 
 
+class TestForwardShadowDeltaPr:
+    def test_returns_nan_when_ship_dimensions_is_none(self, mtd, detection_time):
+        mtd.ship_dimensions = None
+        refl_obj = _build_refl_obj_mock()
+        result = mtd._compute_forward_shadow_delta_pr_at_event(refl_obj, 0, 1.57542e9, 27.0, detection_time, (0.0, 0.0))
+        assert all(np.isnan(v) for v in result)
+
+    def test_returns_finite_shadow_power_for_well_formed_event(self, mtd, detection_time):
+        # The ocean glint power the ship occults over its waterline area; finite and positive.
+        mtd.ship_dimensions = {"length_m": 100.0, "beam_m": 15.0, "freeboard_m": 5.0}
+        mtd.link_budget_settings = link_budget_settings()
+        mtd.sat_antenna = _constant_gain_antenna()
+        refl_obj = _build_refl_obj_mock()
+        pr_shadow_w, rcs_shadow_m2, noise_power_w = mtd._compute_forward_shadow_delta_pr_at_event(
+            refl_obj, 0, 1.57542e9, 27.0, detection_time, (0.0, 0.0)
+        )
+        assert np.isfinite(pr_shadow_w) and pr_shadow_w > 0.0
+        assert np.isfinite(rcs_shadow_m2) and rcs_shadow_m2 > 0.0
+        assert noise_power_w > 0.0
+
+
+class TestForwardDetectionMetrics:
+    def test_populates_signed_delta_and_ratios(self):
+        event = MovingTargetDetectionStruct(pr_ocean_w=1.0e-12, noise_power_w=1.0e-15, forward_shadow_pr_w=1.0e-15)
+        MovingTargetDetection._populate_forward_detection_metrics(event)
+        np.testing.assert_allclose(event.forward_delta_pr_w, -1.0e-15)              # signed: ship removes glint
+        np.testing.assert_allclose(event.forward_delta_pr_fraction_db, 10.0 * np.log10(1.0e-15 / 1.0e-12))  # -30 dB
+        np.testing.assert_allclose(event.forward_delta_pr_over_noise_db, 0.0, atol=1e-12)                   # shadow == noise
+
+    def test_no_op_without_shadow_power(self):
+        event = MovingTargetDetectionStruct(pr_ocean_w=1.0e-12, noise_power_w=1.0e-15)
+        MovingTargetDetection._populate_forward_detection_metrics(event)
+        assert event.forward_delta_pr_w is None
+        assert event.forward_delta_pr_fraction_db is None
+
+
+class TestForwardShadowSummary:
+    def test_returns_false_when_no_forward_data(self, mtd):
+        mtd.gnss_constellation = {"GPS": SimpleNamespace()}
+        mtd.target_detect_dict = {"GPS": [MovingTargetDetectionStruct(band="L1")]}
+        assert mtd.show_forward_shadow_summary(band="L1") is False
+
+    def test_returns_true_and_prints_with_forward_data(self, mtd, capsys):
+        mtd.gnss_constellation = {"GPS": SimpleNamespace()}
+        event = MovingTargetDetectionStruct(band="L1", pr_ocean_w=1.0e-12, noise_power_w=1.0e-15, forward_shadow_pr_w=1.0e-15)
+        MovingTargetDetection._populate_forward_detection_metrics(event)
+        mtd.target_detect_dict = {"GPS": [event]}
+        assert mtd.show_forward_shadow_summary(band="L1") is True
+        assert "FORWARD-SCATTER SHADOW SUMMARY" in capsys.readouterr().out
+
+
 class TestDetectionStructDefaults:
     def test_legacy_path_leaves_ship_fields_none(self):
         # An untouched struct keeps all the per-event Pr fields as None — what the loop will see

@@ -132,6 +132,10 @@ def run_moving_target_detection(settings: dict):
             if mtd.show_link_budget_contributions(file_name=contributions_plot, show_figure=False, band=band):
                 print(f"Link-budget breakdown plots saved as: {contributions_plot.replace('.png', '_*.png')}")
 
+            # Forward-scatter shadow delta-Pr summary (specular mode: the change the ship induces in the glint).
+            if mtd.reflection_mode == "specular":
+                mtd.show_forward_shadow_summary(band=band)
+
     # 6b. Combined plots: all constellations and bands together, color-coded by constellation.
     constellations_with_signals = [name for name, sigs in mtd.signals_per_constellation.items() if sigs]
     combined_plot = f"Footprint_overlap_{mtd.reflection_mode}_combined_{footprint_db_label}.png"
