@@ -264,6 +264,14 @@ class MovingTargetDetection:
         # 0: Initializations                      #
         ###########################################
 
+        # Specular mode only reports the ocean forward-glint Pr and ship-in-footprint geometry; the
+        # ship SCR/SINR is a backscatter-mode metric and is not produced here.
+        if self.reflection_mode == "specular" and self.ship_dimensions is not None:
+            logger.info(
+                "Specular (forward-scatter) mode: reporting ocean glint Pr and ship-in-footprint events only; "
+                "ship SCR/SINR is a backscatter-mode metric and is not computed here."
+            )
+
         LightweightRef = namedtuple('LightweightRef', ['refl_obj', 'time_index', 'refl_id'])
         ###########################################
         # 1: Calculate all the reflection points  #
@@ -510,7 +518,12 @@ class MovingTargetDetection:
                                     possible_target_detection.noise_power_w = noise_power_w
                                     possible_target_detection.detection_sinr_threshold_db = self.link_budget_settings.detection_sinr_threshold_db
 
-                                    if self.ship_dimensions is not None:
+                                    # Ship backscatter SCR/SINR is a backscatter-mode metric: it divides the ship's
+                                    # R_t^2 R_r^2 backscatter Pr by the ocean clutter Pr. In specular (forward-scatter)
+                                    # mode the ship signature is instead the change it induces in the coherent forward
+                                    # glint, so the ship is not run through the backscatter link budget here; only the
+                                    # ocean glint Pr and the geometric ship-in-footprint event are reported.
+                                    if self.reflection_mode == "backscatter" and self.ship_dimensions is not None:
                                         ship_position_ll = (pos_tgt_i.y, pos_tgt_i.x)
                                         pr_ship_w, rcs_ship_m2, snr_ship_rf_db, ship_noise_power_w = self._compute_ship_pr_at_event(
                                             refl_obj, reflection_index, frequency_hz, tx_eirp_dbw, time_tgt_i, ship_position_ll,
@@ -794,7 +807,7 @@ class MovingTargetDetection:
         noise_power_w = float(link_budget["noise_power_w"])
         return pr_ocean_w, rcs_ocean_m2, snr_ocean_rf_db, noise_power_w
 
-    def show_link_budget_contributions(self, file_name: str | None = None, show_figure: bool = False, band: str | None = None) -> None:
+    def show_link_budget_contributions(self, file_name: str | None = None, show_figure: bool = False, band: str | None = None) -> bool:
         """
         =========================================================================================================
         Visualise per-footprint-overlap ocean clutter, ship signal, noise, and SINR link-budget metrics.
@@ -813,6 +826,10 @@ class MovingTargetDetection:
                                         is saved as <stem>_<metric><ext>. None => don't save.
             show_figure: [bool]         Display interactively (default: False)
             band:        [str | None]   Restrict to one band (default: all bands combined)
+
+        RETURNS:
+            [bool]   True if plots were produced, False if skipped (no events with finite ship Pr, e.g.
+                     specular mode where the ship backscatter budget is not evaluated).
         =========================================================================================================
         """
         def _power_w_to_dbm(power_w: float) -> float:
@@ -842,7 +859,7 @@ class MovingTargetDetection:
 
         if not any(events_by_const.values()):
             logger.warning("No footprint-overlap events with finite ship Pr -- skipping link budget contribution plot.")
-            return
+            return False
 
         color_cycle = plt.rcParams["axes.prop_cycle"].by_key()["color"]
         const_color = {
@@ -1080,6 +1097,7 @@ class MovingTargetDetection:
                     f"    SINR-qualified (threshold {threshold:.2f} dB): {n_sinr_detected:3d} / {n_finite:<3d}"
                 )
         print("=" * 64)
+        return True
 
     def show_reflections_and_target_position_at_time_i(
         self,

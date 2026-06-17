@@ -307,6 +307,27 @@ class TestLinkBudgetContributionPlot:
             assert panel_file.stat().st_size > 0
         assert "SINR-qualified (threshold 0.00 dB):   1 / 2" in capsys.readouterr().out
 
+    def test_returns_true_when_plots_produced(self, mtd, tmp_path, monkeypatch):
+        mtd.gnss_constellation = {"GPS": SimpleNamespace()}
+        event = MovingTargetDetectionStruct(
+            band="L1", pr_ocean_w=1.0e-16, pr_ship_w=1.0e-14, noise_power_w=1.0e-15, detection_sinr_threshold_db=0.0,
+        )
+        MovingTargetDetection._populate_detection_metrics(event)
+        mtd.target_detect_dict = {"GPS": [event]}
+        monkeypatch.setattr(Constants, "output_folder_path", str(tmp_path))
+
+        assert mtd.show_link_budget_contributions(file_name="lb_plot.png", band="L1") is True
+
+    def test_returns_false_and_writes_nothing_without_ship_pr(self, mtd, tmp_path, monkeypatch):
+        # Specular-mode case: ocean Pr only, no ship backscatter Pr -> no SCR/SINR plots.
+        mtd.gnss_constellation = {"GPS": SimpleNamespace()}
+        event = MovingTargetDetectionStruct(band="L1", pr_ocean_w=1.0e-16)   # pr_ship_w stays None
+        mtd.target_detect_dict = {"GPS": [event]}
+        monkeypatch.setattr(Constants, "output_folder_path", str(tmp_path))
+
+        assert mtd.show_link_budget_contributions(file_name="lb_plot.png", band="L1") is False
+        assert list(tmp_path.iterdir()) == []
+
 
 def _build_multi_sample_refl_obj(n=4):
     """Multi-sample refl_obj (spherical) for the ocean per-event equivalence checks."""

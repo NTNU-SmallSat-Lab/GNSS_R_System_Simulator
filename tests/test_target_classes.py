@@ -279,6 +279,26 @@ class TestOceanTargetComputeRcs:
         a_rough = OceanTarget(1.0, 15.0, 0.0, 15.0, 35.0).compute_rcs(geom, 0.19).info["glistening_area_m2"][0]
         assert a_rough > a_calm
 
+    def test_forward_nrcs_matches_cygnss_nbrcs_envelope(self):
+        # External anchor, forward regime: the GO NRCS is RHCP->LHCP -- the same polarization and
+        # quantity CYGNSS reports as NBRCS. At specular / 7 m/s the model gives ~ +12 dB, inside the
+        # CYGNSS forward NBRCS envelope (~ +5..+20 dB at moderate wind; higher at low wind, lower at
+        # high wind). Ref: Ruf & Balasubramaniam, "Development of the CYGNSS Geophysical Model
+        # Function for Wind Speed", IEEE JSTARS 11(1), 2018, Fig. 3.
+        ocean = OceanTarget(1.5, 7.0, 270.0, 15.0, 35.0)
+        nrcs_db = 10.0 * np.log10(ocean.compute_rcs(_mirror_geometry(theta_deg=30.0), 0.19).info["nrcs"][0])
+        assert 5.0 < nrcs_db < 20.0, f"forward NRCS {nrcs_db:.2f} dB outside CYGNSS NBRCS envelope"
+
+    def test_forward_nrcs_decreases_with_wind(self):
+        # CYGNSS forward fingerprint: the quasi-specular NBRCS DECREASES with wind as the slope PDF
+        # widens and the glint spreads -- the opposite sign to the Bragg backscatter wind trend.
+        # Ref: Ruf & Balasubramaniam 2018 ("scattering cross section decreases as wind speed increases").
+        def nrcs(wind):
+            return OceanTarget(1.5, wind, 270.0, 15.0, 35.0).compute_rcs(_mirror_geometry(theta_deg=30.0), 0.19).info["nrcs"][0]
+
+        vals = [nrcs(w) for w in (3.0, 7.0, 15.0)]
+        assert vals[0] > vals[1] > vals[2], f"forward NRCS not decreasing with wind: {vals}"
+
     def test_forward_glistening_area_is_capped_by_supplied_illuminated_area(self):
         geom = _mirror_geometry(theta_deg=20.0)
         ocean = _default_ocean()

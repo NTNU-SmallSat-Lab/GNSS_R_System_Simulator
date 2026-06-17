@@ -41,6 +41,21 @@ class TestSeawaterPermittivity:
         eps_warm = seawater_permittivity(1.57542e9, 30.0, 35.0)
         assert eps_cold.real > eps_warm.real
 
+    def test_high_frequency_limit_approaches_eps_inf(self):
+        # Debye limit: as omega*tau >> 1 and the ionic-conductivity term -> 0, the Debye pole
+        # collapses and eps -> eps_inf = 4.9. A structural check on the relaxation form, independent
+        # of the L-band coefficients. (1e13 Hz is outside the model's physical domain but the formula
+        # limit must still hold.)
+        eps_r = seawater_permittivity(1.0e13, 15.0, 35.0)
+        np.testing.assert_allclose(eps_r.real, 4.9, atol=0.2)
+        assert abs(eps_r.imag) < 0.5
+
+    def test_real_part_decreases_monotonically_with_frequency(self):
+        # Across the relaxation the real part falls from the static value toward eps_inf.
+        freqs = np.array([1.0e8, 1.0e9, 1.0e10, 1.0e11, 1.0e12])
+        eps_real = np.array([seawater_permittivity(f, 15.0, 35.0).real for f in freqs])
+        assert np.all(np.diff(eps_real) < 0.0), f"eps_real not monotonically decreasing: {eps_real}"
+
 
 class TestFresnelCoefficients:
     def test_normal_incidence_R_v_equals_minus_R_h(self):
@@ -65,6 +80,16 @@ class TestFresnelCoefficients:
         assert np.abs(R_v) > 0.95
         assert np.abs(R_h) > 0.99
 
+    def test_passivity_reflection_magnitude_at_most_unity(self):
+        # Energy conservation: a passive lossy half-space cannot reflect more power than is incident,
+        # so |R_v|, |R_h| <= 1 at every incidence. Guards against a sign / branch error in the
+        # Fresnel form that the limiting-case tests would miss between 0 and grazing.
+        eps_r = seawater_permittivity(1.57542e9, 15.0, 35.0)
+        thetas = np.radians(np.linspace(0.0, 89.0, 90))
+        R_v, R_h = fresnel_coefficients(thetas, eps_r)
+        assert np.all(np.abs(R_v) <= 1.0 + 1e-12)
+        assert np.all(np.abs(R_h) <= 1.0 + 1e-12)
+
 
 class TestCircularPolReflectivities:
     def test_normal_incidence_co_pol_vanishes(self):
@@ -80,6 +105,14 @@ class TestCircularPolReflectivities:
         _, R_RR_low = circular_pol_reflectivities(np.radians(10.0), eps_r)
         _, R_RR_high = circular_pol_reflectivities(np.radians(80.0), eps_r)
         assert R_RR_high > R_RR_low
+
+    def test_passivity_total_reflected_power_at_most_unity(self):
+        # Energy conservation: the total reflected circular power (cross + co) equals
+        # 0.5 (|R_h|^2 + |R_v|^2), which must stay <= 1 at every incidence for a passive surface.
+        eps_r = seawater_permittivity(1.57542e9, 15.0, 35.0)
+        thetas = np.radians(np.linspace(0.0, 89.0, 90))
+        R_RL_sq, R_RR_sq = circular_pol_reflectivities(thetas, eps_r)
+        assert np.all(R_RL_sq + R_RR_sq <= 1.0 + 1e-12)
 
 
 class TestCoxMunkSlopeVariances:
@@ -220,6 +253,22 @@ class TestBraggBackscatterNrcs:
         # with no free scaling. A prefactor or spectrum-normalisation change trips this.
         sigma0_db = 10.0 * np.log10(self._sigma0(30.0))
         assert -25.0 < sigma0_db < -17.0, f"anchor sigma0_RL = {sigma0_db:.2f} dB outside L-band band"
+
+    def test_aquarius_beam_levels_in_l_band_envelope(self):
+        # External anchor, backscatter regime: cross-validate against Aquarius L-band ocean radar
+        # backscatter (1.26 GHz, three beams at 29 / 38 / 46 deg). The model is first-order *circular*
+        # (RHCP->LHCP) Bragg; Aquarius reports *linear* VV/HH, so this checks the envelope, not an exact
+        # match -- sigma0_RL sits at the L-band oceanic level, a few dB below Aquarius VV as expected for
+        # first-order circular Bragg without two-scale tilt. Ref: Meissner, Wentz & Ricciardulli, JGR
+        # Oceans 119, 6499-6522, 2014.
+        for th in (29.0, 38.0, 46.0):
+            sigma0_db = 10.0 * np.log10(self._sigma0(th, wind=7.0))
+            assert -32.0 < sigma0_db < -12.0, f"sigma0_RL {sigma0_db:.1f} dB at {th} deg outside L-band envelope"
+
+    def test_decreases_with_incidence_across_aquarius_beams(self):
+        # L-band ocean backscatter falls off monotonically from the 29 deg to the 46 deg Aquarius beam.
+        vals = [self._sigma0(th, wind=7.0) for th in (29.0, 38.0, 46.0)]
+        assert vals[0] > vals[1] > vals[2], f"sigma0_RL not decreasing across Aquarius beams: {vals}"
 
     def test_vanishes_at_nadir(self):
         # No resonant ripple at nadir (k_B -> 0); the geometric-optics term owns that geometry.
