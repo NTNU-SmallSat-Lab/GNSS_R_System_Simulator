@@ -42,6 +42,8 @@ class BistaticLinkBudgetSettings:
         detection_sinr_threshold_db:[float | None] Ship detectability threshold for P_ship / (P_ocean + P_noise) [dB] (moving-target only)
         ocean_patch_integration_enabled:[bool] Enable footprint patch integration for antenna-limited ocean clutter.
         ocean_patch_grid_size:     [int]    Number of cells per tangent-plane footprint axis for patch integration.
+        delay_doppler_cell_enabled:[bool]   Use the delay-Doppler resolution cell (not the full footprint) as the distributed-clutter area.
+        coherent_integration_time_s:[float | None] Coherent integration time T_coh [s]; sets the Doppler bin (1 / T_coh) of the cell. Required when the cell is enabled.
 
     NOTE: GNSS transmitter EIRP is per-(constellation, band) and lives in
     `Constants.GNSS_EIRP_DBW` — it is not a link-budget config knob.
@@ -65,6 +67,11 @@ class BistaticLinkBudgetSettings:
     # glistening-area cap remains the fallback for antenna=None, custom targets, or invalid footprints.
     ocean_patch_integration_enabled: bool = False
     ocean_patch_grid_size: int = 9
+    # Delay-Doppler resolution cell: when enabled, the distributed-clutter area is the DDM cell
+    # (code-chip x Doppler bin) rather than the antenna footprint. T_coh sets the Doppler bin width.
+    # Mutually exclusive with patch integration (the cell already replaces the footprint area).
+    delay_doppler_cell_enabled: bool = False
+    coherent_integration_time_s: float | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.ocean_patch_integration_enabled, bool):
@@ -75,6 +82,18 @@ class BistaticLinkBudgetSettings:
             raise ValueError(f"ocean_patch_grid_size must be >= 3; got {self.ocean_patch_grid_size}")
         if self.ocean_patch_grid_size > 101:
             raise ValueError(f"ocean_patch_grid_size must be <= 101 to avoid accidental runaway runtimes; got {self.ocean_patch_grid_size}")
+        if not isinstance(self.delay_doppler_cell_enabled, bool):
+            raise TypeError("delay_doppler_cell_enabled must be a bool")
+        if self.coherent_integration_time_s is not None and (not np.isfinite(self.coherent_integration_time_s) or self.coherent_integration_time_s <= 0.0):
+            raise ValueError(f"coherent_integration_time_s must be finite and > 0; got {self.coherent_integration_time_s}")
+        if self.delay_doppler_cell_enabled:
+            if self.coherent_integration_time_s is None:
+                raise ValueError("coherent_integration_time_s is required when delay_doppler_cell_enabled is True.")
+            if self.ocean_patch_integration_enabled:
+                raise ValueError(
+                    "delay_doppler_cell_enabled and ocean_patch_integration_enabled are mutually exclusive: "
+                    "the delay-Doppler cell already replaces the footprint as the clutter area."
+                )
         # Validate the noise/detection settings only when supplied (moving-target mode).
         if self.noise_bandwidth_hz is not None and self.noise_bandwidth_hz <= 0.0:
             raise ValueError(f"noise_bandwidth_hz must be > 0; got {self.noise_bandwidth_hz}")
@@ -748,6 +767,8 @@ def compute_reflection_link_budget(
     q_sat: np.ndarray | None = None,
     target: Target | None = None,
     surface_normals_eci: np.ndarray | None = None,
+    tx_velocities_eci: np.ndarray | None = None,
+    chip_length_m: float | None = None,
 ) -> dict:
     """
     =========================================================================================================
@@ -770,6 +791,10 @@ def compute_reflection_link_budget(
         target:                   [Target | None]             RCS model; defaults to OceanTarget.from_settings(settings)
         surface_normals_eci:      [np.ndarray, shape (n, 3) | None]  Outward surface normals in ECI.
                                   Defaults to geocentric normals, which are exact only for a sphere.
+        tx_velocities_eci:        [np.ndarray, shape (3, n) | None]  Transmitter ECI velocities [m/s];
+                                  required only when settings.delay_doppler_cell_enabled (Doppler axis of the cell).
+        chip_length_m:            [float | None]              One-chip path length delta_L = c / R_chip [m];
+                                  required only when settings.delay_doppler_cell_enabled (delay axis of the cell).
 
     OUTPUT:
         link_budget: [dict]   Link budget components and received power arrays
@@ -837,13 +862,36 @@ def compute_reflection_link_budget(
     # auto-steers to the reflection, so rx_gain_dbi is the steered-beam peak directivity and the beam
     # solid angle 4 pi / G projects to a ground footprint (4 pi / G) * R_r^2 / cos(theta_inc). With no
     # antenna the area is left to the target's geometric fallback.
+    delay_doppler_cell_info = None
     if antenna is None:
         illuminated_area_m2 = None
     else:
         with np.errstate(invalid="ignore", divide="ignore"):
             g_rx_lin = np.power(10.0, rx_gain_dbi / 10.0)
             cos_inc = np.clip(np.cos(np.radians(incidence_deg)), 0.05, 1.0)
-            illuminated_area_m2 = (4.0 * np.pi / g_rx_lin) * range_rx_m ** 2 / cos_inc
+            footprint_area_m2 = (4.0 * np.pi / g_rx_lin) * range_rx_m ** 2 / cos_inc
+
+        if settings_obj.delay_doppler_cell_enabled:
+            # The distributed-clutter area is one delay-Doppler resolution cell, capped at the footprint.
+            from functions.delay_doppler import delay_doppler_cell_area
+
+            if tx_velocities_eci is None or chip_length_m is None:
+                raise ValueError(
+                    "delay_doppler_cell_enabled requires tx_velocities_eci and chip_length_m; "
+                    "pass the GNSS Tx velocities and the band's chip length (c / chip_rate_hz)."
+                )
+            delay_doppler_cell_info = delay_doppler_cell_area(
+                geometry,
+                np.asarray(tx_velocities_eci, dtype=float),
+                rx_velocities_eci,
+                wavelength_m,
+                float(chip_length_m),
+                float(settings_obj.coherent_integration_time_s),
+                footprint_area_m2=footprint_area_m2,
+            )
+            illuminated_area_m2 = delay_doppler_cell_info["cell_area_m2"]
+        else:
+            illuminated_area_m2 = footprint_area_m2
 
     target_rcs = target.compute_rcs(geometry, wavelength_m, illuminated_area_m2=illuminated_area_m2)
 
@@ -879,6 +927,8 @@ def compute_reflection_link_budget(
     link_budget["scattering_deg"] = geometry.scattering_angle_deg
     link_budget["bistatic_deg"] = geometry.bistatic_angle_deg
     link_budget["target_info"] = target_rcs.info
+    if delay_doppler_cell_info is not None:
+        link_budget["delay_doppler_cell"] = delay_doppler_cell_info
     return link_budget
 
 

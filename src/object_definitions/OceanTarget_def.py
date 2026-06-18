@@ -32,8 +32,11 @@
     For typical sea state (sigma_h >> lambda) kappa is large and the coherent term collapses, leaving
     the incoherent glistening-zone return; for very calm water the coherent term dominates.
 
-    NOTE: Delay-Doppler filtering is still not modelled here. LB-2b integrates over the receiver
-    footprint; adding a delay-Doppler mask would further restrict which patches contribute.
+    NOTE: This RCS model is area-agnostic -- it multiplies an NRCS by whatever illuminated_area_m2 the
+    link-budget layer supplies. That area is the antenna footprint by default, the per-patch cell under
+    LB-2b patch integration, or one delay-Doppler resolution cell when the cell model is enabled
+    (functions.delay_doppler.delay_doppler_cell_area). The cell shrinks the distributed-clutter area
+    from the footprint (~1e4 km^2) to the code-chip x Doppler-bin pixel (~1 km^2).
 """
 
 from __future__ import annotations

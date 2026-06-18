@@ -174,6 +174,7 @@ class BRP:
                     if self.earth_model == "elliptical"
                     else None
                 ),
+                tx_velocities_eci=GNSS_state.velocities_eci,
             )
             power = link_budget["received_power_w"]
         else:

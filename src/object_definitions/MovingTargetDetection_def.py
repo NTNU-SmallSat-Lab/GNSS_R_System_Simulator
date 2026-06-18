@@ -124,7 +124,12 @@ class MovingTargetDetection:
             constellation = sig["constellation"]
             if constellation in self.signals_per_constellation:
                 self.signals_per_constellation[constellation].append(
-                    {"band": sig["band"], "freq_hz": float(sig["freq_hz"]), "eirp_dbw": float(sig["eirp_dbw"])}
+                    {
+                        "band": sig["band"],
+                        "freq_hz": float(sig["freq_hz"]),
+                        "eirp_dbw": float(sig["eirp_dbw"]),
+                        "chip_rate_hz": float(sig["chip_rate_hz"]),
+                    }
                 )
         if not any(self.signals_per_constellation.values()):
             raise ValueError(
@@ -484,6 +489,7 @@ class MovingTargetDetection:
                                 band = signal["band"]
                                 frequency_hz = signal["freq_hz"]
                                 tx_eirp_dbw = signal["eirp_dbw"]
+                                chip_length_m = Constants.SPEED_OF_LIGHT / signal["chip_rate_hz"]  # delta_L per code chip
                                 freq_mhz = frequency_hz / 1e6
                                 footprint_reflection, reflection_point_ll = self._reflection_point_footprint(refl_obj, reflection_index, freq_mhz, verbose)
 
@@ -495,7 +501,7 @@ class MovingTargetDetection:
                                     # FOV or has no valid RCS; the eager path dropped these via an empty
                                     # footprint, so skip the detection to preserve that behaviour.
                                     pr_ocean_w, rcs_ocean_m2, snr_ocean_rf_db, noise_power_w = self._compute_ocean_pr_at_event(
-                                        refl_obj, reflection_index, frequency_hz, tx_eirp_dbw
+                                        refl_obj, reflection_index, frequency_hz, tx_eirp_dbw, chip_length_m
                                     )
                                     if not np.isfinite(pr_ocean_w):
                                         continue
@@ -887,12 +893,14 @@ class MovingTargetDetection:
         reflection_index: int,
         frequency_hz: float,
         tx_eirp_dbw: float,
+        chip_length_m: float | None = None,
     ) -> tuple[float, float, float, float]:
         """
         Compute the ocean-clutter received power and RCS at one reflection sample.
 
         Re-runs the shared link budget on a single-sample slice of the reflection object, so the
-        result is identical to the eager full-series value at `reflection_index`. Returns
+        result is identical to the eager full-series value at `reflection_index`. `chip_length_m`
+        (c / chip_rate) is only consumed when the delay-Doppler cell is enabled. Returns
         (pr_ocean_w, rcs_ocean_m2, snr_ocean_rf_db, noise_power_w).
         """
         idx = reflection_index
@@ -912,6 +920,8 @@ class MovingTargetDetection:
             tx_eirp_dbw=tx_eirp_dbw,
             settings=self.link_budget_settings,
             surface_normals_eci=surface_normals_eci,
+            tx_velocities_eci=refl_obj.gnss_vel_vec[:, idx:idx + 1],
+            chip_length_m=chip_length_m,
         )
         pr_ocean_w = float(link_budget["received_power_w"][0])
         rcs_ocean_m2 = float(link_budget["rcs_m2"][0])

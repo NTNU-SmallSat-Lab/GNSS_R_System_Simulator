@@ -224,6 +224,7 @@ class Reflection:
                     if self.earth_model == "elliptical" and specular_point_ecef_vec is not None
                     else None
                 ),
+                tx_velocities_eci=GNSS_state.velocities_eci,
             )
             power = link_budget["received_power_w"]
         else:

@@ -83,7 +83,7 @@ def parse_antenna_angles(filename: str) -> tuple[float, float, float]:
 
 def build_selected_signals(antenna_bands, loaded_constellation_names) -> list[dict]:
     """
-    Validate the configured bands and return the [{band, constellation, freq_hz, eirp_dbw}] signal plan.
+    Validate the configured bands and return the [{band, constellation, freq_hz, eirp_dbw, chip_rate_hz}] signal plan.
 
     Each band is a constellation-specific signal (L1=GPS, E1=Galileo, ...). Invalid bands are warned
     about and dropped (never raise): unknown band names, bands with no transmit-EIRP entry, and bands
@@ -112,6 +112,7 @@ def build_selected_signals(antenna_bands, loaded_constellation_names) -> list[di
                 "constellation": constellation,
                 "freq_hz": float(Constants.BANDS_CENTER_FREQUENCIES_Hz[band]),
                 "eirp_dbw": Constants.get_tx_eirp_dbw_for_band(constellation, band),
+                "chip_rate_hz": Constants.get_chip_rate_hz_for_band(constellation, band),
             }
         )
     return selected_signals
@@ -474,6 +475,25 @@ def initialize(config_file_name="Configuration.ini"):
             raise ValueError(
                 f"[LINK BUDGET].ocean_patch_grid_size must be <= 101; got {link_budget['ocean_patch_grid_size']}"
             )
+    # Delay-Doppler resolution cell (moving-target detection only). Optional feature gate; when enabled,
+    # the coherent integration time is required (it sets the Doppler-bin width of the cell). Mutual
+    # exclusion with patch integration is enforced in BistaticLinkBudgetSettings.__post_init__.
+    if "delay_doppler_cell_enabled" in section:
+        try:
+            link_budget["delay_doppler_cell_enabled"] = section.getboolean("delay_doppler_cell_enabled")
+        except ValueError:
+            raise ValueError(
+                f"Invalid value for 'delay_doppler_cell_enabled' in [LINK BUDGET]: {section['delay_doppler_cell_enabled']}"
+            ) from None
+    if "coherent_integration_time_s" in section:
+        try:
+            link_budget["coherent_integration_time_s"] = float(section["coherent_integration_time_s"])
+        except ValueError:
+            raise ValueError(f"Invalid value for 'coherent_integration_time_s' in [LINK BUDGET]: {section['coherent_integration_time_s']}") from None
+        if link_budget["coherent_integration_time_s"] <= 0.0:
+            raise ValueError(
+                f"[LINK BUDGET].coherent_integration_time_s must be > 0; got {link_budget['coherent_integration_time_s']}"
+            )
 
     #[OCEAN] (REQUIRED SECTION)
     # Sea-state and water-property inputs for the bistatic ocean RCS model. INI-strict.
@@ -500,7 +520,12 @@ def initialize(config_file_name="Configuration.ini"):
     expected_fields = {f.name for f in fields(BistaticLinkBudgetSettings)}
     parsed_keys = set(link_budget.keys())
     unknown_keys = parsed_keys - expected_fields
-    optional_link_budget_keys = set(detection_keys) | {"ocean_patch_integration_enabled", "ocean_patch_grid_size"}
+    optional_link_budget_keys = set(detection_keys) | {
+        "ocean_patch_integration_enabled",
+        "ocean_patch_grid_size",
+        "delay_doppler_cell_enabled",
+        "coherent_integration_time_s",
+    }
     missing_required = (expected_fields - optional_link_budget_keys) - parsed_keys
     if unknown_keys or missing_required:
         raise RuntimeError(

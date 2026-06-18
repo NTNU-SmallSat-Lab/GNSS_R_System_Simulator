@@ -95,8 +95,10 @@ def _build_refl_obj_mock():
     tx_pos = np.array([[6.371e6 + 2.0e7], [0.0], [0.0]])   # ~ GPS altitude
     rx_pos = np.array([[6.371e6 + 7.0e5], [0.0], [0.0]])   # ~ LEO altitude
     rx_vel = np.array([[0.0], [7_500.0], [0.0]])
+    tx_vel = np.array([[0.0], [3_900.0], [0.0]])
     return SimpleNamespace(
         gnss_pos_vec=tx_pos,
+        gnss_vel_vec=tx_vel,
         sat_pos_vec=rx_pos,
         sat_vel_vec=rx_vel,
         refl_ECI_vec=surf,
@@ -388,13 +390,16 @@ def _build_multi_sample_refl_obj(n=4):
     tx = np.zeros((3, n))
     rx = np.zeros((3, n))
     rxv = np.zeros((3, n))
+    txv = np.zeros((3, n))
     for i, th_deg in enumerate(incs):
         th = np.radians(th_deg)
         tx[:, i] = surf[i] + 2.0e7 * np.array([np.cos(th), 0.0, np.sin(th)])
         rx[:, i] = surf[i] + 7.0e5 / np.cos(th) * np.array([np.cos(th), 0.0, -np.sin(th)])
         rxv[:, i] = [0.0, 7_500.0, 0.0]
+        txv[:, i] = [0.0, 3_900.0, 0.0]
     return SimpleNamespace(
         gnss_pos_vec=tx,
+        gnss_vel_vec=txv,
         sat_pos_vec=rx,
         sat_vel_vec=rxv,
         refl_ECI_vec=surf,

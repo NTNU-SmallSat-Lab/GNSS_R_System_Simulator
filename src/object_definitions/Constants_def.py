@@ -147,6 +147,23 @@ class Constants:
         "QZSS":    {"QZSS_L1": 27.0, "QZSS_L1C": 27.0, "QZSS_L2C": 25.0, "QZSS_L5": 29.1, "QZSS_L6": 35.0},
     }
 
+    ###########################
+    # GNSS spreading-code chip rate [chips/s]
+    ###########################
+    # Code chip rate per (constellation, band): sets the delay (range) resolution of the GNSS-R
+    # correlation, delta_L = c / R_chip per chip (e.g. GPS C/A 1.023 Mcps -> 293.05 m). Keys mirror
+    # GNSS_EIRP_DBW so every transmittable band resolves a chip rate. For BOC/CBOC/AltBOC signals
+    # (E1, B1C, E5/E6, ...) the modulating subcarrier sharpens the correlation peak below the base
+    # code rate; using the base code chip rate here is the conservative (coarser delay, larger cell)
+    # choice and never overstates resolution.
+    GNSS_CHIP_RATE_HZ = {
+        "GPS":     {"L1": 1.023e6,  "L2": 1.023e6,  "L5": 10.23e6},
+        "GALILEO": {"E1": 1.023e6,  "E5a": 10.23e6, "E5b": 10.23e6, "E6": 5.115e6},
+        "GLONASS": {"G1": 0.511e6,  "G2": 0.511e6,  "G3": 10.23e6},
+        "BEIDOU":  {"B1I": 2.046e6, "B1C": 1.023e6, "B2a": 10.23e6, "B2b": 10.23e6, "B2I": 2.046e6, "B3I": 10.23e6},
+        "QZSS":    {"QZSS_L1": 1.023e6, "QZSS_L1C": 1.023e6, "QZSS_L2C": 1.023e6, "QZSS_L5": 10.23e6, "QZSS_L6": 2.5575e6},
+    }
+
     # Reverse map band -> owning constellation, inverted from GNSS_EIRP_DBW.
     # Band names are unique across constellations (L1 is GPS-only, E1 Galileo-only, ...),
     # so the inversion is unambiguous. Bands present in BANDS_CENTER_FREQUENCIES_Hz but
@@ -195,6 +212,17 @@ class Constants:
             raise KeyError(f"No EIRP table for constellation {constellation!r}. Known constellations: {sorted(cls.GNSS_EIRP_DBW)}.")
         if band not in table:
             raise KeyError(f"No EIRP entry for band {band!r} on constellation {constellation!r}. Available bands: {sorted(table)}.")
+        return float(table[band])
+
+    @classmethod
+    def get_chip_rate_hz_for_band(cls, constellation: str, band: str) -> float:
+        """Return the spreading-code chip rate [chips/s] for (constellation, band). Raises KeyError if not configured."""
+        constellation = constellation.upper()
+        table = cls.GNSS_CHIP_RATE_HZ.get(constellation)
+        if table is None:
+            raise KeyError(f"No chip-rate table for constellation {constellation!r}. Known constellations: {sorted(cls.GNSS_CHIP_RATE_HZ)}.")
+        if band not in table:
+            raise KeyError(f"No chip-rate entry for band {band!r} on constellation {constellation!r}. Available bands: {sorted(table)}.")
         return float(table[band])
 
     ###########################
