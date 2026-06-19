@@ -70,6 +70,12 @@ dev = [
     "mypy>=1.13.0",
     "pytest>=8.0",
 ]
+# Documentation toolchain (Sphinx, Basilisk-style per-module .rst; build with `cd docs && make html`)
+docs = [
+    "sphinx>=7.0",
+    "furo>=2024.1.29",
+    "myst-parser>=2.0",
+]
 
 [project.urls]
 Repository = "https://github.com/NTNU-SmallSat-Lab/GNSS_R_System_Simulator.git"
