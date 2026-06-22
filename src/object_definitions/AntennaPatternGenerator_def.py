@@ -49,9 +49,32 @@ class ArrayFactor:
 
 
 class AntennaPatternGenerator:
+    """Generate (or reuse cached) phased-array radiation-pattern files for the receiver antenna.
+
+    Uses two-plane (sine-space) steering: elevation tilts the beam about the array y-axis (peak moves along
+    x^a, the flight direction) and azimuth about the x-axis (peak moves along y^a), so the beam direction is
+    ``(sin el, sin az, sqrt(1 - sin^2 az - sin^2 el))`` and the steering rectangle must stay inside the unit
+    disk (``sin^2 az + sin^2 el <= 1``).
+
+    Parameters
+    ----------
+    elements_along_x, elements_along_y : int
+        Number of array elements per axis.
+    d_x, d_y : float
+        Element spacing per axis [m].
+    freqs : list of float
+        Frequencies to simulate [MHz].
+    azimuth_steering, elevation_steering : list
+        ``[start_deg, end_deg, n_steps]`` beam-tilt sweep: azimuth tilts the peak along y^a (rotation about
+        the x-axis), elevation along x^a (rotation about the y-axis).
+    output_folder : str
+        Where to write the generated pattern files.
+    theta_resolution : int, optional
+        Polar-angle samples over 0..180 deg off boresight (default 180).
+    phi_resolution : int, optional
+        Azimuth samples over 0..360 deg around boresight (default 360).
     """
-    Generate (or reuse cached) phased-array radiation-pattern JSON files for the receiver antenna.
-    """
+
     def __init__(
         self,
         elements_along_x,
@@ -65,36 +88,50 @@ class AntennaPatternGenerator:
         theta_resolution=180,
         phi_resolution=360,
     ):
-        """
-        AntennaPatternGenerator (two-plane / sine-space steering):
+        """Store the array geometry and steering sweeps; check the sine-space reachability constraint."""
+        def _integer_parameter(name, value, minimum):
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{name} must be an integer >= {minimum}; got {value!r}") from exc
+            if not np.isfinite(numeric) or not numeric.is_integer() or numeric < minimum:
+                raise ValueError(f"{name} must be an integer >= {minimum}; got {value!r}")
+            return int(numeric)
 
-        INPUTS:
-            elements_along_x:   [int]         Number of array elements along x
-            elements_along_y:   [int]         Number of array elements along y
-            d_x:                [float]       Element spacing along x [m]
-            d_y:                [float]       Element spacing along y [m]
-            freqs:              [list[float]] Frequencies to simulate [MHz]
-            azimuth_steering:   [list]        [start_deg, end_deg, n_steps] beam tilt sweep along the array x-axis
-            elevation_steering: [list]        [start_deg, end_deg, n_steps] beam tilt sweep along the array y-axis
-            output_folder:      [str]         Path to write generated JSON files
-            theta_resolution:   [int]         Number of theta samples in each pattern (0..180 deg), default 180
-                                              -> Polar angle off boresight: θ=0° is straight along boresight, θ=90° is the side (horizon), θ=180° is straight back.
-            phi_resolution:     [int]         Number of phi samples in each pattern (0..360 deg), default 360
-                                              -> Azimuthal angle around boresight: φ=0° is along the array x-axis, φ=90° is along the array y-axis
-        """
-        self.elements_x = int(elements_along_x)
-        self.elements_y = int(elements_along_y)
+        self.elements_x = _integer_parameter("elements_along_x", elements_along_x, 1)
+        self.elements_y = _integer_parameter("elements_along_y", elements_along_y, 1)
         self.d_x = float(d_x)
         self.d_y = float(d_y)
         self.freqs = [float(f) for f in freqs]
         self.azimuth_steering = list(azimuth_steering)
         self.elevation_steering = list(elevation_steering)
         self.output_folder = Path(output_folder)
-        self.theta_resolution = int(theta_resolution)
-        self.phi_resolution = int(phi_resolution)
+        self.theta_resolution = _integer_parameter("theta_resolution", theta_resolution, 2)
+        self.phi_resolution = _integer_parameter("phi_resolution", phi_resolution, 3)
+
+        if not (np.isfinite(self.d_x) and self.d_x > 0.0 and np.isfinite(self.d_y) and self.d_y > 0.0):
+            raise ValueError("d_x and d_y must be finite and > 0 m")
+        if not self.freqs or not np.isfinite(self.freqs).all() or any(f <= 0.0 for f in self.freqs):
+            raise ValueError("freqs must contain finite, positive frequencies in MHz")
+        for axis_name, spec in (
+            ("azimuth_steering", self.azimuth_steering),
+            ("elevation_steering", self.elevation_steering),
+        ):
+            if len(spec) != 3:
+                raise ValueError(f"{axis_name} must be [start_deg, end_deg, n_steps]")
+            try:
+                endpoints = np.asarray(spec[:2], dtype=float)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{axis_name} endpoints must be finite and n_steps must be an integer >= 1") from exc
+            if not np.isfinite(endpoints).all():
+                raise ValueError(f"{axis_name} endpoints must be finite and n_steps must be >= 1")
+            n_steps = _integer_parameter(f"{axis_name} n_steps", spec[2], 1)
+            spec[:] = [float(endpoints[0]), float(endpoints[1]), n_steps]
+            if max(abs(spec[0]), abs(spec[1])) >= 90.0:
+                raise ValueError(f"{axis_name} must stay strictly inside the front hemisphere (-90, 90) deg")
 
         # Two-plane sine-space constraint: the steered beam direction is
-        # (sin az, sin el, sqrt(1 - sin^2 az - sin^2 el)), so the worst-case corner of the
+        # (sin el, sin az, sqrt(1 - sin^2 az - sin^2 el)), so the worst-case corner of the
         # steering rectangle must stay inside the unit disk or the beam points below the horizon.
         max_az_rad = np.deg2rad(max(abs(self.azimuth_steering[0]), abs(self.azimuth_steering[1])))
         max_el_rad = np.deg2rad(max(abs(self.elevation_steering[0]), abs(self.elevation_steering[1])))
@@ -164,7 +201,10 @@ class AntennaPatternGenerator:
     #   v6: two-plane (sine-space) steering. azimuth/elevation are signed beam-tilt angles
     #       along the array x/y axes (beta_x=-k dx sin az, beta_y=-k dy sin el); both grids are
     #       plain bounded linear axes (no circular azimuth). Signature keys changed.
-    _GENERATOR_FORMAT_VERSION = 6
+    #   v7: azimuth/elevation axis association swapped. Elevation now steers the array x-axis
+    #       (beta_x=-k dx sin el, peak along x = flight direction); azimuth steers the y-axis
+    #       (beta_y=-k dy sin az). Beam direction (sin el, sin az, .). Invalidates cached patterns.
+    _GENERATOR_FORMAT_VERSION = 7
 
     def _signature(self):
         """
@@ -300,13 +340,13 @@ class AntennaPatternGenerator:
         theta = np.linspace(0, 180, self.theta_resolution).reshape(-1, 1) * Constants.DEG2RAD
         phi = np.linspace(0, 360, self.phi_resolution, endpoint=False).reshape(1, -1) * Constants.DEG2RAD
 
-        # Steering sweep (two-plane): azimuth = tilt along array x-axis, elevation = tilt along y-axis.
+        # Steering sweep (two-plane): elevation tilts along array x; azimuth tilts along array y.
         azimuth_sweep_deg, elevation_sweep_deg = self._steering_sweeps_deg()
         azimuth_sweep = azimuth_sweep_deg * Constants.DEG2RAD
         elevation_sweep = elevation_sweep_deg * Constants.DEG2RAD
 
         # Write one steered pattern per (freq, steering-az, steering-el). The progressive phase shift
-        # beta steers the array peak to direction (sin az, sin el, .); RxAntenna bilinearly
+        # beta steers the array peak to direction (sin el, sin az, .); RxAntenna bilinearly
         # interpolates gain between neighbouring grid steering directions.
         for freq in self.freqs:
             freq_hz = freq * Constants.MHZ_TO_HZ #[Hz]
@@ -315,8 +355,8 @@ class AntennaPatternGenerator:
 
             for az_direction in azimuth_sweep:
                 for el_direction in elevation_sweep:
-                    beta_x = -k * self.d_x * np.sin(az_direction)
-                    beta_y = -k * self.d_y * np.sin(el_direction)
+                    beta_x = -k * self.d_x * np.sin(el_direction)  # elevation steers the x-axis (rotation about y)
+                    beta_y = -k * self.d_y * np.sin(az_direction)  # azimuth steers the y-axis (rotation about x)
 
                     az_deg = az_direction * Constants.RAD2DEG
                     el_deg = el_direction * Constants.RAD2DEG

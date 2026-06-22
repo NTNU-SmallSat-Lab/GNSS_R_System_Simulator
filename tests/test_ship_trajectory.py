@@ -16,6 +16,7 @@ import json
 
 import numpy as np
 import pytest
+from shapely.geometry import Point, Polygon
 
 from object_definitions.Constants_def import Constants
 from object_definitions.ShipTrajectory_def import ShipTrajectory
@@ -119,6 +120,22 @@ class TestCalculateBearing:
 
 
 # --------------------------------------------------------------------------- #
+# shoreline buffering                                                        #
+# --------------------------------------------------------------------------- #
+
+class TestSafeWaterPoint:
+    def test_buffer_metres_are_converted_to_geographic_degrees(self, ship):
+        ship.water_buffer = 22_200.0
+        ship.ocean_polygons = Polygon([(0.0, 0.0), (2.0, 0.0), (2.0, 2.0), (0.0, 2.0)])
+
+        safe = ship.get_safe_water_point((1.0, -0.1))
+
+        assert ship.ocean_polygons.contains(Point(safe[1], safe[0]))
+        distance_from_coast_m = ship._calculate_haversine_distance((1.0, 0.0), safe)
+        assert distance_from_coast_m == pytest.approx(ship.water_buffer, rel=2e-3)
+
+
+# --------------------------------------------------------------------------- #
 # trajectory cache loading                                                    #
 # --------------------------------------------------------------------------- #
 
@@ -184,6 +201,24 @@ class TestTrajectoryCacheLoading:
         monkeypatch.setattr(ship, "load_class_from_file", lambda: pytest.fail("stale cache should regenerate, not load"))
         monkeypatch.setattr(ship, "plan_route", lambda _save_graph: called.__setitem__("plan", True))
         # Downstream steps need real planned state; stub them so initialize() completes after plan_route.
+        monkeypatch.setattr(ship, "generate_trajectory_equal_time", lambda: None)
+        monkeypatch.setattr(ship, "create_trajectory_files", lambda: None)
+
+        ship.initialize(None, save_graph=False)
+
+        assert called["plan"]
+
+    def test_changed_mesh_setting_regenerates(self, tmp_path, monkeypatch):
+        ship = _configured_cache_ship()
+        monkeypatch.setattr(Constants, "autogen_ship_shapefiles", str(tmp_path))
+        (tmp_path / "CacheShip_trajectory.shp").write_text("")
+        metadata = _matching_metadata(ship)
+        metadata["grid_resolution"] = ship.grid_resolution / 2.0
+        (tmp_path / "CacheShip_trajectory_metadata.json").write_text(json.dumps(metadata))
+
+        called = {"plan": False}
+        monkeypatch.setattr(ship, "load_class_from_file", lambda: pytest.fail("stale cache should regenerate, not load"))
+        monkeypatch.setattr(ship, "plan_route", lambda _save_graph: called.__setitem__("plan", True))
         monkeypatch.setattr(ship, "generate_trajectory_equal_time", lambda: None)
         monkeypatch.setattr(ship, "create_trajectory_files", lambda: None)
 

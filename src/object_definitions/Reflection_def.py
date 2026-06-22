@@ -1,6 +1,6 @@
 import numpy as np
 import pymap3d
-from scipy.optimize import minimize
+from scipy.optimize import least_squares
 
 import functions.functions as fn
 import functions.link_budget as lb
@@ -10,6 +10,46 @@ from object_definitions.Satellite_def import Satellite
 
 
 class Reflection:
+    """Specular reflections for one (Tx GNSS, Rx LEO) satellite pair over a time window.
+
+    One ``Reflection`` holds every specular reflection produced by a single transmitting GNSS satellite
+    and a single receiving LEO satellite across the propagated time vector. The specular point is solved
+    per ``earth_model`` -- a closed-form spherical solver or a two-angle ellipsoid stationarity solve -- and,
+    when a link-budget configuration is supplied, the received power is evaluated at each reflection.
+
+    Parameters
+    ----------
+    tx_satID : Any
+        Transmitting (GNSS) satellite identifier.
+    rx_satID : Any
+        Receiving (LEO) satellite identifier.
+    earth_model : {"spherical", "elliptical"}, optional
+        Surface model for the specular solver (default "spherical").
+    max_central_angle_deg : float, keyword-only
+        Maximum Tx-Rx geocentric central angle [deg]; a coarse geometric pre-filter. Required.
+    gnss_const : str, optional
+        GNSS constellation label (GPS, GLONASS, GALILEO, BEIDOU).
+
+    Attributes
+    ----------
+    time_vec : numpy.ndarray
+        UTC timestamps of the samples.
+    refl_ECI_vec : numpy.ndarray
+        Specular points in ECI [m], shape (n, 3); NaN where no valid reflection.
+    refl_ECEF_vec : numpy.ndarray or None
+        Specular points in ECEF [m] (elliptical model only; None for spherical).
+    refl_LL_vec : numpy.ndarray
+        Specular points as (latitude, longitude) [deg], shape (n, 2).
+    refl_ang_vec : numpy.ndarray
+        Incidence angle at the reflection point wrt the local surface normal [deg], shape (n,).
+    angle_diagnostics : numpy.ndarray
+        Solver diagnostics [theta_in, theta_out, central_angle] per sample, shape (n, 3).
+    link_budget : dict
+        Link-budget output from ``compute_reflection_link_budget`` (empty in deferred mode).
+    power : numpy.ndarray or None
+        Received reflection power [W] per sample (None in deferred mode).
+    """
+
     def __init__(
         self,
         tx_satID=None,
@@ -19,27 +59,7 @@ class Reflection:
         max_central_angle_deg,
         gnss_const=None,
     ):
-        """
-        =========================================================================================================
-        Reflection class:
-            - Defines a reflection object: Initialized with the following parameters:
-                INPUTS:
-                - tx_satID:               Transmitting satellite ID (GNSS satellite)
-                - rx_satID:               Receiving satellite ID    (LEO satellite)
-                - earth model:                                      (spherical or elliptical)
-                - max_central_angle_deg:                            (Max Tx-Rx central angle [deg], required)
-                - gnss_const:             GNSS constellation        (GPS, GLONASS, GALILEO, BEIDOU) (optional)
-
-                ATTRIBUTES:
-                - earth_model:  Earth model               (spherical or elliptical)
-                - time_vec:     Time vector               (vector with UTC datetime objects, when reflection occurs)
-                - refl_ECI_vec: Reflection points         (vector containing ECI coordinates of point reflections)
-                - refl_LL_vec:  Reflection points         (vector containing Lat-Lon coordinates of point reflections)
-
-            NOTE: One reflection object contains all the reflections for one given GNSS satellite and one given LEO
-                  satellite in a certain time period.
-        =========================================================================================================
-        """
+        """Validate the earth model and satellite IDs, then initialise the empty reflection store."""
         # ENTRY point to the Object (Initialization)
         if earth_model is None:
             # If not specified, use the 'spherical' earth model
@@ -50,9 +70,16 @@ class Reflection:
 
         if tx_satID is None or rx_satID is None:
             raise ValueError("Transmitting and Receiving satellite IDs are required to initialize a Reflection object.")
+        try:
+            max_central_angle_deg = float(max_central_angle_deg)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("max_central_angle_deg must be finite and in (0, 180] deg.") from exc
+        if not np.isfinite(max_central_angle_deg) or not (0.0 < max_central_angle_deg <= 180.0):
+            raise ValueError("max_central_angle_deg must be finite and in (0, 180] deg.")
         self.initialization(earth_model, max_central_angle_deg, tx_satID, rx_satID, gnss_const)
 
     def initialization(self, earth_model, max_central_angle_deg, tx_satID, rx_satID, gnss_const):
+        """Initialise the empty reflection-store attributes from the validated inputs."""
         self.earth_model = earth_model  # 'spherical' or 'elliptical'
         self.gnss_const = gnss_const  # Could be [GPS, GLONASS, GALILEO, BEIDOU]
         self.max_central_angle_deg = float(max_central_angle_deg)
@@ -82,6 +109,33 @@ class Reflection:
         q_sat: np.ndarray | None = None,
         compute_link_budget: bool = True,
     ):
+        """Solve the specular point at every sample and (optionally) evaluate the link budget.
+
+        Fills the reflection attributes in place. The specular geometry is solved per ``earth_model``
+        (spherical closed form or elliptical stationary-path solve); samples failing the central-angle gate or
+        the line-of-sight test are left as NaN.
+
+        Parameters
+        ----------
+        GNSS_state : Satellite
+            Propagated transmitting GNSS satellite (ECI positions / velocities).
+        Sat_state : Satellite
+            Propagated receiving LEO satellite (ECI positions / velocities).
+        times : numpy.ndarray
+            UTC timestamps aligned with the propagated states.
+        tx_eirp_dbw : float
+            Transmit EIRP for this (constellation, band) [dBW].
+        antenna : RxAntenna or None, optional
+            Receiver antenna (None => isotropic 0 dBi).
+        frequency_hz : float or None, optional
+            Carrier frequency [Hz]; defaults to GPS L1.
+        link_budget_settings : dict or BistaticLinkBudgetSettings or None, optional
+            Rx-system link-budget settings.
+        q_sat : numpy.ndarray or None, optional
+            Attitude quaternion [w, x, y, z] (default identity).
+        compute_link_budget : bool, optional
+            If False, skip the link budget (deferred per-event mode); default True.
+        """
         times = fn.to_utc_datetime_array(times)
 
         if frequency_hz is None:
@@ -99,8 +153,24 @@ class Reflection:
         theta = fn.angle_between_vectors(GNSS_state.positions_eci, Sat_state.positions_eci)
 
         # Precompute line-of-sight (LOS) and valid theta indices for efficiency
-        los_radius = Constants.RADIUS_EARTH_EQUAT if self.earth_model == "elliptical" else Constants.R_EARTH_MEAN
-        los_mask = np.array([self._check_los_satellites(Sat_state.positions_eci[:, i], GNSS_state.positions_eci[:, i], earth_radius=los_radius) for i in range(num_positions)])
+        if self.earth_model == "elliptical":
+            los_mask = np.array(
+                [
+                    self._check_los_ellipsoid(Sat_state.positions_eci[:, i], GNSS_state.positions_eci[:, i])
+                    for i in range(num_positions)
+                ]
+            )
+        else:
+            los_mask = np.array(
+                [
+                    self._check_los_satellites(
+                        Sat_state.positions_eci[:, i],
+                        GNSS_state.positions_eci[:, i],
+                        earth_radius=Constants.R_EARTH_MEAN,
+                    )
+                    for i in range(num_positions)
+                ]
+            )
         valid_indices = (theta < self.max_central_angle_deg) & los_mask
         valid_index_array = np.where(valid_indices)[0]
 
@@ -251,21 +321,24 @@ class Reflection:
         self.power = power  # Received reflection power [W]
 
     def get_reflection_point_ff(self, gnssPos, satPos, earth_radius=Constants.R_EARTH_MEAN):
-        """
-        =========================================================================================================
-        Calculate the reflection point between a satellite and a GNSS satellite position for a
-        spherical Earth, using the same method as in FreeFlyer (the `_ff` suffix denotes FreeFlyer).
+        """Specular point on a spherical Earth via the FreeFlyer method (the ``_ff`` suffix).
 
-        INPUTS:
-            gnssPos: [np.array, shape (3,)]   GNSS satellite position
-            satPos:  [np.array, shape (3,)]   Receiver (LEO) satellite position
+        Rotates the Tx/Rx geometry into the orbital plane, solves the 2D specular point, and rotates back.
 
-        OUTPUT:
-            result: [tuple]   (ReflectionPoint, theta_degrees2, theta_degrees3)
-                              - ReflectionPoint: 3D reflection point (NaNs if no LOS)
-                              - theta_degrees2:  Angle between reflection-to-Sat and reflection-from-origin
-                              - theta_degrees3:  Angle between reflection-to-GNSS and reflection-from-origin
-        =========================================================================================================
+        Parameters
+        ----------
+        gnssPos : numpy.ndarray
+            GNSS (Tx) satellite position [m], shape (3,).
+        satPos : numpy.ndarray
+            Receiver (LEO) satellite position [m], shape (3,).
+        earth_radius : float, optional
+            Sphere radius [m] (default ``Constants.R_EARTH_MEAN``).
+
+        Returns
+        -------
+        tuple
+            (reflection_point, theta_degrees2, theta_degrees3): the 3D specular point (NaNs if no
+            line of sight), the incidence angle and the reflected angle from the local normal [deg].
         """
         if not self._check_los_satellites(np.asarray(satPos).flatten(), np.asarray(gnssPos).flatten(), earth_radius=earth_radius):
             return np.array([np.nan, np.nan, np.nan]), np.nan, np.nan
@@ -303,21 +376,39 @@ class Reflection:
         return ReflectionPoint, theta_degrees2, theta_degrees3
 
     def _find_specular_point_ellipse_ecef(self, Tx_ecef, Rx_ecef, initial_guess_ecef=None):
-        # Radius at the poles for elliptical Earth model
+        """Find the visible WGS-84 specular point from the stationary-path condition.
+
+        The surface is parameterised by two angular variables, so every iterate lies exactly on the
+        ellipsoid. Solving the two tangent components of ``grad(|S-T| + |R-S|) = 0`` is substantially
+        better conditioned than minimising metre-scale Cartesian ranges with an equality constraint.
+        """
         a = Constants.RADIUS_EARTH_EQUAT
         b = Constants.RADIUS_EARTH_EQUAT * (1 - Constants.EARTH_FLATTENING)
 
         Tx_solve = np.asarray(Tx_ecef, dtype=float)
         Rx_solve = np.asarray(Rx_ecef, dtype=float)
+        invalid_result = (np.array([np.nan, np.nan, np.nan]), np.nan, np.nan)
+        if Tx_solve.shape != (3,) or Rx_solve.shape != (3,):
+            return invalid_result
+        if not (np.isfinite(Tx_solve).all() and np.isfinite(Rx_solve).all()):
+            return invalid_result
 
-        # Ellipsoid constraint
-        def ellipsoid_constraint(S):
-            return (S[0] ** 2 / a**2 + S[1] ** 2 / a**2 + S[2] ** 2 / b**2) - 1
+        def surface_point(latitude_param, longitude_param):
+            cos_lat = np.cos(latitude_param)
+            return np.array(
+                [
+                    a * cos_lat * np.cos(longitude_param),
+                    a * cos_lat * np.sin(longitude_param),
+                    b * np.sin(latitude_param),
+                ]
+            )
 
         def ellipsoid_normal(S):
-            S = np.array(S)
             n_surface = np.array([S[0] / a**2, S[1] / a**2, S[2] / b**2])
-            return n_surface / np.linalg.norm(n_surface)
+            normal_norm = np.linalg.norm(n_surface)
+            if normal_norm <= 0.0:
+                raise ZeroDivisionError("Cannot construct an ellipsoid normal at the origin.")
+            return n_surface / normal_norm
 
         def unit_vector(vec):
             norm = np.linalg.norm(vec)
@@ -325,21 +416,7 @@ class Reflection:
                 raise ZeroDivisionError("Cannot normalize near-zero vector.")
             return vec / norm
 
-        # Reflection constraint
         def reflection_residual(S):
-            """
-            =========================================================================================================
-            For specular reflection, mirror the incoming propagation direction about the local
-            ellipsoid normal and compare it to the outgoing propagation direction.
-
-            INPUTS:
-                S: [np.array, shape (3,)]   Candidate reflection point on the ellipsoid (ECEF)
-
-            OUTPUT:
-                result: [tuple]   (residual_vector, cos_incident, cos_reflected)
-            =========================================================================================================
-            """
-            S = np.array(S, dtype=float)
             v_in = unit_vector(S - Tx_solve)  # Incoming propagation direction, Tx -> S
             v_out = unit_vector(Rx_solve - S)  # Outgoing propagation direction, S -> Rx
             n_surface = ellipsoid_normal(S)
@@ -350,20 +427,45 @@ class Reflection:
 
             return v_reflected - v_out, cos_incident, cos_reflected
 
-        def objective_function(S):
+        def tangent_stationarity(angles):
+            latitude_param, longitude_param = angles
+            S = surface_point(latitude_param, longitude_param)
             try:
-                S = np.array(S, dtype=float)
-                return float(np.linalg.norm(S - Tx_solve) + np.linalg.norm(Rx_solve - S))
-            except (ZeroDivisionError, np.linalg.LinAlgError):
-                # Avoid this point if the reflection error calculation fails
-                return 1e10
+                n_tx2s = unit_vector(S - Tx_solve)
+                n_s2rx = unit_vector(Rx_solve - S)
+            except ZeroDivisionError:
+                return np.array([1.0e3, 1.0e3])
+
+            # The surface gradient of total path length has no tangent component at a specular point.
+            grad_path = n_tx2s - n_s2rx
+            sin_lat = np.sin(latitude_param)
+            cos_lat = np.cos(latitude_param)
+            sin_lon = np.sin(longitude_param)
+            cos_lon = np.cos(longitude_param)
+            tangent_lat = np.array([-a * sin_lat * cos_lon, -a * sin_lat * sin_lon, b * cos_lat])
+            tangent_lon = np.array([-a * cos_lat * sin_lon, a * cos_lat * cos_lon, 0.0])
+
+            tangent_lat_norm = np.linalg.norm(tangent_lat)
+            tangent_lon_norm = np.linalg.norm(tangent_lon)
+            if tangent_lat_norm <= 0.0:
+                return np.array([1.0e3, 1.0e3])
+            tangent_lat /= tangent_lat_norm
+
+            # Longitude is singular at a pole. Any orthogonal tangent direction is valid there.
+            if tangent_lon_norm <= 1e-12:
+                tangent_lon = np.cross(ellipsoid_normal(S), tangent_lat)
+                tangent_lon_norm = np.linalg.norm(tangent_lon)
+            if tangent_lon_norm <= 0.0:
+                return np.array([1.0e3, 1.0e3])
+            tangent_lon /= tangent_lon_norm
+            return np.array([np.dot(grad_path, tangent_lat), np.dot(grad_path, tangent_lon)])
 
         if initial_guess_ecef is not None and np.isfinite(initial_guess_ecef).all():
             spec_init_guess = np.asarray(initial_guess_ecef, dtype=float)
         else:
             # Initial guess from the spherical FF solution in the same ECEF frame; use the
             # equatorial radius so the guess sits on the ellipsoid's largest dimension and
-            # rescaling to the ellipsoid below is a near-identity (helps SLSQP convergence).
+            # rescaling to the ellipsoid below is a near-identity (helps nonlinear-solver convergence).
             try:
                 spec_init_guess, _, _ = self.get_reflection_point_ff(Tx_solve, Rx_solve, earth_radius=a)
                 if np.any(np.isnan(spec_init_guess)):
@@ -371,32 +473,40 @@ class Reflection:
             except Exception:
                 spec_init_guess = (Tx_solve + Rx_solve) / 2
 
-        # Ensure the initial guess is on the ellipsoid
-        scale_denominator = (spec_init_guess[0] / a) ** 2 + (spec_init_guess[1] / a) ** 2 + (spec_init_guess[2] / b) ** 2
-        if not np.isfinite(scale_denominator) or scale_denominator <= 0.0:
-            return np.array([np.nan, np.nan, np.nan]), np.nan, np.nan
-        spec_init_guess = spec_init_guess / np.sqrt(scale_denominator)
+        scaled_guess = np.array([spec_init_guess[0] / a, spec_init_guess[1] / a, spec_init_guess[2] / b])
+        scaled_norm = np.linalg.norm(scaled_guess)
+        if not np.isfinite(scaled_norm) or scaled_norm <= 0.0:
+            return invalid_result
+        scaled_guess /= scaled_norm
+        latitude_0 = float(np.arcsin(np.clip(scaled_guess[2], -1.0, 1.0)))
+        longitude_0 = float(np.arctan2(scaled_guess[1], scaled_guess[0]))
 
-        # Run optimization to find the specular point
-        result = minimize(
-            objective_function,
-            spec_init_guess,
-            constraints={"type": "eq", "fun": ellipsoid_constraint},
-            method="SLSQP",
-            options={"ftol": 1e-10, "maxiter": 500, "disp": False},
+        # Centre the allowed 2*pi longitude interval on the seed so the +/-pi seam cannot trap
+        # a solution just across the conventional longitude boundary.
+        result = least_squares(
+            tangent_stationarity,
+            np.array([latitude_0, longitude_0]),
+            bounds=(
+                np.array([-np.pi / 2.0 + 1e-12, longitude_0 - np.pi]),
+                np.array([np.pi / 2.0 - 1e-12, longitude_0 + np.pi]),
+            ),
+            xtol=1e-13,
+            ftol=1e-13,
+            gtol=1e-13,
+            max_nfev=200,
         )
 
-        S = result.x
-
-        # coerce exactly onto ellipsoid (avoid tiny drift)
-        scale = 1.0 / np.sqrt((S[0] / a) ** 2 + (S[1] / a) ** 2 + (S[2] / b) ** 2)
-        S = scale * S
-
-        residual, cos_inc, cos_refl = reflection_residual(S)
+        if not result.success or not np.isfinite(result.x).all():
+            return invalid_result
+        S = surface_point(result.x[0], result.x[1])
+        try:
+            residual, cos_inc, cos_refl = reflection_residual(S)
+        except ZeroDivisionError:
+            return invalid_result
         residual_norm = np.linalg.norm(residual)
 
         if not (cos_inc > 0.0 and cos_refl > 0.0 and residual_norm <= 5e-2):
-            return np.array([np.nan, np.nan, np.nan]), np.nan, np.nan
+            return invalid_result
 
         theta_degrees2 = np.degrees(np.arccos(np.clip(cos_inc, -1, 1)))
         theta_degrees3 = np.degrees(np.arccos(np.clip(cos_refl, -1, 1)))
@@ -404,9 +514,22 @@ class Reflection:
         return S, theta_degrees2, theta_degrees3
 
     def get_rotation_3D_to_plane_coords(self, satCoord, GPSCoord):  # noqa: N802
+        """Rotation matrix mapping the Tx-Rx orbital plane onto the z = 0 plane."""
         # Calculate the rotation matrix to transform from 3D coordinates to plane coordinates
         plane = np.cross(satCoord.flatten(), GPSCoord.flatten())
-        plane = plane / np.linalg.norm(plane)
+        plane_norm = np.linalg.norm(plane)
+        if plane_norm <= 1e-14:
+            # Same-side parallel position vectors have a valid nadir reflection but do not define a
+            # unique plane. Pick any stable plane that contains their common radial direction.
+            radial = satCoord.flatten().astype(float)
+            radial_norm = np.linalg.norm(radial)
+            if radial_norm <= 0.0:
+                raise ValueError("Cannot define a reflection plane from a zero satellite position.")
+            radial /= radial_norm
+            fallback = np.eye(3)[int(np.argmin(np.abs(radial)))]
+            plane = np.cross(radial, fallback)
+            plane_norm = np.linalg.norm(plane)
+        plane = plane / plane_norm
         z = np.array([0, 0, 1])
 
         vec = np.cross(plane, z)
@@ -456,20 +579,24 @@ class Reflection:
 
     @staticmethod
     def get_reflection_point2d(satCoord1, GPSCoord1, earth_radius=Constants.R_EARTH_MEAN):
-        """
-        =========================================================================================================
-        Calculate the reflection point in 2D coordinates (after rotation into the orbital plane).
+        """Specular point in the 2D orbital-plane frame (after rotation).
 
-        INPUTS:
-            satCoord1: [np.array]   Satellite coordinates in 2D (x, y) [m]
-            GPSCoord1: [np.array]   GPS coordinates in 2D (x, y) [m]
+        Solves the quartic that places the reflection on the circle while obeying the law of reflection.
 
-        OUTPUT:
-            result: [tuple]   (N, A, B)
-                              - N: Reflection point in 2D (x, y) [m] (or None if no real positive root)
-                              - A: Normalized satellite vector
-                              - B: Normalized GPS vector
-        =========================================================================================================
+        Parameters
+        ----------
+        satCoord1 : numpy.ndarray
+            Receiver coordinates in the 2D plane (x, y) [m].
+        GPSCoord1 : numpy.ndarray
+            GNSS coordinates in the 2D plane (x, y) [m].
+        earth_radius : float, optional
+            Sphere radius [m] (default ``Constants.R_EARTH_MEAN``).
+
+        Returns
+        -------
+        tuple
+            (N, A, B): the 2D reflection point [m] (None if no real positive root), and the normalised
+            receiver and GNSS vectors.
         """
         # Calculates the reflection point in 2D
         A = satCoord1[:2] / earth_radius
@@ -501,24 +628,63 @@ class Reflection:
     def _check_los_satellites(r1, r2, earth_radius=Constants.R_EARTH_MEAN) -> bool:
         """
         =========================================================================================================
-        Check whether there is a clear Line Of Sight (LOS) between two points r1 and r2,
-        given the Earth's equatorial radius (spherical Earth).
+        Check whether a finite chord between r1 and r2 clears a spherical Earth.
 
         INPUTS:
             r1: [np.array, shape (3,)]   First point [m]
             r2: [np.array, shape (3,)]   Second point [m]
 
         OUTPUT:
-            has_los: [bool]   True if no sample along the segment intersects the Earth
+            has_los: [bool]   True if the segment's closest point clears the sphere
         =========================================================================================================
         """
+        r1 = np.asarray(r1, dtype=float)
+        r2 = np.asarray(r2, dtype=float)
+        if r1.shape != (3,) or r2.shape != (3,):
+            return False
+        if not (np.isfinite(r1).all() and np.isfinite(r2).all() and np.isfinite(earth_radius) and earth_radius > 0.0):
+            return False
+
         d = r2 - r1
+        d_sq = float(np.dot(d, d))
+        if d_sq <= 0.0:
+            return bool(np.linalg.norm(r1) >= earth_radius)
 
-        t_values = np.linspace(0, 1, 100)
-        points_along_line = r1[np.newaxis, :] + t_values[:, np.newaxis] * d[np.newaxis, :]
-        distances_to_center = np.linalg.norm(points_along_line, axis=1)
+        # Exact closest point on the finite chord; sampling can miss a narrow grazing intersection.
+        t_closest = float(np.clip(-np.dot(r1, d) / d_sq, 0.0, 1.0))
+        closest_distance = np.linalg.norm(r1 + t_closest * d)
+        return bool(closest_distance >= earth_radius)
 
-        return not np.any(distances_to_center < earth_radius)
+    @staticmethod
+    def _check_los_ellipsoid(
+        r1,
+        r2,
+        a=Constants.RADIUS_EARTH_EQUAT,
+        b=Constants.RADIUS_EARTH_EQUAT * (1.0 - Constants.EARTH_FLATTENING),
+    ) -> bool:
+        """Return whether a finite chord clears an axisymmetric ellipsoid.
+
+        Scaling ``(x, y, z)`` by ``(a, a, b)`` maps the ellipsoid to the unit sphere, so closest
+        approach on the finite scaled segment is an exact occultation test.
+        """
+        r1 = np.asarray(r1, dtype=float).reshape(-1)
+        r2 = np.asarray(r2, dtype=float).reshape(-1)
+        if r1.shape != (3,) or r2.shape != (3,):
+            return False
+        if not (np.isfinite(r1).all() and np.isfinite(r2).all() and np.isfinite(a) and np.isfinite(b) and a > 0.0 and b > 0.0):
+            return False
+
+        scale = np.array([a, a, b], dtype=float)
+        p1 = r1 / scale
+        p2 = r2 / scale
+        segment = p2 - p1
+        segment_norm_sq = float(np.dot(segment, segment))
+        if segment_norm_sq <= 0.0:
+            return bool(np.linalg.norm(p1) >= 1.0)
+
+        t_closest = float(np.clip(-np.dot(p1, segment) / segment_norm_sq, 0.0, 1.0))
+        closest_point = p1 + t_closest * segment
+        return bool(np.linalg.norm(closest_point) >= 1.0)
 
     @staticmethod
     def _is_valid_earth_model(earth_model) -> bool:

@@ -78,6 +78,34 @@ class TestCheckLosSatellites:
         gnss = np.array([-R_GNSS, 0.0, 0.0])
         assert Reflection._check_los_satellites(leo, gnss) is False
 
+    def test_narrow_chord_intersection_is_not_missed(self):
+        # A short chord centred just below the spherical surface. Sparse point sampling can miss this
+        # intersection when both endpoints are outside; the analytic closest-point test cannot.
+        radius = Constants.R_EARTH_MEAN
+        x = radius - 1.0
+        half_chord = 10_000.0
+        r1 = np.array([x, -half_chord, 0.0])
+        r2 = np.array([x, half_chord, 0.0])
+        assert np.linalg.norm(r1) > radius and np.linalg.norm(r2) > radius
+        assert Reflection._check_los_satellites(r1, r2, earth_radius=radius) is False
+
+    def test_ellipsoid_los_accepts_polar_chord_that_equatorial_sphere_rejects(self):
+        a = Constants.RADIUS_EARTH_EQUAT
+        b = a * (1.0 - Constants.EARTH_FLATTENING)
+        r1 = np.array([-1.0e6, 0.0, b + 1.0e3])
+        r2 = np.array([1.0e6, 0.0, b + 1.0e3])
+
+        assert not Reflection._check_los_satellites(r1, r2, earth_radius=a)
+        assert Reflection._check_los_ellipsoid(r1, r2, a=a, b=b)
+
+    def test_ellipsoid_los_rejects_chord_below_polar_surface(self):
+        a = Constants.RADIUS_EARTH_EQUAT
+        b = a * (1.0 - Constants.EARTH_FLATTENING)
+        r1 = np.array([-1.0e6, 0.0, b - 1.0e3])
+        r2 = np.array([1.0e6, 0.0, b - 1.0e3])
+
+        assert not Reflection._check_los_ellipsoid(r1, r2, a=a, b=b)
+
 
 # --------------------------------------------------------------------------- #
 # _prevent_longitude_wraparound                                               #
@@ -231,6 +259,14 @@ class TestGetReflectionPointFf:
         assert not np.any(np.isnan(N))
         assert N[1] == pytest.approx(0.0, abs=1.0)  # 1 m tolerance
 
+    def test_collinear_same_side_geometry_returns_nadir_point(self, refl):
+        leo = np.array([R_LEO, 0.0, 0.0])
+        gnss = np.array([R_GNSS, 0.0, 0.0])
+        point, theta_in, theta_out = refl.get_reflection_point_ff(gnss, leo)
+        np.testing.assert_allclose(point, [Constants.R_EARTH_MEAN, 0.0, 0.0], atol=1e-5)
+        assert theta_in == pytest.approx(0.0, abs=1e-10)
+        assert theta_out == pytest.approx(0.0, abs=1e-10)
+
 
 # --------------------------------------------------------------------------- #
 # _find_specular_point_ellipse_ecef (elliptical solver)                       #
@@ -254,7 +290,20 @@ class TestFindSpecularPointEllipseEcef:
         assert not np.isnan(t2)
         assert not np.isnan(t3)
         # The two angles (measured from the local ellipsoid normal) should match.
-        assert t2 == pytest.approx(t3, abs=1e-3)
+        assert t2 == pytest.approx(t3, abs=1e-8)
+
+    def test_off_equator_solution_has_machine_scale_specular_residual(self, refl):
+        a = Constants.RADIUS_EARTH_EQUAT
+        tx_dir = np.array([0.75, 0.45, 0.48])
+        tx_dir /= np.linalg.norm(tx_dir)
+        rx_dir = np.array([0.92, 0.18, 0.35])
+        rx_dir /= np.linalg.norm(rx_dir)
+        tx = (a + 20_200e3) * tx_dir
+        rx = (a + 700e3) * rx_dir
+
+        point, theta_in, theta_out = refl._find_specular_point_ellipse_ecef(tx, rx)
+        assert np.isfinite(point).all()
+        assert theta_in == pytest.approx(theta_out, abs=1e-8)
 
 
 # --------------------------------------------------------------------------- #

@@ -283,17 +283,7 @@ class ReadWriteSatData:
 
     @staticmethod
     def generate_tle_data_string(satellite) -> str:
-        """
-        =========================================================================================================
-        Generate TLE based on satellite orbit_n data.
-
-        INPUTS:
-            satellite: [Satellite]   Satellite with an orbit_n attribute set
-
-        OUTPUT:
-            tle_string: [str | None]   Three-line TLE string, or None if information is missing
-        =========================================================================================================
-        """
+        """Build a three-line TLE string from a satellite's ``orbit_n`` (``None`` if information is missing)."""
         if satellite.orbit_n is None:
             warnings.warn("Orbit was not specified when this Satellite was created. Insufficient information to generate a TLE.", stacklevel=2)
             return None

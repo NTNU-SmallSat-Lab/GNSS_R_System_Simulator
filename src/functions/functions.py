@@ -7,6 +7,16 @@ import pymap3d
 from shapely.geometry import Point, Polygon
 from skyfield.api import load, wgs84
 
+# Astropy normally refreshes Earth-orientation data online. Allow its bundled/pinned predictive table
+# to be used when a run is offline instead of raising solely because that table is more than 30 days old.
+# Accuracy then depends on the installed astropy-iers-data version; the validation guide calls this out.
+try:
+    from astropy.utils import iers
+
+    iers.conf.auto_max_age = None
+except ImportError:
+    pass
+
 from functions.rotations import eci_to_antenna_rotation_from_state
 from object_definitions.Constants_def import Constants
 from object_definitions.SatConstellation_def import SatelliteConstellation
@@ -404,7 +414,7 @@ def rotation_matrix_from_vectors(v1, v2):
 
 
 
-def compute_visible_times_and_resample_ship(moving_target_detection, sat_const, elev_min=40):
+def compute_visible_times_and_resample_ship(moving_target_detection, sat_const, elev_min=0.0):
     """
     =========================================================================================================
     Compute times when at least one satellite is visible from the moving ship and resample the ship
@@ -413,7 +423,8 @@ def compute_visible_times_and_resample_ship(moving_target_detection, sat_const, 
     INPUTS:
         moving_target_detection: [MovingTargetDetection]   Object containing the ship trajectory
         sat_const:               [SatelliteConstellation]  Satellite constellation (Skyfield objects)
-        elev_min:                [float]                   Minimum elevation angle for visibility [deg]
+        elev_min:                [float]                   Minimum geometric elevation angle for visibility [deg]
+                                                          (default 0, the physical horizon)
 
     OUTPUT:
         result: [tuple]   (resampled_ship_positions, sat_visible_times)

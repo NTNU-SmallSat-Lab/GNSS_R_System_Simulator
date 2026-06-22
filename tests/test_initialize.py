@@ -378,13 +378,13 @@ class TestOptionalSections:
             """\
             [COVERAGE]
             grid_size_meters = 30000
-            shapefile_path = data/foo.shp
+            shapefile_path = DATA/foo.shp
             """
         )
         path = write_config(tmp_path, minimal_config_body(extra_sections=coverage))
         _, settings = initialize(path)
         assert settings["grid_size_m"] == 30000
-        assert settings["shapefile_path"] == "data/foo.shp"
+        assert settings["shapefile_path"] == "DATA/foo.shp"
 
     def test_no_moving_target_section_yields_none(self, tmp_path):
         path = write_config(tmp_path, minimal_config_body())
@@ -682,6 +682,18 @@ class TestOptionalSections:
         with pytest.raises(ValueError, match="max_central_angle_deg"):
             initialize(path)
 
+    @pytest.mark.parametrize("value", ["0", "-1", "181", "nan"])
+    def test_reflection_section_out_of_range_central_angle_raises(self, tmp_path, value):
+        reflection = dedent(
+            f"""\
+            [REFLECTION]
+            max_central_angle_deg = {value}
+            """
+        )
+        path = write_config(tmp_path, minimal_config_body(reflection_section=reflection))
+        with pytest.raises(ValueError, match="max_central_angle_deg"):
+            initialize(path)
+
     def test_reflection_section_invalid_incidence_angle_raises(self, tmp_path):
         reflection = dedent(
             """\
@@ -693,6 +705,32 @@ class TestOptionalSections:
         )
         path = write_config(tmp_path, minimal_config_body(reflection_section=reflection))
         with pytest.raises(ValueError, match="max_incidence_angle_deg"):
+            initialize(path)
+
+    @pytest.mark.parametrize("value", ["0", "-1", "91", "nan"])
+    def test_reflection_section_out_of_range_incidence_angle_raises(self, tmp_path, value):
+        reflection = dedent(
+            f"""\
+            [REFLECTION]
+            reflection_type = backscatter
+            max_central_angle_deg = 80
+            max_incidence_angle_deg = {value}
+            """
+        )
+        path = write_config(tmp_path, minimal_config_body(reflection_section=reflection))
+        with pytest.raises(ValueError, match="max_incidence_angle_deg"):
+            initialize(path)
+
+    def test_invalid_reflection_type_raises(self, tmp_path):
+        reflection = dedent(
+            """\
+            [REFLECTION]
+            reflection_type = typo
+            max_central_angle_deg = 80
+            """
+        )
+        path = write_config(tmp_path, minimal_config_body(reflection_section=reflection))
+        with pytest.raises(ValueError, match="reflection_type"):
             initialize(path)
 
     def test_no_plot_section_defaults_bbox_buffer(self, tmp_path):

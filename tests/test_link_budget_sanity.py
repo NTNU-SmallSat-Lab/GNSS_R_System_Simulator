@@ -123,10 +123,9 @@ class TestSpecularReceivedPower:
         assert np.isfinite(pr_dbm)
 
     def test_specular_pr_bounded_across_incidence(self):
-        """Across 5..60 deg incidence, Pr stays within a few dB of typical CYGNSS-class values.
+        """Across 5..60 deg incidence, Pr remains finite with a bounded spread.
 
-        Pr is not monotonic in incidence: the glistening-zone area grows as sec^3(theta_i),
-        which can overcompensate for the longer slant ranges. We only assert a bounded spread.
+        This broad numerical sanity bound is not an instrument calibration.
         """
         pr_dbm = np.array([
             _specular_scenario(th, tx_eirp_dbw=27.0)["received_power_dbm"][0]
@@ -162,22 +161,21 @@ class TestBackscatterReceivedPower:
         assert pr_spec >= pr_back - 1.0
 
 
-class TestAbsoluteRange:
-    """CYGNSS-class envelope for the coherent + incoherent OceanTarget model with default sea state.
+class TestBroadReceivedPowerRange:
+    """Broad regression envelope for the coherent + incoherent model with default sea state.
 
     The coherent term collapses for any non-trivial sea state (kappa >> 1); the incoherent
-    glistening-zone term sets the absolute Pr around -120 to -150 dBm at GPS L1 / typical LEO
-    altitudes. Bounds intentionally widened by ~10 dB on each side to absorb future tuning of
-    the glistening-area formula without spurious failures.
+    glistening-zone term sets the result. These bounds catch unit/sign failures; they are not a
+    comparison with calibrated CYGNSS observations.
     """
 
     def test_gps_l1_specular_pr_within_envelope(self):
         pr_dbm = _specular_scenario(30.0, tx_eirp_dbw=27.0)["received_power_dbm"][0]
-        assert -160.0 < pr_dbm < -110.0, f"Pr {pr_dbm:.2f} dBm outside CYGNSS-class envelope"
+        assert -160.0 < pr_dbm < -110.0, f"Pr {pr_dbm:.2f} dBm outside broad sanity envelope"
 
     def test_gps_l1_backscatter_pr_within_envelope(self):
         pr_dbm = _backscatter_scenario(0.0, tx_eirp_dbw=27.0)["received_power_dbm"][0]
-        assert -160.0 < pr_dbm < -110.0, f"Pr {pr_dbm:.2f} dBm outside CYGNSS-class envelope"
+        assert -160.0 < pr_dbm < -110.0, f"Pr {pr_dbm:.2f} dBm outside broad sanity envelope"
 
 
 class TestObliqueBackscatter:

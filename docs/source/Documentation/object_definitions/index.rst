@@ -1,5 +1,5 @@
-Simulation objects (``SRC/object_definitions``)
-===============================================
+Simulation objects
+==================
 
 The classes that make up a simulation run:
 
@@ -14,7 +14,16 @@ The classes that make up a simulation run:
    :maxdepth: 1
    :caption: Module pages
 
+   satellites
+   antenna
+   reflection
+   backscatter_point
+   ocean_target
+   ship_target
+   moving_target_detection
+   coverage
    ship_trajectory
+   support
 
 .. note::
 

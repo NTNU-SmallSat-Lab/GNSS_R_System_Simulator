@@ -256,7 +256,7 @@ class TestOceanTargetComputeRcs:
         np.testing.assert_allclose(result.info["slope_crosswind"], [0.0], atol=1e-12)
 
     def test_coherent_dominates_for_calm_low_freq_smooth_surface(self):
-        # Tiny wave height (sigma_h = 1 mm) at L1 keeps the Rayleigh attenuation kappa small,
+        # Tiny significant wave height (H_s = 1 mm, sigma_h ~= H_s/4) at L1 keeps kappa small,
         # so the coherent term survives. The incoherent term still exists but is comparable
         # to or smaller than coherent at very low wind.
         geom = _mirror_geometry(theta_deg=10.0)
@@ -265,7 +265,7 @@ class TestOceanTargetComputeRcs:
         assert result.info["rayleigh_roughness_kappa"][0] < 1.0    # Rayleigh-smooth regime
 
     def test_coherent_collapses_for_rough_sea(self):
-        # At a typical sea state (sigma_h = 1.5 m) the Rayleigh attenuation kills the coherent term.
+        # At H_s = 1.5 m (sigma_h ~= 0.375 m) the Rayleigh attenuation kills the coherent term.
         geom = _mirror_geometry(theta_deg=10.0)
         result = _default_ocean().compute_rcs(geom, 0.19)
         coh = result.info["rcs_coherent_m2"][0]
@@ -279,12 +279,17 @@ class TestOceanTargetComputeRcs:
         a_rough = OceanTarget(1.0, 15.0, 0.0, 15.0, 35.0).compute_rcs(geom, 0.19).info["glistening_area_m2"][0]
         assert a_rough > a_calm
 
-    def test_forward_nrcs_matches_cygnss_nbrcs_envelope(self):
-        # External anchor, forward regime: the GO NRCS is RHCP->LHCP -- the same polarization and
-        # quantity CYGNSS reports as NBRCS. At specular / 7 m/s the model gives ~ +12 dB, inside the
-        # CYGNSS forward NBRCS envelope (~ +5..+20 dB at moderate wind; higher at low wind, lower at
-        # high wind). Ref: Ruf & Balasubramaniam, "Development of the CYGNSS Geophysical Model
-        # Function for Wind Speed", IEEE JSTARS 11(1), 2018, Fig. 3.
+    def test_uncapped_specular_go_integral_matches_flat_mirror_rcs(self):
+        # At the specular peak, sigma0_peak * A_eff must integrate the normalized slope PDF:
+        # A_eff = 4 R_red^2 / P(0), hence sigma_incoherent = 4 pi |R_RL|^2 R_red^2.
+        geom = _mirror_geometry(theta_deg=20.0)
+        result = _default_ocean().compute_rcs(geom, 0.19)
+        reduced_range = geom.range_tx_m[0] * geom.range_rx_m[0] / (geom.range_tx_m[0] + geom.range_rx_m[0])
+        expected = 4.0 * np.pi * result.info["fresnel_reflectivity_RL_sq"][0] * reduced_range**2
+        np.testing.assert_allclose(result.info["rcs_incoherent_m2"][0], expected, rtol=1e-12)
+
+    def test_forward_nrcs_stays_in_broad_gnss_r_envelope(self):
+        # Broad plausibility/regression interval, not a calibrated CYGNSS comparison.
         ocean = OceanTarget(1.5, 7.0, 270.0, 15.0, 35.0)
         nrcs_db = 10.0 * np.log10(ocean.compute_rcs(_mirror_geometry(theta_deg=30.0), 0.19).info["nrcs"][0])
         assert 5.0 < nrcs_db < 20.0, f"forward NRCS {nrcs_db:.2f} dB outside CYGNSS NBRCS envelope"
@@ -345,6 +350,10 @@ class TestOceanTargetComputeRcs:
         kappa_calm = OceanTarget(0.1, 5.0, 0.0, 15.0, 35.0).compute_rcs(geom, 0.19).info["rayleigh_roughness_kappa"]
         kappa_storm = OceanTarget(5.0, 5.0, 0.0, 15.0, 35.0).compute_rcs(geom, 0.19).info["rayleigh_roughness_kappa"]
         assert kappa_storm[0] > kappa_calm[0]
+
+    def test_significant_wave_height_is_converted_to_rms_height(self):
+        result = OceanTarget(2.0, 5.0, 0.0, 15.0, 35.0).compute_rcs(_mirror_geometry(10.0), 0.19)
+        np.testing.assert_allclose(result.info["rms_surface_height_m"], [0.5])
 
     def test_bragg_zero_at_forward_specular(self):
         # Forward specular (bistatic = 2 theta) is outside the backscatter gate: Bragg must be exactly
@@ -503,6 +512,26 @@ class TestComputeReflectionLinkBudgetIntegration:
             target=FixedRcs(100.0),
         )
         np.testing.assert_allclose(lb_b["received_power_w"] / lb_a["received_power_w"], [2.0], rtol=1e-12)
+
+    def test_receiver_footprint_projection_uses_scattering_angle(self):
+        tx, rx, rx_vel, refl, _ = _backscatter_patch_inputs(theta_deg=30.0)
+        antenna = _ConePatchAntenna(gain_dbi=10.0)
+        lb = compute_reflection_link_budget(
+            tx_positions_eci=tx,
+            rx_positions_eci=rx,
+            rx_velocities_eci=rx_vel,
+            reflection_positions_eci=refl,
+            # Deliberately different: this caller override must not control receiver-side projection.
+            incidence_deg=np.array([5.0]),
+            antenna=antenna,
+            frequency_hz=1.57542e9,
+            tx_eirp_dbw=27.0,
+            settings=link_budget_settings(),
+            target=_default_ocean(),
+        )
+        gain_linear = 10.0
+        expected = 4.0 * np.pi / gain_linear * lb["surface_to_rx_range_m"][0] ** 2 / np.cos(np.radians(30.0))
+        np.testing.assert_allclose(lb["target_info"]["illuminated_area_m2"], [expected], rtol=1e-12)
 
 
 class TestOceanPatchIntegration:

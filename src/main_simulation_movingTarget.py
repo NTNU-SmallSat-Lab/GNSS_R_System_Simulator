@@ -101,7 +101,7 @@ def run_moving_target_detection(settings: dict):
 
     # Optimize: only compute and propagate for visible windows
     ship_resampled, sat_visible_times = fn.compute_visible_times_and_resample_ship(
-        mtd, sat_const, elev_min=40
+        mtd, sat_const, elev_min=0.0
     )
     _ = fn.propagate_only_visible_satellites(
         sat_const,

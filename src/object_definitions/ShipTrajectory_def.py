@@ -165,7 +165,7 @@ class ShipTrajectory:
             self.create_shapefile(trajectory_type="waypoints")
 
     def _cache_matches_inputs(self, metadata_path: str) -> bool:
-        """Return True iff cached metadata matches current ctor inputs (positions, start_time, speed, interval)."""
+        """Return True iff cached metadata matches every input that affects the route or sampling."""
         try:
             with open(metadata_path) as f:
                 cached = json.load(f)
@@ -186,6 +186,19 @@ class ShipTrajectory:
 
         if cached.get("time_interval_minutes") != self.interval_minutes:
             mismatches.append(f"time_interval_minutes: cached={cached.get('time_interval_minutes')} ini={self.interval_minutes}")
+
+        if cached.get("fast_method") != self.fast_method:
+            mismatches.append(f"fast_method: cached={cached.get('fast_method')} ini={self.fast_method}")
+
+        for key, current_value in (
+            ("mesh_connection_radius", self.mesh_connection_radius),
+            ("water_buffer", self.water_buffer),
+            ("grid_resolution", self.grid_resolution),
+            ("delta_m", self.delta_m),
+        ):
+            cached_value = cached.get(key)
+            if cached_value is None or not np.isclose(cached_value, current_value, rtol=1e-9):
+                mismatches.append(f"{key}: cached={cached_value} ini={current_value}")
 
         cached_start_str = cached.get("start_time")
         try:
@@ -493,22 +506,37 @@ class ShipTrajectory:
         vector_x = nearest_boundary.x - point_geom.x
         vector_y = nearest_boundary.y - point_geom.y
 
-        # Normalize and extend
-        length = sqrt(vector_x**2 + vector_y**2)
-        if length > 0:
-            norm_x = vector_x / length
-            norm_y = vector_y / length
+        # Convert the local lon/lat direction to metres before normalizing. The
+        # polygon coordinates are degrees, whereas ``water_buffer`` is metres.
+        boundary_lat = nearest_boundary.y
+        metres_per_degree_lon = 1.0 / fn.delta_lon_from_distance(boundary_lat, 1.0)
+        metres_per_degree_lat = 1.0 / fn.delta_lat_from_distance(boundary_lat, 1.0)
+        east_m = vector_x * metres_per_degree_lon
+        north_m = vector_y * metres_per_degree_lat
+        length_m = sqrt(east_m**2 + north_m**2)
+        if length_m > 0:
+            east_buffer_m = self.water_buffer * east_m / length_m
+            north_buffer_m = self.water_buffer * north_m / length_m
 
-            # Move "self.water_buffer" beyond the coastline
-            safe_x = nearest_boundary.x + norm_x * self.water_buffer
-            safe_y = nearest_boundary.y + norm_y * self.water_buffer
+            safe_x = nearest_boundary.x + fn.delta_lon_from_distance(boundary_lat, east_buffer_m)
+            safe_y = nearest_boundary.y + fn.delta_lat_from_distance(boundary_lat, north_buffer_m)
 
             return (safe_y, safe_x)  # Back to (lat, lon) order
 
-        return (
-            point[0] + self.water_buffer,
-            point[1],
-        )  # Fallback to original point (this should not happen)
+        # A point exactly on the polygon boundary has no inward direction.
+        # Search a ring for a water-side candidate without mixing linear and
+        # angular units.
+        for bearing_rad in np.linspace(0.0, 2.0 * np.pi, 32, endpoint=False):
+            north_m = self.water_buffer * np.cos(bearing_rad)
+            east_m = self.water_buffer * np.sin(bearing_rad)
+            candidate = (
+                boundary_lat + fn.delta_lat_from_distance(boundary_lat, north_m),
+                nearest_boundary.x + fn.delta_lon_from_distance(boundary_lat, east_m),
+            )
+            if self.ocean_polygons.contains(Point(candidate[1], candidate[0])):
+                return candidate
+
+        raise ValueError(f"Could not find a water point {self.water_buffer / 1e3:.3g} km from coastline near {point}")
 
     def plan_route(self, save_graph: bool = False) -> None:
         """Plan a land-avoiding route over the navigation mesh.

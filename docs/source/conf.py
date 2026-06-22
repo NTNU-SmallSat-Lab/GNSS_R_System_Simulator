@@ -46,6 +46,17 @@ source_suffix = {
     ".md": "markdown",
 }
 
+# Number and display every displayed equation across all module pages, even those without an explicit
+# :label:. Keeps the physics/math front-and-centre and referenceable on every page.
+math_number_all = True
+numfig = True
+# Caption labels read "Fig. 6:" / "Table 6:" (colon after the number). numref cross-references keep the
+# plain "Table 6" form via an explicit format given at the reference site.
+numfig_format = {
+    "figure": "Fig. %s:",
+    "table": "Table %s:",
+}
+
 # -- Autodoc -----------------------------------------------------------------
 
 # Heavy, GUI-bound, or data-downloading leaf dependencies are mocked so the doc build does not need
@@ -80,3 +91,20 @@ intersphinx_mapping = {
 
 html_theme = "furo"
 html_title = "GNSS-R System Simulator"
+html_static_path = ["_static"]
+html_css_files = ["custom.css"]
+
+# -- Autodoc tweaks ----------------------------------------------------------
+
+from docutils import nodes  # noqa: E402
+
+
+def _strip_object_bases(app, doctree):
+    """Drop the noise-only "Bases: object" line; keep meaningful bases (Target, ABC, ...)."""
+    for para in list(doctree.findall(nodes.paragraph)):
+        if para.astext().strip() == "Bases: object":
+            para.parent.remove(para)
+
+
+def setup(app):
+    app.connect("doctree-read", _strip_object_bases)

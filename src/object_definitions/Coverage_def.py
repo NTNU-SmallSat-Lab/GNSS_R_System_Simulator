@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.spatial import cKDTree
 from scipy.spatial.distance import cdist
-from shapely.geometry import LineString, Polygon
+from shapely.geometry import LineString, Point, Polygon
 from tqdm import tqdm
 
 import functions.functions as fn
@@ -21,6 +21,37 @@ from object_definitions.Static_classes_def import Plotting
 
 
 class Coverage:
+    """Count contiguous specular-track visits per grid cell over a region (the area-coverage mode).
+
+    Builds (or loads) a gridded version of an input shapefile, then -- per GNSS constellation -- connects
+    each contiguous run of valid samples into a track and counts one visit per intersected cell and run.
+    Coverage is a **geometric** metric: the band's frequency and EIRP only feed the antenna-field-of-view
+    finiteness gate, not a detection threshold, so the result is per constellation, not per band.
+
+    Parameters
+    ----------
+    sat_const : SatelliteConstellation
+        LEO receiver constellation.
+    gnss_const : dict
+        ``{name: SatelliteConstellation}`` of GNSS transmitter constellations.
+    shapefile : str
+        Path to the region shapefile (the grid is generated alongside it).
+    grid_size_deg : float or None, optional
+        Cell size in degrees (equiangular grid). Mutually exclusive with ``grid_size_m``.
+    grid_size_m : float or None, optional
+        Cell size in metres (equidistant grid).
+    overwrite_shapefile : bool, optional
+        Regenerate the gridded shapefile even if it exists.
+    earth_model : {"spherical", "elliptical"}, optional
+        Surface model for the reflection geometry.
+    link_budget_settings : dict or BistaticLinkBudgetSettings or None, optional
+        Rx-system link-budget settings (used only for the finiteness gate).
+    max_central_angle_deg : float, keyword-only
+        Maximum Tx-Rx central angle [deg].
+    selected_signals : list of dict or None, keyword-only
+        Validated INI band plan; deduplicated to one entry per constellation.
+    """
+
     def __init__(
         self,
         sat_const,
@@ -35,26 +66,7 @@ class Coverage:
         max_central_angle_deg,
         selected_signals: list[dict] | None = None,
     ) -> None:
-        """
-        =========================================================================================================
-        Coverage class for storing coverage information over a grid defined by a shapefile.
-
-        Initializes the coverage vector and computes the coverage based on the provided bounding box
-        and reflection vectors.
-
-        INPUTS:
-            sat_const:             [SatelliteConstellation]   LEO Rx satellite constellation
-            gnss_const:            [dict]                     {name: SatelliteConstellation} of GNSS Tx constellations
-            shapefile:             [str]                      Path to the shapefile defining the grid
-            grid_size_deg:         [float | None]             Grid cell size in degrees (equiangular grid)
-            grid_size_m:           [float | None]             Grid cell size in meters (equidistant grid)
-            overwrite_shapefile:   [bool]                     Regenerate the gridded shapefile if it exists
-            earth_model:           [str]                      "spherical" or "elliptical"
-            link_budget_settings:  [dict | BistaticLinkBudgetSettings | None]   Link budget settings
-            max_central_angle_deg: [float]                    Max Tx-Rx central angle [deg] (required)
-            selected_signals:      [list[dict] | None]        Validated [{band, constellation, freq_hz, eirp_dbw}] signal plan from the INI band selection
-        =========================================================================================================
-        """
+        """Build (or load) the gridded shapefile and prepare the per-constellation coverage vectors."""
         # Path to the input shapefile (outline of the area of interest)
         self.shp_input_file_path = os.path.join(Constants.base_dir, shapefile)
         # GeoDataFrame for the input shapefile (outline of the area of interest)
@@ -183,32 +195,24 @@ class Coverage:
                 refl_clusters = self._get_reflection_clusters(refl_vector[i], validity_mask)
                 for cluster in refl_clusters:
                     intersecting_rectangles = []
-                    # Skip refl_clusters with no valid data
-                    if len(cluster) <= 1:  # Not validity_mask[cluster].any() &
+                    if len(cluster) == 0:
                         continue
 
-                    cluster = cluster[1::]
-                    if len(cluster) <= 1:  # not validity_mask[cluster].any() &
-                        continue
                     # Extract valid times and positions for this cluster
                     valid_position = ref_points_in_box[cluster]
-                    # print(valid_position)
-                    line = LineString(zip(valid_position[:, 1], valid_position[:, 0], strict=False))
+                    lon_lat = valid_position[:, [1, 0]]
+                    track_geometry = Point(lon_lat[0]) if len(cluster) == 1 else LineString(lon_lat)
                     for idx, polygon in self.grid_gdf.iterrows():
-                        # Check if the polygon intersects with the line
-                        # print(polygon)
-                        intersection = polygon["geometry"].intersection(line)
+                        intersection = polygon["geometry"].intersection(track_geometry)
                         if not intersection.is_empty:
                             intersecting_rectangles.append(idx)
 
                     if len(intersecting_rectangles) > 0:
                         # Save results
-                        valid_position_clean = valid_position[~np.isnan(valid_position).any(axis=1)]
-                        valid_positions_flipped = valid_position_clean[:, [1, 0]]
                         with warnings.catch_warnings():  # TODO: This could be improved! resp. better documented
                             warnings.simplefilter("ignore", UserWarning)
                             centroids_array = np.array([(centroid.x, centroid.y) for centroid in self.grid_gdf.loc[intersecting_rectangles].centroid])
-                        distances = cdist(centroids_array, valid_positions_flipped)
+                        distances = cdist(centroids_array, lon_lat)
                         nearest_indices = np.argmin(distances, axis=1)
                         times_at_nearest_points = [times[k] for k in cluster[nearest_indices]]
                         angle_at_nearest_points = refl_vector[i].refl_ang_vec[cluster[nearest_indices]]
@@ -732,7 +736,14 @@ class Coverage:
         """
         refl_LL_vec = np.array(reflection_obj.refl_LL_vec)
 
-        if not np.isnan(refl_LL_vec).all():
+        finite = np.isfinite(refl_LL_vec).all(axis=1)
+        if finite.any():
+            if bounding_box is None:
+                validity_mask = finite
+                refl_in_bounding_box = refl_LL_vec.copy()
+                refl_in_bounding_box[~validity_mask] = np.nan
+                return validity_mask, refl_in_bounding_box
+
             min_lon, max_lon, min_lat, max_lat = bounding_box
 
             # Create boolean masks for latitude and longitude
@@ -740,14 +751,14 @@ class Coverage:
             lon_mask = (min_lon <= refl_LL_vec[:, 1]) & (refl_LL_vec[:, 1] <= max_lon)
 
             # Combine masks
-            validity_mask = lat_mask & lon_mask
+            validity_mask = finite & lat_mask & lon_mask
 
             # Create refl_in_bounding_box with NaN for invalid points
             refl_in_bounding_box = refl_LL_vec.copy()
             refl_in_bounding_box[~validity_mask] = np.nan
         else:
             # There are only NaN values in the refl_LL_vec
-            validity_mask = np.zeros(len(reflection_obj.refl_LL_vec))
+            validity_mask = np.zeros(len(reflection_obj.refl_LL_vec), dtype=bool)
             refl_in_bounding_box = np.full_like(reflection_obj.refl_LL_vec, np.nan)
 
         return validity_mask, refl_in_bounding_box
@@ -766,9 +777,15 @@ class Coverage:
             clusters: [list]   List of arrays of indices corresponding to contiguous valid points
         =========================================================================================================
         """
-        validity_mask_bool = validity_mask.astype(bool)  # Convert to boolean mask
-        clusters = np.split(np.arange(len(reflection_obj.refl_LL_vec)), np.where(~validity_mask_bool)[0])  # Split indices by NaN gaps
-        return clusters
+        validity_mask_bool = np.asarray(validity_mask, dtype=bool)
+        if validity_mask_bool.shape != (len(reflection_obj.refl_LL_vec),):
+            raise ValueError("validity_mask length must match reflection_obj.refl_LL_vec")
+
+        valid_indices = np.flatnonzero(validity_mask_bool)
+        if valid_indices.size == 0:
+            return []
+        split_points = np.where(np.diff(valid_indices) > 1)[0] + 1
+        return list(np.split(valid_indices, split_points))
 
 
 @dataclass

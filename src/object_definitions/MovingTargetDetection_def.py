@@ -34,6 +34,55 @@ logger = logging.getLogger(__name__)
 
 
 class MovingTargetDetection:
+    """Find when GNSS-R reflections fall on a moving target and score detectability, per band.
+
+    Drives the moving-target mode. It walks the target trajectory, finds the reflections (specular or
+    backscatter) that land on or near the target within a time tolerance, and -- per band -- evaluates the
+    received power for the ocean, the ship, and the thermal noise to score detectability (SCR and SINR in
+    backscatter mode, or a forward-shadow change in power in specular mode). Detection events and plots are
+    produced per band.
+
+    Parameters
+    ----------
+    sat_const : SatelliteConstellation
+        LEO receiver constellation.
+    gnss_const : dict
+        ``{name: SatelliteConstellation}`` of GNSS transmitter constellations.
+    moving_target_object : ShipTrajectory
+        Moving target with a populated trajectory shapefile.
+    antenna_obj : RxAntenna
+        Receiver antenna.
+    create_shapefile_for_visualization : bool, optional
+        Also write a visualization shapefile (default False).
+    deltaT : int, optional
+        Time tolerance [s] for matching a reflection to a target position (default 60).
+    earth_model : {"spherical", "elliptical"}, optional
+        Surface model.
+    reflection_mode : {"specular", "backscatter"}, optional
+        Forward mirror point or backscatter BRP.
+    link_budget_settings : dict or BistaticLinkBudgetSettings or None, optional
+        Rx-system link-budget settings.
+    bbox_buffer_deg : float, optional
+        Padding [deg] around the trajectory bounding box for plots (default 2.0).
+    max_central_angle_deg : float, keyword-only
+        Maximum Tx-Rx central angle [deg].
+    max_incidence_angle_deg : float or None, keyword-only
+        Maximum BRP incidence angle [deg]; required for backscatter, may be None for specular.
+    ship_dimensions : dict or None, keyword-only
+        ``{length_m, beam_m, freeboard_m}``; enables the ship-RCS contribution when set.
+    selected_signals : list of dict or None, keyword-only
+        Validated ``[{band, constellation, freq_hz, eirp_dbw, chip_rate_hz}]`` plan from the INI bands.
+
+    Attributes
+    ----------
+    bounding_box : tuple
+        ``(min_lon, max_lon, min_lat, max_lat)`` of the trajectory.
+    signals_per_constellation : dict
+        Per-constellation list of band signals (frequency, EIRP, chip rate).
+    target_detect_dict : dict
+        Per-constellation detection accumulators.
+    """
+
     def __init__(
         self,
         sat_const,
@@ -52,39 +101,7 @@ class MovingTargetDetection:
         ship_dimensions: dict | None = None,
         selected_signals: list[dict] | None = None,
     ) -> None:
-        """
-        =========================================================================================================
-        MovingTargetDetection class:
-            - Determine when reflection points (specular or backscatter) intersect a moving target's
-              trajectory, and accumulate per-time-step detection events.
-
-            INPUTS:
-                sat_const:                          [SatelliteConstellation]   LEO Rx satellite constellation
-                gnss_const:                         [dict]                     {name: SatelliteConstellation} of GNSS Tx constellations
-                moving_target_object:               [ShipTrajectory]           Moving target with a populated shapefile path
-                antenna_obj:                        [RxAntenna]                Receiver antenna
-                create_shapefile_for_visualization: [bool]                     Generate visualization shapefile (default: False)
-                deltaT:                             [int]                      Time tolerance [s] for matching reflections (default: 60)
-                earth_model:                        [str]                      "spherical" or "elliptical"
-                reflection_mode:                    [str]                      "specular" or "backscatter"
-                link_budget_settings:               [dict | BistaticLinkBudgetSettings | None]   Link budget settings
-                bbox_buffer_deg:                    [float]                    Padding in degrees added around the trajectory bounding box when rendering detection plots (default: 2.0)
-                max_central_angle_deg:              [float]                    Max Tx-Rx central angle [deg] (required)
-                max_incidence_angle_deg:            [float | None]             Max BRP incidence angle [deg]; required when reflection_mode = "backscatter", may be None for "specular"
-                ship_dimensions:                    [dict | None]              {length_m, beam_m, freeboard_m}; enables ship-RCS contribution at detection events when set
-                selected_signals:                   [list[dict] | None]        Validated [{band, constellation, freq_hz, eirp_dbw}] signal plan from the INI band selection
-
-            ATTRIBUTES:
-                moving_target_object:        [ShipTrajectory]   Moving target object
-                gdf_time_series:             [gpd.GeoDataFrame] GeoDataFrame for the input time-series shapefile
-                bounding_box:                [tuple]            (min_lon, max_lon, min_lat, max_lat)
-                reflection_dict_timeSorted:  [dict]             Reflection points indexed by time, per GNSS constellation
-                target_detect_dict:          [dict]             Per-constellation detection accumulators
-                sat_antenna:                 [RxAntenna]        Receiver antenna
-                sat_constellation:           [SatelliteConstellation]   LEO constellation
-                gnss_constellation:          [dict]             GNSS constellations
-        =========================================================================================================
-        """
+        """Build the detector, validate the band plan, and prepare the per-constellation accumulators."""
         if isinstance(moving_target_object, ShipTrajectory):
             self.moving_target_object = moving_target_object
             if moving_target_object.shapefile_path["time_series"] is None:
@@ -525,6 +542,7 @@ class MovingTargetDetection:
                                     possible_target_detection.snr_ocean_rf_db = snr_ocean_rf_db
                                     possible_target_detection.noise_power_w = noise_power_w
                                     possible_target_detection.detection_sinr_threshold_db = self.link_budget_settings.detection_sinr_threshold_db
+                                    possible_target_detection.processing_gain_linear = lb.coherent_processing_gain_linear(self.link_budget_settings)
 
                                     # Ship backscatter SCR/SINR is a backscatter-mode metric: it divides the ship's
                                     # R_t^2 R_r^2 backscatter Pr by the ocean clutter Pr. In specular (forward-scatter)
@@ -599,7 +617,12 @@ class MovingTargetDetection:
             return
 
         event.snr_total_rf_db = 10.0 * np.log10(event.pr_total_w / event.noise_power_w)
-        interference_plus_noise_w = event.pr_ocean_w + event.noise_power_w
+        # Coherent integration plus the sqrt(M) estimator-sensitivity approximation is expressed as an
+        # equivalent noise scale for thresholding. This is not the post-detection mean thermal power.
+        gain = event.processing_gain_linear if (event.processing_gain_linear and event.processing_gain_linear > 0.0) else 1.0
+        event.processing_gain_db = 10.0 * np.log10(gain)
+        event.noise_power_effective_w = event.noise_power_w / gain
+        interference_plus_noise_w = event.pr_ocean_w + event.noise_power_effective_w
         event.sinr_ship_db = 10.0 * np.log10(event.pr_ship_w / interference_plus_noise_w)
 
         if event.detection_sinr_threshold_db is None or not np.isfinite(event.detection_sinr_threshold_db):
@@ -885,7 +908,11 @@ class MovingTargetDetection:
         if event.pr_ocean_w is not None and np.isfinite(event.pr_ocean_w) and event.pr_ocean_w > 0.0:
             event.forward_delta_pr_fraction_db = 10.0 * np.log10(shadow / event.pr_ocean_w)
         if event.noise_power_w is not None and np.isfinite(event.noise_power_w) and event.noise_power_w > 0.0:
-            event.forward_delta_pr_over_noise_db = 10.0 * np.log10(shadow / event.noise_power_w)
+            # Compare the shadow against the same detection-equivalent noise scale as the SINR metric.
+            gain = event.processing_gain_linear if (event.processing_gain_linear and event.processing_gain_linear > 0.0) else 1.0
+            event.processing_gain_db = 10.0 * np.log10(gain)
+            event.noise_power_effective_w = event.noise_power_w / gain
+            event.forward_delta_pr_over_noise_db = 10.0 * np.log10(shadow / event.noise_power_effective_w)
 
     def _compute_ocean_pr_at_event(
         self,
@@ -2223,7 +2250,10 @@ class MovingTargetDetectionStruct:
     pr_ship_w: float | None = None         # ship signal received power [W]
     pr_total_w: float | None = None        # pr_ocean_w + pr_ship_w [W]
     scr_db: float | None = None            # signal-to-clutter ratio = 10 log10(pr_ship / pr_ocean) [dB]
-    noise_power_w: float | None = None     # thermal noise power in configured noise bandwidth [W]
+    noise_power_w: float | None = None     # raw thermal noise power in configured noise bandwidth (k T B) [W]
+    processing_gain_linear: float = 1.0    # detection-equivalent sensitivity factor: B T_coh sqrt(M)
+    processing_gain_db: float | None = None           # 10 log10(processing_gain_linear) [dB]
+    noise_power_effective_w: float | None = None      # threshold-equivalent noise scale; not mean post-detection noise [W]
     snr_ocean_rf_db: float | None = None   # ocean clutter RF SNR = 10 log10(pr_ocean / noise) [dB]
     snr_ship_rf_db: float | None = None    # ship RF SNR = 10 log10(pr_ship / noise) [dB]
     snr_total_rf_db: float | None = None   # total RF SNR = 10 log10((pr_ocean + pr_ship) / noise) [dB]

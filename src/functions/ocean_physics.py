@@ -21,15 +21,22 @@ EPS_0 = 8.854187817e-12  # vacuum permittivity [F/m]
 def seawater_permittivity(frequency_hz, temperature_c, salinity_psu):
     """Complex relative permittivity of seawater (Klein and Swift, 1977).
 
-    INPUTS:
-        frequency_hz:   [scalar or array] Carrier frequency [Hz]
-        temperature_c:  [scalar]          Sea temperature [degC] (valid range ~ -2 to 30)
-        salinity_psu:   [scalar]          Salinity [practical salinity units / per mille] (valid ~ 0 to 40)
+    The imaginary part is negative under the ``exp(+j omega t)`` convention used here (both Debye
+    relaxation and ionic conductivity are losses, on the same negative-imaginary sign).
 
-    OUTPUT:
-        eps_r: [complex] Relative permittivity (real - j * imag). The imaginary part is negative
-                         under the exp(+j omega t) convention used here (both Debye relaxation and
-                         ionic conductivity are losses and add to the same negative-imaginary sign).
+    Parameters
+    ----------
+    frequency_hz : scalar or array
+        Carrier frequency [Hz].
+    temperature_c : scalar
+        Sea temperature [degC] (valid range about -2 to 30).
+    salinity_psu : scalar
+        Salinity [PSU] (valid range about 0 to 40).
+
+    Returns
+    -------
+    complex
+        Relative permittivity (real minus j*imag).
     """
     f_hz = np.asarray(frequency_hz, dtype=float)
     T = float(temperature_c)
@@ -64,12 +71,17 @@ def seawater_permittivity(frequency_hz, temperature_c, salinity_psu):
 def fresnel_coefficients(theta_inc_rad, eps_r):
     """Fresnel reflection coefficients for vertical (TM) and horizontal (TE) polarisation.
 
-    INPUTS:
-        theta_inc_rad: [scalar or array]  Incidence angle from surface normal [rad]
-        eps_r:         [complex]          Relative permittivity of the lower medium (seawater)
+    Parameters
+    ----------
+    theta_inc_rad : scalar or array
+        Incidence angle from the surface normal [rad].
+    eps_r : complex
+        Relative permittivity of the lower medium (seawater).
 
-    OUTPUT:
-        R_v, R_h: complex Fresnel coefficients for vertical and horizontal polarisation.
+    Returns
+    -------
+    tuple
+        ``(R_v, R_h)`` complex Fresnel coefficients for vertical and horizontal polarisation.
     """
     cos_t = np.cos(theta_inc_rad)                                       # cos(theta_inc)
     sin_sq = np.sin(theta_inc_rad) ** 2                                 # sin^2(theta_inc)
@@ -83,13 +95,21 @@ def fresnel_coefficients(theta_inc_rad, eps_r):
 def circular_pol_reflectivities(theta_inc_rad, eps_r):
     """Power reflectivities for circular polarisation at the sea surface.
 
-    Uses the Fresnel sign convention R_v(0) = -R_h(0) (Ulaby, Moore and Fung 1982);
-    consequently:
-        R_RL = 0.5 * (R_h - R_v)   cross-pol  (RHCP -> LHCP, dominant at low incidence)
-        R_RR = 0.5 * (R_h + R_v)   co-pol     (RHCP -> RHCP, grows toward grazing)
+    Uses the Fresnel sign convention ``R_v(0) = -R_h(0)`` (Ulaby, Moore and Fung 1982), so the cross-pol
+    amplitude is ``R_RL = 0.5*(R_h - R_v)`` (RHCP to LHCP, dominant at low incidence) and the co-pol
+    amplitude is ``R_RR = 0.5*(R_h + R_v)`` (RHCP to RHCP, grows toward grazing).
 
-    Returns:
-        R_RL_sq, R_RR_sq: |R_RL|^2 and |R_RR|^2 power reflectivities.
+    Parameters
+    ----------
+    theta_inc_rad : scalar or array
+        Incidence angle from the surface normal [rad].
+    eps_r : complex
+        Relative permittivity of seawater.
+
+    Returns
+    -------
+    tuple
+        ``(R_RL_sq, R_RR_sq)`` power reflectivities (the squared magnitudes).
     """
     R_v, R_h = fresnel_coefficients(theta_inc_rad, eps_r)
     R_RL = 0.5 * (R_h - R_v)                                            # RHCP -> LHCP (cross-pol)
@@ -100,9 +120,15 @@ def circular_pol_reflectivities(theta_inc_rad, eps_r):
 def cox_munk_slope_variances(wind_speed_m_s):
     """Cox-Munk (1954) clean-sea slope variances at 10 m wind speed.
 
-    Returns:
-        sigma_u_sq: upwind slope variance  [dimensionless]
-        sigma_c_sq: crosswind slope variance [dimensionless]
+    Parameters
+    ----------
+    wind_speed_m_s : scalar
+        Wind speed at 10 m [m/s].
+
+    Returns
+    -------
+    tuple
+        ``(sigma_u_sq, sigma_c_sq)`` upwind and crosswind slope variances [dimensionless].
     """
     U = float(wind_speed_m_s)
     sigma_u_sq = 3.16e-3 * U                                            # upwind variance:   3.16e-3 * U_10
@@ -113,12 +139,17 @@ def cox_munk_slope_variances(wind_speed_m_s):
 def cox_munk_slope_pdf(s_u, s_c, sigma_u_sq, sigma_c_sq):
     """2-D anisotropic Gaussian slope PDF in the wind-aligned (upwind, crosswind) frame.
 
-    INPUTS:
-        s_u, s_c:                [scalar or array] Slope components along upwind / crosswind axes
-        sigma_u_sq, sigma_c_sq:  [scalar]          Slope variances from cox_munk_slope_variances
+    Parameters
+    ----------
+    s_u, s_c : scalar or array
+        Slope components along the upwind / crosswind axes.
+    sigma_u_sq, sigma_c_sq : scalar
+        Slope variances from :func:`cox_munk_slope_variances`.
 
-    OUTPUT:
-        pdf: probability density at the given slope, same shape as s_u / s_c
+    Returns
+    -------
+    scalar or array
+        Probability density at the given slope.
     """
     if sigma_u_sq <= 0.0 or sigma_c_sq <= 0.0:
         raise ValueError("Slope variances must be positive")
@@ -138,13 +169,19 @@ def elfouhaily_omnidirectional_spectrum(wavenumber_rad_m, wind_speed_m_s, invers
     Reference: Elfouhaily, Chapron, Katsaros, Vandemark, "A unified directional spectrum for
     long and short wind-driven waves", J. Geophys. Res. 102(C7), 15781-15796, 1997.
 
-    INPUTS:
-        wavenumber_rad_m: [scalar or array] Spatial wavenumber k = 2 pi / wavelength [rad/m] (k > 0)
-        wind_speed_m_s:   [scalar]          Wind speed at 10 m reference height U10 [m/s] (> 0)
-        inverse_wave_age: [scalar]          Inverse wave age Omega_c [-] (0.84 fully developed, up to ~5 young seas)
+    Parameters
+    ----------
+    wavenumber_rad_m : scalar or array
+        Spatial wavenumber ``k = 2 pi / wavelength`` [rad/m] (> 0).
+    wind_speed_m_s : scalar
+        Wind speed at 10 m reference height U10 [m/s] (> 0).
+    inverse_wave_age : scalar
+        Inverse wave age Omega_c [-] (0.84 fully developed, up to about 5 for young seas).
 
-    OUTPUT:
-        S_k: [scalar or array] Omnidirectional elevation spectrum [m^3], same shape as wavenumber_rad_m.
+    Returns
+    -------
+    scalar or array
+        Omnidirectional elevation spectrum S(k) [m^3].
     """
     k = np.asarray(wavenumber_rad_m, dtype=float)
     U10 = float(wind_speed_m_s)
@@ -189,7 +226,7 @@ def elfouhaily_omnidirectional_spectrum(wavenumber_rad_m, wind_speed_m_s, invers
         alpha_m = 0.01 * (1.0 + 3.0 * np.log(u_star / cm))     # strong-wind branch
     alpha_m = max(alpha_m, 0.0)                                # Elfouhaily alpha_m underflows < 0 below ~2.6 m/s; clamp (no negative spectrum)
     Fm = np.exp(-0.25 * (k / km - 1.0) ** 2)                   # capillary side effect
-    B_high = 0.5 * alpha_m * (cm / c_k) * Lpm * Jp * Fm        # B_h = 0.5 alpha_m (cm/c) LPM Jp Fm
+    B_high = 0.5 * alpha_m * (cm / c_k) * Lpm * Fm             # B_h = 0.5 alpha_m (cm/c) LPM Fm
 
     return (B_low + B_high) / k**3                             # S(k) = B(k) / k^3 [m^3]
 
@@ -198,19 +235,24 @@ def bragg_scattering_coefficients(theta_inc_rad, eps_r):
     """First-order small-perturbation (Bragg) scattering coefficients for H and V polarisation.
 
     These are the polarisation amplitudes in the SPM/Bragg backscatter cross-section
-    sigma0_pp ~ k^4 cos^4(theta) |g_pp|^2 W(2 k sin theta). They are NOT the Fresnel
+    ``sigma0_pp ~ k^4 cos^4(theta) |g_pp|^2 W(2 k sin theta)``. They are NOT the Fresnel
     reflection coefficients: they reduce to a common value at normal incidence
-    (g_HH(0) = g_VV(0) = (eps - 1) / (1 + sqrt(eps))^2), and |g_VV| exceeds |g_HH| at
+    (``g_HH(0) = g_VV(0) = (eps - 1) / (1 + sqrt(eps))^2``), and ``|g_VV|`` exceeds ``|g_HH|`` at
     oblique incidence for a high-permittivity surface such as seawater.
 
     Reference: Valenzuela (1978); Ulaby, Moore and Fung, "Microwave Remote Sensing" Vol. II.
 
-    INPUTS:
-        theta_inc_rad: [scalar or array]  Incidence angle from the surface normal [rad]
-        eps_r:         [complex]          Relative permittivity of the lower medium (seawater)
+    Parameters
+    ----------
+    theta_inc_rad : scalar or array
+        Incidence angle from the surface normal [rad].
+    eps_r : complex
+        Relative permittivity of seawater.
 
-    OUTPUT:
-        g_hh, g_vv: complex Bragg scattering coefficients for horizontal and vertical polarisation.
+    Returns
+    -------
+    tuple
+        ``(g_hh, g_vv)`` complex Bragg scattering coefficients for horizontal and vertical polarisation.
     """
     cos_t = np.cos(theta_inc_rad)                                      # cos(theta_inc)
     sin_sq = np.sin(theta_inc_rad) ** 2                                # sin^2(theta_inc)
@@ -224,37 +266,39 @@ def bragg_scattering_coefficients(theta_inc_rad, eps_r):
 def bragg_backscatter_nrcs(theta_inc_rad, wavelength_m, eps_r, wind_speed_m_s, inverse_wave_age):
     """First-order Bragg (small-perturbation) ocean backscatter NRCS for circular polarisation.
 
-    Resonant scattering from the wind-driven ripple at the Bragg wavenumber k_B = 2 k sin(theta),
-    with k = 2 pi / wavelength. This is the return the geometric-optics glistening model misses at
+    Resonant scattering from the wind-driven ripple at the Bragg wavenumber ``k_B = 2 k sin(theta)``,
+    with ``k = 2 pi / wavelength``. This is the return the geometric-optics glistening model misses at
     oblique incidence (no facets tilted enough to retroreflect) and that dominates ocean backscatter
-    beyond ~20 deg incidence.
-
-        sigma0_pp = 8 pi k^4 cos^4(theta) |g_pp|^2 W_iso(k_B)
-
-    with the isotropic 2-D spectrum W_iso(K) = S(K) / (2 pi K) from the Elfouhaily S(k), and the
-    circular amplitudes formed from the linear Bragg coefficients:
-        g_RL = (g_HH + g_VV) / 2   RHCP -> LHCP, handedness flipped  (carries all power at nadir)
-        g_RR = (g_HH - g_VV) / 2   RHCP -> RHCP, handedness preserved (vanishes at nadir)
-
-    The 8 pi prefactor is the textbook SPM constant; combined with the Elfouhaily spectrum
-    normalisation it places sigma0_RL at the published L-band level (~ -21 dB at 30 deg, 7 m/s) with
-    no free scaling -- the absolute level is pinned by TestBraggBackscatterNrcs, not a fudge factor.
-
-    SPM validity holds for moderate incidence (~10..70 deg); near nadir k_B -> 0, the Bragg return
-    vanishes and the geometric-optics term owns the geometry, so this returns 0 there.
+    beyond about 20 deg incidence. The cross-section is
+    ``sigma0_pp = 8 pi k^4 cos^4(theta) |g_pp|^2 W_iso(k_B)`` with the isotropic 2-D spectrum
+    ``W_iso(K) = S(K) / (2 pi K)`` from the Elfouhaily ``S(k)``, and the circular amplitudes
+    ``g_RL = (g_HH + g_VV) / 2`` (RHCP to LHCP, handedness flipped) and ``g_RR = (g_HH - g_VV) / 2``
+    (RHCP to RHCP, preserved). The 8-pi prefactor is the textbook SPM constant; with the Elfouhaily
+    normalisation it places ``sigma0_RL`` in a broad L-band plausibility envelope without a fitted scale.
+    This is not a polarisation-matched measurement validation. SPM validity holds for moderate incidence
+    (about 10 to 70 deg); near nadir
+    ``k_B -> 0``, the Bragg return vanishes and the geometric-optics term owns the geometry, so this
+    returns 0 there.
 
     Reference: Valenzuela (1978); Ulaby, Moore and Fung, "Microwave Remote Sensing" Vol. II.
 
-    INPUTS:
-        theta_inc_rad:    [scalar or array]  Incidence angle from the surface normal [rad]
-        wavelength_m:     [float]            Radar wavelength [m]
-        eps_r:            [complex]          Seawater relative permittivity
-        wind_speed_m_s:   [scalar]           Wind speed at 10 m [m/s]
-        inverse_wave_age: [scalar]           Inverse wave age Omega_c [-]
+    Parameters
+    ----------
+    theta_inc_rad : scalar or array
+        Incidence angle from the surface normal [rad].
+    wavelength_m : float
+        Radar wavelength [m].
+    eps_r : complex
+        Seawater relative permittivity.
+    wind_speed_m_s : scalar
+        Wind speed at 10 m [m/s].
+    inverse_wave_age : scalar
+        Inverse wave age Omega_c [-].
 
-    OUTPUT:
-        sigma0_RL, sigma0_RR: RHCP->LHCP (cross-pol) and RHCP->RHCP (co-pol) NRCS [dimensionless],
-                              same shape as theta_inc_rad; 0 at / below nadir.
+    Returns
+    -------
+    tuple
+        ``(sigma0_RL, sigma0_RR)`` cross-pol and co-pol NRCS [dimensionless]; 0 at or below nadir.
     """
     theta = np.asarray(theta_inc_rad, dtype=float)
     k_radar = 2.0 * np.pi / wavelength_m                               # radar wavenumber k = 2 pi / lambda [rad/m]
@@ -293,13 +337,19 @@ def large_scale_slope_variances(wavelength_m, wind_speed_m_s, inverse_wave_age):
     Integrates the Elfouhaily slope spectrum k^2 S(k) up to the two-scale division wavenumber for the
     total large-scale slope variance, then splits it by the Cox-Munk upwind/crosswind anisotropy ratio.
 
-    INPUTS:
-        wavelength_m:     [float]   Radar wavelength [m]
-        wind_speed_m_s:   [scalar]  Wind speed at 10 m [m/s]
-        inverse_wave_age: [scalar]  Inverse wave age Omega_c [-]
+    Parameters
+    ----------
+    wavelength_m : float
+        Radar wavelength [m].
+    wind_speed_m_s : scalar
+        Wind speed at 10 m [m/s].
+    inverse_wave_age : scalar
+        Inverse wave age Omega_c [-].
 
-    OUTPUT:
-        s_u_L_sq, s_c_L_sq: large-scale upwind / crosswind slope variances [dimensionless].
+    Returns
+    -------
+    tuple
+        ``(s_u_L_sq, s_c_L_sq)`` large-scale upwind / crosswind slope variances [dimensionless].
     """
     k_radar = 2.0 * np.pi / wavelength_m
     k_div = k_radar / _TWO_SCALE_DIVISION_FACTOR                       # two-scale division wavenumber
@@ -321,15 +371,23 @@ def two_scale_backscatter_nrcs(theta_inc_rad, azimuth_rad, wavelength_m, eps_r, 
     bragg_backscatter_nrcs as the large-scale slope -> 0. The out-of-plane tilt-induced polarisation
     rotation is not yet included (a smaller correction; documented as a further refinement).
 
-    INPUTS:
-        theta_inc_rad: [scalar or array] Incidence angle from the (mean) surface normal [rad]
-        azimuth_rad:   [scalar or array] Radar look azimuth relative to the upwind axis [rad]
-        wavelength_m:  [float]           Radar wavelength [m]
-        eps_r:         [complex]         Seawater relative permittivity
-        wind_speed_m_s, inverse_wave_age: sea-state inputs (as in bragg_backscatter_nrcs)
+    Parameters
+    ----------
+    theta_inc_rad : scalar or array
+        Incidence angle from the (mean) surface normal [rad].
+    azimuth_rad : scalar or array
+        Radar look azimuth relative to the upwind axis [rad].
+    wavelength_m : float
+        Radar wavelength [m].
+    eps_r : complex
+        Seawater relative permittivity.
+    wind_speed_m_s, inverse_wave_age : scalar
+        Sea-state inputs (as in :func:`bragg_backscatter_nrcs`).
 
-    OUTPUT:
-        sigma0_RL, sigma0_RR: tilt-averaged RHCP->LHCP and RHCP->RHCP NRCS, shape of theta_inc_rad.
+    Returns
+    -------
+    tuple
+        ``(sigma0_RL, sigma0_RR)`` tilt-averaged cross-pol and co-pol NRCS.
     """
     scalar_in = np.ndim(theta_inc_rad) == 0 and np.ndim(azimuth_rad) == 0
     theta = np.atleast_1d(np.asarray(theta_inc_rad, dtype=float))
@@ -340,6 +398,7 @@ def two_scale_backscatter_nrcs(theta_inc_rad, azimuth_rad, wavelength_m, eps_r, 
     sin2 = np.sin(phi) ** 2
     var_inplane = s_u_L_sq * cos2 + s_c_L_sq * sin2                    # slope variance along the look azimuth
     var_cross = s_u_L_sq * sin2 + s_c_L_sq * cos2                      # slope variance perpendicular to it
+    covariance = (s_c_L_sq - s_u_L_sq) * np.sin(phi) * np.cos(phi)     # rotation of the wind-frame covariance
 
     # Standardized facet-slope nodes (same for every sample; scaled per sample by the local sigma).
     u = np.linspace(-_TWO_SCALE_SLOPE_SPAN, _TWO_SCALE_SLOPE_SPAN, _TWO_SCALE_SLOPE_GRID)
@@ -348,8 +407,14 @@ def two_scale_backscatter_nrcs(theta_inc_rad, azimuth_rad, wavelength_m, eps_r, 
     Uy = Uy.ravel()
     weight = np.exp(-0.5 * (Ux**2 + Uy**2))                           # (M,) standard-normal slope weight
 
-    zx = Ux[None, :] * np.sqrt(var_inplane)[:, None]                  # (N, M) in-plane facet slope
-    zy = Uy[None, :] * np.sqrt(var_cross)[:, None]                    # (N, M) cross-plane facet slope
+    # Rotate the full anisotropic Gaussian covariance into the look/cross-look frame.  Away from
+    # exact upwind or crosswind the two components are correlated; drawing them independently from
+    # their marginal variances gives the wrong facet distribution.
+    chol_11 = np.sqrt(var_inplane)
+    chol_21 = covariance / chol_11
+    chol_22 = np.sqrt(np.maximum(var_cross - chol_21**2, 0.0))
+    zx = Ux[None, :] * chol_11[:, None]                               # (N, M) in-plane facet slope
+    zy = Ux[None, :] * chol_21[:, None] + Uy[None, :] * chol_22[:, None]  # correlated cross-plane slope
 
     cos_t = np.cos(theta)[:, None]
     sin_t = np.sin(theta)[:, None]

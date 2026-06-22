@@ -62,6 +62,11 @@ class ShipTarget(Target):
         )
 
     def compute_rcs(self, geometry: BistaticGeometry, wavelength_m: float, illuminated_area_m2: np.ndarray | None = None) -> TargetRcs:
+        """Per-sample ship RCS as the non-coherent sum of five plates and two hull-water dihedrals.
+
+        ``illuminated_area_m2`` is ignored: a ship is a point target with an absolute RCS. The ``info``
+        dict breaks the total down per plate and per dihedral.
+        """
         # illuminated_area_m2 is unused: a ship is a point target with an absolute RCS (no area factor).
         n_tx2s = geometry.n_tx2s
         n_s2rx = geometry.n_s2rx

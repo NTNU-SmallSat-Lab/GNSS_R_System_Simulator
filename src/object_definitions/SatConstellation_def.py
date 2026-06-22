@@ -11,19 +11,11 @@ from object_definitions.Satellite_def import Satellite
 
 
 class SatelliteConstellation:
-    """
-    =========================================================================================================
-    SatelliteConstellation class:
-        - Initialized with either an array of Satellite objects OR a TLE file containing the
-          satellite configuration (not both).
+    """A group of satellites propagated together; the same class for the LEO Rx and GNSS Tx fleets.
 
-        INPUTS:
-            satArray:      [list]        List of Satellite objects
-            tle_file:      [str]         Path to the TLE file containing satellite data
-            satConfigName: [str]         Name of the satellite configuration
-            rx_antenna:    [RxAntenna]   Receiver antenna object (optional)
-            verbose:       [bool]        Verbose output (default: False)
-    =========================================================================================================
+    Initialise with **either** a list of :class:`~object_definitions.Satellite_def.Satellite` objects **or**
+    a TLE file (not both). ``set_simulation_duration`` builds the shared Skyfield timescale and pushes it to
+    every satellite, after which ``propagate_constellation`` fills each satellite's ECI state.
     """
 
     def __init__(
@@ -34,6 +26,21 @@ class SatelliteConstellation:
         rx_antenna=None,
         verbose=False,
     ):
+        """Initialise from a Satellite list or a TLE file (never both).
+
+        Parameters
+        ----------
+        satArray : list, optional
+            List of :class:`~object_definitions.Satellite_def.Satellite` objects.
+        tle_file : str, optional
+            Path to a TLE file with the satellite set.
+        satConfigName : str, optional
+            Name of the constellation.
+        rx_antenna : RxAntenna, optional
+            Receiver antenna shared by the satellites.
+        verbose : bool, optional
+            Print initialisation progress.
+        """
         # Check if the anenna is provided and is an instance of RxAntenna
         if isinstance(rx_antenna, RxAntenna):
             antenna = rx_antenna

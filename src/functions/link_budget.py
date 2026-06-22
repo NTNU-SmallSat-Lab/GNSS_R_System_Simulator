@@ -31,7 +31,7 @@ class BistaticLinkBudgetSettings:
     ATTRIBUTES:
         system_losses_db:          [float]  Lumped implementation losses [dB]
         polarization_losses_db:    [float]  Receiver-side polarization mismatch losses [dB]
-        ocean_wave_height_m:       [float]  RMS wave height [m]  (Rayleigh roughness diagnostic)
+        ocean_wave_height_m:       [float]  Significant wave height H_s [m] (Rayleigh model uses sigma_h ~= H_s/4)
         ocean_wind_speed_m_s:      [float]  Wind speed at 10 m [m/s]  (drives Cox-Munk slope variances)
         ocean_wind_direction_deg:  [float]  Wind direction (meteorological FROM bearing) [deg]
         ocean_sea_temperature_c:   [float]  Sea surface temperature [degC]
@@ -44,6 +44,7 @@ class BistaticLinkBudgetSettings:
         ocean_patch_grid_size:     [int]    Number of cells per tangent-plane footprint axis for patch integration.
         delay_doppler_cell_enabled:[bool]   Use the delay-Doppler resolution cell (not the full footprint) as the distributed-clutter area.
         coherent_integration_time_s:[float | None] Coherent integration time T_coh [s]; sets the Doppler bin (1 / T_coh) of the cell. Required when the cell is enabled.
+        num_incoherent_looks:      [int]    Independent incoherent looks M (>= 1); sqrt(M) is a detection-sensitivity approximation.
 
     NOTE: GNSS transmitter EIRP is per-(constellation, band) and lives in
     `Constants.GNSS_EIRP_DBW` — it is not a link-budget config knob.
@@ -67,13 +68,41 @@ class BistaticLinkBudgetSettings:
     # glistening-area cap remains the fallback for antenna=None, custom targets, or invalid footprints.
     ocean_patch_integration_enabled: bool = False
     ocean_patch_grid_size: int = 9
-    # Delay-Doppler resolution cell: when enabled, the distributed-clutter area is the DDM cell
-    # (code-chip x Doppler bin) rather than the antenna footprint. T_coh sets the Doppler bin width.
-    # Mutually exclusive with patch integration (the cell already replaces the footprint area).
+    # First-order delay-Doppler resolution cell: T_coh sets the Doppler-bin width. Exact specular
+    # geometry is singular and uses the footprint cap. Mutually exclusive with patch integration.
     delay_doppler_cell_enabled: bool = False
     coherent_integration_time_s: float | None = None
+    # Coherent B*T_coh gain plus a sqrt(M) detection-sensitivity approximation. The latter represents
+    # reduced estimator variation, not a reduction in mean thermal-noise power.
+    num_incoherent_looks: int = 1
 
     def __post_init__(self) -> None:
+        finite_nonnegative = {
+            "system_losses_db": self.system_losses_db,
+            "polarization_losses_db": self.polarization_losses_db,
+            "ocean_wave_height_m": self.ocean_wave_height_m,
+        }
+        for name, value in finite_nonnegative.items():
+            if not np.isfinite(value) or value < 0.0:
+                raise ValueError(f"{name} must be finite and >= 0; got {value}")
+        if not np.isfinite(self.ocean_wind_speed_m_s) or self.ocean_wind_speed_m_s <= 0.0:
+            raise ValueError(f"ocean_wind_speed_m_s must be finite and > 0; got {self.ocean_wind_speed_m_s}")
+        if not np.isfinite(self.ocean_wind_direction_deg):
+            raise ValueError(f"ocean_wind_direction_deg must be finite; got {self.ocean_wind_direction_deg}")
+        if not np.isfinite(self.ocean_sea_temperature_c) or not (-2.0 <= self.ocean_sea_temperature_c <= 30.0):
+            raise ValueError(
+                f"ocean_sea_temperature_c must be within the Klein-Swift range [-2, 30] degC; "
+                f"got {self.ocean_sea_temperature_c}"
+            )
+        if not np.isfinite(self.ocean_salinity_psu) or not (0.0 <= self.ocean_salinity_psu <= 40.0):
+            raise ValueError(
+                f"ocean_salinity_psu must be within the Klein-Swift range [0, 40] PSU; got {self.ocean_salinity_psu}"
+            )
+        if not np.isfinite(self.ocean_inverse_wave_age) or not (0.84 <= self.ocean_inverse_wave_age <= 5.0):
+            raise ValueError(
+                f"ocean_inverse_wave_age must be within the Elfouhaily range [0.84, 5.0]; "
+                f"got {self.ocean_inverse_wave_age}"
+            )
         if not isinstance(self.ocean_patch_integration_enabled, bool):
             raise TypeError("ocean_patch_integration_enabled must be a bool")
         if not isinstance(self.ocean_patch_grid_size, int):
@@ -86,6 +115,10 @@ class BistaticLinkBudgetSettings:
             raise TypeError("delay_doppler_cell_enabled must be a bool")
         if self.coherent_integration_time_s is not None and (not np.isfinite(self.coherent_integration_time_s) or self.coherent_integration_time_s <= 0.0):
             raise ValueError(f"coherent_integration_time_s must be finite and > 0; got {self.coherent_integration_time_s}")
+        if not isinstance(self.num_incoherent_looks, int):
+            raise TypeError("num_incoherent_looks must be an int")
+        if self.num_incoherent_looks < 1:
+            raise ValueError(f"num_incoherent_looks must be >= 1; got {self.num_incoherent_looks}")
         if self.delay_doppler_cell_enabled:
             if self.coherent_integration_time_s is None:
                 raise ValueError("coherent_integration_time_s is required when delay_doppler_cell_enabled is True.")
@@ -95,10 +128,12 @@ class BistaticLinkBudgetSettings:
                     "the delay-Doppler cell already replaces the footprint as the clutter area."
                 )
         # Validate the noise/detection settings only when supplied (moving-target mode).
-        if self.noise_bandwidth_hz is not None and self.noise_bandwidth_hz <= 0.0:
-            raise ValueError(f"noise_bandwidth_hz must be > 0; got {self.noise_bandwidth_hz}")
-        if self.system_noise_temperature_k is not None and self.system_noise_temperature_k <= 0.0:
-            raise ValueError(f"system_noise_temperature_k must be > 0; got {self.system_noise_temperature_k}")
+        if self.noise_bandwidth_hz is not None and (not np.isfinite(self.noise_bandwidth_hz) or self.noise_bandwidth_hz <= 0.0):
+            raise ValueError(f"noise_bandwidth_hz must be finite and > 0; got {self.noise_bandwidth_hz}")
+        if self.system_noise_temperature_k is not None and (
+            not np.isfinite(self.system_noise_temperature_k) or self.system_noise_temperature_k <= 0.0
+        ):
+            raise ValueError(f"system_noise_temperature_k must be finite and > 0; got {self.system_noise_temperature_k}")
         if self.detection_sinr_threshold_db is not None and not np.isfinite(self.detection_sinr_threshold_db):
             raise ValueError(f"detection_sinr_threshold_db must be finite; got {self.detection_sinr_threshold_db}")
 
@@ -115,6 +150,23 @@ def coerce_link_budget_settings(settings: dict | BistaticLinkBudgetSettings) -> 
             "field set; there are no default fallbacks."
         )
     raise TypeError("settings must be a dict or BistaticLinkBudgetSettings")
+
+
+def coherent_processing_gain_linear(settings: dict | BistaticLinkBudgetSettings) -> float:
+    """Detection-equivalent gain used by the threshold metric: ``B * T_coh * sqrt(M)``.
+
+    Coherent integration over ``T_coh`` narrows the effective noise bandwidth from ``B`` to about
+    ``1 / T_coh`` (a gain of ``B * T_coh``). ``M`` independent power looks reduce estimator standard
+    deviation by approximately ``sqrt(M)``; they do not lower mean noise power. The combined value is
+    therefore a sensitivity approximation rather than a full detector-statistics model. Returns ``1.0``
+    when no coherent integration time or noise bandwidth is set.
+    """
+    s = coerce_link_budget_settings(settings)
+    if s.coherent_integration_time_s is None or s.noise_bandwidth_hz is None:
+        return 1.0
+    coherent_gain = s.noise_bandwidth_hz * s.coherent_integration_time_s   # B * T_coh, the despreading gain
+    incoherent_gain = float(np.sqrt(s.num_incoherent_looks))               # sqrt(M) incoherent averaging
+    return float(coherent_gain * incoherent_gain)
 
 
 @dataclass(frozen=True, slots=True)
@@ -886,7 +938,7 @@ def compute_reflection_link_budget(
 
     # Antenna-beam-limited illuminated area for distributed (area-extensive) returns. The receiver
     # auto-steers to the reflection, so rx_gain_dbi is the steered-beam peak directivity and the beam
-    # solid angle 4 pi / G projects to a ground footprint (4 pi / G) * R_r^2 / cos(theta_inc). With no
+    # solid angle 4 pi / G projects to a ground footprint (4 pi / G) * R_r^2 / cos(theta_scatter). With no
     # antenna the area is left to the target's geometric fallback.
     delay_doppler_cell_info = None
     if antenna is None:
@@ -894,11 +946,14 @@ def compute_reflection_link_budget(
     else:
         with np.errstate(invalid="ignore", divide="ignore"):
             g_rx_lin = np.power(10.0, rx_gain_dbi / 10.0)
-            cos_inc = np.clip(np.cos(np.radians(incidence_deg)), 0.05, 1.0)
-            footprint_area_m2 = (4.0 * np.pi / g_rx_lin) * range_rx_m ** 2 / cos_inc
+            # Projection is controlled by the receiver ray's angle to the surface, not the
+            # transmitter incidence angle. They are equal only at a true specular point.
+            cos_scatter = np.clip(np.cos(np.radians(geometry.scattering_angle_deg)), 0.05, 1.0)
+            footprint_area_m2 = (4.0 * np.pi / g_rx_lin) * range_rx_m**2 / cos_scatter
 
         if settings_obj.delay_doppler_cell_enabled:
-            # The distributed-clutter area is one delay-Doppler resolution cell, capped at the footprint.
+            # Use the first-order delay-Doppler cell, capped at the footprint; exact specular geometry
+            # is singular and therefore resolves to that cap.
             from functions.delay_doppler import delay_doppler_cell_area
 
             if tx_velocities_eci is None or chip_length_m is None:
@@ -914,6 +969,7 @@ def compute_reflection_link_budget(
                 float(chip_length_m),
                 float(settings_obj.coherent_integration_time_s),
                 footprint_area_m2=footprint_area_m2,
+                surface_positions_eci=reflection_positions_eci,
             )
             illuminated_area_m2 = delay_doppler_cell_info["cell_area_m2"]
         else:

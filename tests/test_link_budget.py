@@ -4,9 +4,25 @@ from _link_budget_settings import link_budget_settings
 import numpy as np
 import pytest
 
-from functions.link_budget import BistaticLinkBudgetSettings, compute_bistatic_link_budget, compute_rx_look_direction_antenna_frame
+from functions.link_budget import (
+    BistaticLinkBudgetSettings,
+    coherent_processing_gain_linear,
+    compute_bistatic_link_budget,
+    compute_rx_look_direction_antenna_frame,
+)
 from functions.rotations import eci_to_antenna_rotation_from_state
 from object_definitions.Constants_def import Constants
+
+
+class TestCoherentProcessingGain:
+    def test_no_gain_without_coherent_integration_time(self):
+        # coherent_integration_time_s defaults to None -> the noise floor is left unchanged.
+        assert coherent_processing_gain_linear(link_budget_settings()) == 1.0
+
+    def test_gain_is_bandwidth_time_product_with_incoherent_looks(self):
+        settings = link_budget_settings(coherent_integration_time_s=1.0e-3, num_incoherent_looks=4)
+        # B * T_coh * sqrt(M) = 2e6 * 1e-3 * sqrt(4)
+        np.testing.assert_allclose(coherent_processing_gain_linear(settings), 2.0e6 * 1.0e-3 * 2.0)
 
 
 class _FakeAntenna:
@@ -147,6 +163,21 @@ class TestComputeBistaticLinkBudgetNoise:
     def test_non_finite_detection_threshold_raises(self):
         with pytest.raises(ValueError, match="detection_sinr_threshold_db"):
             link_budget_settings(detection_sinr_threshold_db=np.nan)
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("system_losses_db", -0.1),
+            ("ocean_wave_height_m", np.nan),
+            ("ocean_wind_speed_m_s", 0.0),
+            ("ocean_sea_temperature_c", 31.0),
+            ("ocean_salinity_psu", 41.0),
+            ("ocean_inverse_wave_age", 5.1),
+        ],
+    )
+    def test_invalid_physical_settings_raise(self, field, value):
+        with pytest.raises(ValueError, match=field):
+            link_budget_settings(**{field: value})
 
     @pytest.mark.parametrize("grid_size", [2, 102])
     def test_invalid_patch_grid_size_raises(self, grid_size):

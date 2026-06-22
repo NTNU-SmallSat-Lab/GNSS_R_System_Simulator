@@ -23,10 +23,8 @@ dependencies = [
     "python-dateutil>=2.9.0",
     
     # Space science and astronomy
-    # NOTE: astropy is not imported directly anywhere in the source code,
-    # but pymap3d uses it as an optional accuracy backend for ECI<->ECEF
-    # transforms. Without it, pymap3d falls back to a less accurate NumPy
-    # implementation and emits a runtime warning.
+    # pymap3d uses astropy for ECI<->ECEF transforms. functions.py also
+    # configures the IERS offline fallback explicitly.
     "astropy>=6.1.6",
     "astropy-iers-data>=0.2024.11.0",
     "skyfield>=1.49",

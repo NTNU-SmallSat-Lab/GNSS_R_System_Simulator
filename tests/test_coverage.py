@@ -103,6 +103,12 @@ class TestValidityMask:
         mask, _ = Coverage.validity_mask(refl, self.BBOX)
         assert mask.tolist() == [True, True]
 
+    def test_none_bbox_accepts_all_finite_points(self):
+        refl = self._make_refl([[40.0, 0.0], [np.nan, np.nan], [-80.0, 170.0]])
+        mask, filtered = Coverage.validity_mask(refl, None)
+        assert mask.tolist() == [True, False, True]
+        assert np.isnan(filtered[1]).all()
+
 
 # --------------------------------------------------------------------------- #
 # _get_reflection_clusters                                                    #
@@ -127,26 +133,18 @@ class TestGetReflectionClusters:
         mask = np.array([True, True, False, True, True])
         refl = self._refl_with_n_points(5)
         clusters = Coverage._get_reflection_clusters(refl, mask)
-        # First cluster: indices [0, 1]. Second cluster: includes 3, 4 (and the invalid index 2,
-        # which prefixes the second run because np.split keeps the split point in the next chunk).
-        flattened = [list(c) for c in clusters]
-        # The fully-valid leading run must be exactly [0, 1].
-        assert flattened[0] == [0, 1]
-        # The trailing run must contain at least the valid indices 3 and 4.
-        assert 3 in flattened[-1] and 4 in flattened[-1]
+        assert [list(c) for c in clusters] == [[0, 1], [3, 4]]
 
     def test_all_invalid_returns_no_full_cluster(self):
         mask = np.zeros(5, dtype=bool)
         refl = self._refl_with_n_points(5)
         clusters = Coverage._get_reflection_clusters(refl, mask)
-        # Each invalid index becomes its own split — no cluster has >1 element of run.
-        max_run_len = max(len(c) for c in clusters)
-        assert max_run_len <= 1
+        assert clusters == []
 
     def test_empty_reflection_returns_empty_clusters(self):
         refl = self._refl_with_n_points(0)
         clusters = Coverage._get_reflection_clusters(refl, np.array([], dtype=bool))
-        assert all(len(c) == 0 for c in clusters)
+        assert clusters == []
 
 
 # --------------------------------------------------------------------------- #

@@ -11,3 +11,9 @@ The pages below mirror the ``SRC/`` source layout. Cross-cutting helpers live un
 
    functions/index
    object_definitions/index
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Reference
+
+   configuration

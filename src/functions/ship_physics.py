@@ -1,7 +1,7 @@
 """Bistatic RCS helpers for ship-as-target modelling.
 
-flat_plate_rcs:  Physical-optics RCS of a rectangular PEC plate with back-face culling.
-dihedral_rcs:    Bistatic RCS of a 90-deg dihedral corner reflector with wedge visibility.
+flat_plate_rcs:  Scalar physical-optics RCS of a rectangular PEC plate with back-face culling.
+dihedral_rcs:    Idealised bistatic RCS surrogate for a 90-deg dihedral with wedge visibility.
 
 Both functions are vectorised over the per-sample axis (n samples per call) and operate on
 direction unit vectors / range scalars; they have no dependence on the simulator's frame
@@ -22,30 +22,31 @@ def flat_plate_rcs(
     n_s2rx: np.ndarray,
     wavelength_m: float,
 ) -> np.ndarray:
-    """
-    =========================================================================================================
-    Bistatic RCS of a rectangular PEC flat plate via physical optics.
+    """Bistatic RCS of a rectangular PEC flat plate via physical optics.
 
-        sigma = (4 pi A^2 / lambda^2) * cos^2(alpha) * sinc^2(u_1) * sinc^2(u_2) * visibility
+    The cross-section is ``sigma = (4 pi A^2 / lambda^2) * cos^2(alpha) * sinc^2(u_1) * sinc^2(u_2) *
+    visibility``, with plate area ``A = length_edge_1_m * length_edge_2_m``, ``alpha`` the angle between the
+    plate normal and the bistatic bisector of ``n_s2rx - n_tx2s``, ``u_i = length_edge_i_m / lambda *
+    (n_tx2s - n_s2rx) . edge_i``, and a back-face visibility that is 1 only when the plate normal faces both
+    Tx and Rx.
 
-    where:
-        - A = length_edge_1_m * length_edge_2_m  (plate area)
-        - alpha = angle between plate normal and the bistatic bisector hat(n_s2rx - n_tx2s)
-        - u_i = length_edge_i_m / lambda * (n_tx2s - n_s2rx) . edge_i
-        - visibility = 1 if plate normal points toward both Tx and Rx (back-face culling), 0 otherwise
+    Parameters
+    ----------
+    n_plate : numpy.ndarray
+        Outward plate normal (unit), shape ``(n, 3)``.
+    edge_1, edge_2 : numpy.ndarray
+        Two perpendicular in-plane edge directions (unit), shape ``(n, 3)``.
+    length_edge_1_m, length_edge_2_m : float
+        Plate lengths along ``edge_1`` / ``edge_2`` [m].
+    n_tx2s, n_s2rx : numpy.ndarray
+        Tx-to-surface and surface-to-Rx unit directions, shape ``(n, 3)``.
+    wavelength_m : float
+        Carrier wavelength [m].
 
-    INPUTS:
-        n_plate:           [np.ndarray, shape (n, 3)]   Outward plate normal (unit)
-        edge_1, edge_2:    [np.ndarray, shape (n, 3)]   Two perpendicular edge directions (unit) in plate plane
-        length_edge_1_m:   [float]                      Plate length along edge_1 [m]
-        length_edge_2_m:   [float]                      Plate length along edge_2 [m]
-        n_tx2s:            [np.ndarray, shape (n, 3)]   Tx -> surface unit direction
-        n_s2rx:            [np.ndarray, shape (n, 3)]   Surface -> Rx unit direction
-        wavelength_m:      [float]                      Carrier wavelength [m]
-
-    OUTPUT:
-        rcs_m2: [np.ndarray, shape (n,)]   Per-sample plate RCS [m^2]; 0 when not visible
-    =========================================================================================================
+    Returns
+    -------
+    numpy.ndarray
+        Per-sample plate RCS [m^2], shape ``(n,)``; 0 when not visible.
     """
     n_samples = n_plate.shape[0]
     rcs = np.zeros(n_samples, dtype=float)
@@ -95,34 +96,35 @@ def dihedral_rcs(
     n_s2rx: np.ndarray,
     wavelength_m: float,
 ) -> np.ndarray:
-    """
-    =========================================================================================================
-    Bistatic RCS of a 90-deg dihedral corner reflector.
+    """Idealised bistatic RCS of a 90-degree dihedral corner reflector.
 
-        sigma = (8 pi (L H)^2 / lambda^2) * sinc^2(u_edge) * wedge_visibility
+    The cross-section is ``sigma = (8 pi (L H)^2 / lambda^2) * sinc^2(u_edge) * wedge_visibility``, with
+    edge length ``L = length_edge_m``, leg height ``H = leg_dimension_m``, and ``u_edge = L / lambda *
+    (n_s2rx + n_tx2s) . edge_hat`` (zero at ideal retroreflection, ``n_s2rx == -n_tx2s``, giving the peak).
+    The wedge visibility is 1 only when the directions to both Tx and Rx lie inside the open corner
+    quadrant (positive along both leg normals); outside it the dihedral shadows itself. This scalar
+    surrogate omits the full angular/polarimetric finite-leg response and sea-surface coupling, so it
+    should not be treated as a calibrated absolute ship RCS.
 
-    where:
-        - L = length_edge_m            (length along the dihedral edge)
-        - H = leg_dimension_m          (perpendicular leg height)
-        - u_edge = L / lambda * (n_s2rx + n_tx2s) . edge_hat
-                   At ideal retro (n_s2rx == -n_tx2s) this is zero, giving the peak.
-        - wedge_visibility = 1 only when both -n_tx2s (towards Tx) and n_s2rx (towards Rx) have
-          positive components along BOTH leg normals — i.e., both endpoints are inside the open
-          quadrant of the corner. Outside this quadrant the dihedral is shadowed by itself.
+    Parameters
+    ----------
+    edge_hat : numpy.ndarray
+        Unit vector along the dihedral edge, shape ``(n, 3)``.
+    leg_1_normal, leg_2_normal : numpy.ndarray
+        Outward unit normals of the two legs, shape ``(n, 3)``.
+    length_edge_m : float
+        Length along the edge [m].
+    leg_dimension_m : float
+        Leg height perpendicular to the edge [m].
+    n_tx2s, n_s2rx : numpy.ndarray
+        Tx-to-surface and surface-to-Rx unit directions, shape ``(n, 3)``.
+    wavelength_m : float
+        Carrier wavelength [m].
 
-    INPUTS:
-        edge_hat:         [np.ndarray, shape (n, 3)]   Unit vector along dihedral edge
-        leg_1_normal:     [np.ndarray, shape (n, 3)]   Outward normal of leg 1 (unit, perpendicular to edge)
-        leg_2_normal:     [np.ndarray, shape (n, 3)]   Outward normal of leg 2 (unit, perpendicular to both)
-        length_edge_m:    [float]                      Length along the edge [m]
-        leg_dimension_m:  [float]                      Leg height perpendicular to edge [m]
-        n_tx2s:           [np.ndarray, shape (n, 3)]   Tx -> surface unit direction
-        n_s2rx:           [np.ndarray, shape (n, 3)]   Surface -> Rx unit direction
-        wavelength_m:     [float]                      Carrier wavelength [m]
-
-    OUTPUT:
-        rcs_m2: [np.ndarray, shape (n,)]   Per-sample dihedral RCS [m^2]; 0 outside wedge
-    =========================================================================================================
+    Returns
+    -------
+    numpy.ndarray
+        Per-sample dihedral RCS [m^2], shape ``(n,)``; 0 outside the wedge.
     """
     n_samples = edge_hat.shape[0]
     rcs = np.zeros(n_samples, dtype=float)

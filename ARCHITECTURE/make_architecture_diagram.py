@@ -1,7 +1,17 @@
-"""Generate a static software-architecture diagram (PNG + SVG)."""
-from matplotlib.lines import Line2D
-from matplotlib.patches import FancyArrowPatch, FancyBboxPatch, Rectangle
-import matplotlib.pyplot as plt
+"""Generate a static software-architecture diagram (SVG + PNG).
+
+Writes ``architecture.svg`` into ``docs/source/images/`` (the file the Architecture page embeds) and an
+``architecture.png`` preview next to this script.
+"""
+import os
+
+import matplotlib
+
+matplotlib.use("Agg")  # headless: no display needed to render the figure
+
+from matplotlib.lines import Line2D  # noqa: E402
+from matplotlib.patches import FancyArrowPatch, FancyBboxPatch, Rectangle  # noqa: E402
+import matplotlib.pyplot as plt  # noqa: E402
 
 COLORS = {
     "entry":      "#1f6feb",
@@ -61,7 +71,7 @@ def _box_edge(box_xy, other_xy, _which):
 
 
 fig, ax = plt.subplots(figsize=(18, 11))
-ax.set_xlim(0, 18)
+ax.set_xlim(-1.6, 18)  # reserve a left gutter for the rotated layer labels
 ax.set_ylim(0, 11.5)
 ax.set_aspect("equal")
 ax.axis("off")
@@ -72,17 +82,17 @@ Y_DOM_T = 6.1
 Y_DOM_B = 4.6
 Y_FOUND = 1.6
 
-# Layer bands
+# Layer bands. The label sits in the left gutter, rotated, so no box can overlap it.
 def band(y_center, height, kind, label):
     ax.add_patch(Rectangle((0.2, y_center - height / 2), 17.6, height,
                            facecolor=BAND[kind], edgecolor="none", zorder=0))
-    ax.text(0.45, y_center + height / 2 - 0.25, label, ha="left", va="top",
+    ax.text(-0.7, y_center, label, ha="center", va="center", rotation=90,
             fontsize=10, color=COLORS[kind], weight="bold", style="italic")
 
-band(Y_ENTRY, 1.4, "entry", "1.  Entry orchestrators")
-band(Y_MODE, 1.2, "mode", "2.  Mode-specific analysis")
-band((Y_DOM_T + Y_DOM_B) / 2, 2.6, "domain", "3.  Shared domain model")
-band(Y_FOUND, 1.4, "foundation", "4.  Foundation (imported broadly)")
+band(Y_ENTRY, 1.4, "entry", "1.  Entry")
+band(Y_MODE, 1.2, "mode", "2.  Mode analysis")
+band((Y_DOM_T + Y_DOM_B) / 2, 2.6, "domain", "3.  Domain model")
+band(Y_FOUND, 1.4, "foundation", "4.  Foundation")
 
 # 1. Entry
 init = draw_box(ax, 4.5, Y_ENTRY, "initialize\n(parses INI)", "entry")
@@ -160,6 +170,10 @@ ax.text(9, 0.35,
         "Note: Constants is imported by nearly every module (omitted from arrows for clarity).",
         ha="center", va="center", fontsize=8.5, color="#555", style="italic")
 
-fig.savefig("architecture.png", dpi=160, bbox_inches="tight", facecolor="white")
-fig.savefig("architecture.svg", bbox_inches="tight", facecolor="white")
-print("Wrote architecture.png and architecture.svg")
+_here = os.path.dirname(os.path.abspath(__file__))
+_svg = os.path.normpath(os.path.join(_here, "..", "docs", "source", "images", "architecture.svg"))
+_png = os.path.join(_here, "architecture.png")
+fig.savefig(_svg, bbox_inches="tight", facecolor="white")
+fig.savefig(_png, dpi=160, bbox_inches="tight", facecolor="white")
+print(f"Wrote {_svg}")
+print(f"Wrote {_png}")

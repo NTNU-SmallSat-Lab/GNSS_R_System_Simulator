@@ -2,6 +2,9 @@
 
 from datetime import UTC, datetime
 
+import numpy as np
+import pytest
+
 from object_definitions.Constants_def import Constants
 from object_definitions.Orbit_def import Orbit_specification
 
@@ -21,3 +24,22 @@ class TestOrbitSpecification:
         assert isinstance(orbit, Orbit_specification)
         # TLE epoch format: YYDDD.DDDDDDDD for 2024-10-31 05:05:57 UTC
         assert orbit.epoch_str == "24305.21246528"
+
+    @pytest.mark.parametrize(
+        "args",
+        [
+            (-1.0, *ORBIT_ARGS[1:]),
+            (181.0, *ORBIT_ARGS[1:]),
+            (ORBIT_ARGS[0], -0.1, *ORBIT_ARGS[2:]),
+            (ORBIT_ARGS[0], 1.0, *ORBIT_ARGS[2:]),
+            (*ORBIT_ARGS[:5], np.nan),
+            (*ORBIT_ARGS[:5], Constants.RADIUS_EARTH_EQUAT),
+        ],
+    )
+    def test_nonphysical_elements_rejected(self, args):
+        with pytest.raises(ValueError):
+            Orbit_specification(*args)
+
+    def test_naive_epoch_rejected(self):
+        with pytest.raises(ValueError, match="UTC"):
+            Orbit_specification(*ORBIT_ARGS, datetime(2024, 10, 31, 5, 5, 57))

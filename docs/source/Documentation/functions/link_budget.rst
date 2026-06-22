@@ -1,10 +1,10 @@
-Link budget (``functions.link_budget``)
-=======================================
+Link budget
+===========
 
 .. module:: functions.link_budget
 
-Executive Summary
------------------
+Summary
+-------
 
 ``functions.link_budget`` is the integrating module of the GNSS-R signal chain: it turns a set of
 transmitter / receiver / reflection-point states into a received power, a thermal-noise floor, and the
@@ -33,24 +33,102 @@ Interface
 The public surface is two data classes plus three functions. Vectors follow the simulator convention:
 **satellite state vectors are** ``(3, n)`` **and reflection points are** ``(n, 3)``.
 
-.. list-table:: Consumed / produced by :func:`compute_reflection_link_budget`
-   :widths: 22 78
+.. list-table:: Inputs / outputs of :func:`compute_reflection_link_budget`
+   :widths: 12 28 46 14
    :header-rows: 1
 
-   * - Role
-     - Quantity
-   * - Consumes
-     - Tx / Rx ECI positions and Rx ECI velocities ``(3, n)``; reflection points ``(n, 3)``;
-       incidence angle ``(n,)``; an :class:`~object_definitions.Rx_antenna_def.RxAntenna` (or ``None``
-       for isotropic 0 dBi); carrier frequency [Hz]; transmit EIRP [dBW]; a
-       :class:`BistaticLinkBudgetSettings`; optionally the attitude quaternion ``q_sat``, a custom
-       :class:`~object_definitions.Target_def.Target`, ECI surface normals, and (for the delay-Doppler
-       cell) the Tx velocities and the band chip length.
-   * - Produces
-     - A ``dict`` of arrays: ``received_power_w`` / ``_dbw`` / ``_dbm``; one-way and summed FSPL;
-       ``bistatic_spreading_loss_db``; ``rx_gain_dbi``; ``rcs_m2``; the thermal-noise block
-       (``noise_power_w``, ``cn0_db_hz``, ``snr_rf_db``, ...); the geometry angles; ``target_info``
-       (the target's RCS breakdown); and ``delay_doppler_cell`` when that area model is enabled.
+   * -
+     - Variable
+     - Description
+     - Unit
+   * - **Inputs**
+     - ``tx_positions_eci``
+     - Transmitter ECI positions ``(3, n)``.
+     - m
+   * -
+     - ``rx_positions_eci``
+     - Receiver ECI positions ``(3, n)``.
+     - m
+   * -
+     - ``rx_velocities_eci``
+     - Receiver ECI velocities ``(3, n)``.
+     - m/s
+   * -
+     - ``reflection_positions_eci``
+     - Reflection points ``(n, 3)``.
+     - m
+   * -
+     - ``incidence_deg``
+     - Incidence angle ``(n,)``.
+     - deg
+   * -
+     - ``antenna``
+     - :class:`~object_definitions.Rx_antenna_def.RxAntenna` (``None`` => isotropic 0 dBi).
+     - --
+   * -
+     - ``frequency_hz``
+     - Carrier frequency.
+     - Hz
+   * -
+     - ``tx_eirp_dbw``
+     - Transmit EIRP for this (constellation, band).
+     - dBW
+   * -
+     - ``settings``
+     - :class:`BistaticLinkBudgetSettings` (Rx-system + ocean settings).
+     - --
+   * -
+     - ``q_sat``
+     - Attitude quaternion ``[w, x, y, z]`` (optional).
+     - --
+   * -
+     - ``target``
+     - Custom :class:`~object_definitions.Target_def.Target` RCS model (optional; default OceanTarget).
+     - --
+   * -
+     - ``surface_normals_eci``
+     - ECI surface normals (optional; geocentric if omitted).
+     - --
+   * -
+     - ``tx_velocities_eci`` / ``chip_length_m``
+     - Tx velocities and band chip length; required only for the delay-Doppler cell.
+     - m/s, m
+   * - **Outputs**
+     - ``received_power_w`` / ``_dbw`` / ``_dbm``
+     - Received power.
+     - W, dBW, dBm
+   * -
+     - ``fspl_tx_db`` / ``fspl_rx_db`` / ``fspl_sum_db``
+     - One-way and summed free-space path loss.
+     - dB
+   * -
+     - ``bistatic_spreading_loss_db``
+     - Bistatic spreading term.
+     - dB
+   * -
+     - ``rx_gain_dbi``
+     - Steered receiver gain along the look direction.
+     - dBi
+   * -
+     - ``rcs_m2``
+     - Target RCS used in the link equation.
+     - m^2
+   * -
+     - ``noise_power_w`` / ``cn0_db_hz`` / ``snr_rf_db``
+     - Thermal-noise block (moving-target mode; NaN for area coverage).
+     - W, dB-Hz, dB
+   * -
+     - ``incidence_deg`` / ``scattering_deg`` / ``bistatic_deg``
+     - Geometry angles.
+     - deg
+   * -
+     - ``target_info``
+     - The target's RCS breakdown (coherent / incoherent, etc.).
+     - --
+   * -
+     - ``delay_doppler_cell``
+     - Cell-area diagnostics, present when that area model is enabled.
+     - --
 
 .. note::
 
@@ -82,11 +160,11 @@ angles follow from dot products:
 .. math::
    :label: lb-angles
 
-   \cos\theta_i = -\,\hat{n}_{tx2s}\cdot\hat{n}_{surf}, \qquad
-   \cos\theta_s = \hat{n}_{s2rx}\cdot\hat{n}_{surf}, \qquad
-   \cos\beta   = -\,\hat{n}_{tx2s}\cdot\hat{n}_{s2rx}
+   \cos\left(\theta_i\right) = -\,\hat{n}_{tx2s}\cdot\hat{n}_{surf}, \qquad
+   \cos\left(\theta_s\right) = \hat{n}_{s2rx}\cdot\hat{n}_{surf}, \qquad
+   \cos\left(\beta\right)   = -\,\hat{n}_{tx2s}\cdot\hat{n}_{s2rx}
 
-The **bistatic angle** :math:`\beta` is 0 deg for backscatter, :math:`2\theta_i` for the specular mirror
+The **bistatic angle** :math:`\beta` is 0 deg for backscatter, :math:`2\theta_i` for the specular
 geometry, and 180 deg for pure forward scatter. Any invalid sample (NaN input, zero range, zero-length
 normal) propagates as NaN rather than raising, so a single bad reflection never poisons a batch.
 
@@ -123,9 +201,11 @@ peak directivity and the beam solid angle :math:`4\pi/G_r` projects to a ground 
 .. math::
    :label: lb-footprint
 
-   A_\mathrm{fp} = \frac{4\pi}{G_r}\,\frac{R_r^2}{\cos\theta_i}
+   A_\mathrm{fp} = \frac{4\pi}{G_r}\,\frac{R_r^2}{\cos\left(\theta_s\right)}.
 
-The cosine is clipped to ``[0.05, 1.0]`` to bound the grazing-incidence blow-up. This area is then passed
+The projection angle is the **receiver scattering angle** :math:`\theta_s`, not the transmitter
+incidence angle :math:`\theta_i`. The cosine is clipped to ``[0.05, 1.0]`` to bound the grazing-angle
+blow-up. This area is then passed
 to ``Target.compute_rcs`` so the target owns how it is used. When ``delay_doppler_cell_enabled``, the area
 is replaced by a single delay-Doppler resolution cell (capped at :math:`A_\mathrm{fp}`); when
 ``ocean_patch_integration_enabled``, the ocean clutter is integrated patch-by-patch over the footprint and
@@ -145,9 +225,64 @@ When noise settings are supplied (moving-target mode), the module forms the idea
 
 with Boltzmann constant :math:`k`, system noise temperature :math:`T_\mathrm{sys}` and noise bandwidth
 :math:`B`. :math:`C/N_0` is the bandwidth-independent figure; ``snr_rf_db`` is the **pre-correlation** SNR
-in :math:`B` and deliberately **excludes** the code-despreading / coherent-integration processing gain
-(that gain is a separate, receiver-owned term). Area coverage supplies no noise settings, so the noise
-block is emitted as NaN and the geometric path never depends on a floor it does not model.
+in :math:`B` and deliberately **excludes** the code-despreading / coherent-integration processing gain. The
+detector adds that gain when it forms the SINR (next subsection). Area coverage supplies no noise settings,
+so the noise block is emitted as NaN and the geometric path never depends on a floor it does not model.
+
+Coherent processing gain
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The figures above are *pre-correlation*: they weigh the received power against the full-bandwidth thermal
+floor :math:`N = k\,T_\mathrm{sys}\,B`. A GNSS receiver instead correlates the incoming signal against a
+local replica of the transmitted spread-spectrum (PRN) code and integrates. This despreading lifts a
+code-carrying signal out of the white thermal noise. :func:`coherent_processing_gain_linear` returns the
+linear gain
+
+.. math::
+   :label: lb-procgain
+
+   G_p = \underbrace{B\,T_\mathrm{coh}}_{\text{coherent}}\;\underbrace{\sqrt{M}}_{\text{incoherent}}
+
+with coherent integration time :math:`T_\mathrm{coh}` (``coherent_integration_time_s``) and number of
+incoherent looks :math:`M` (``num_incoherent_looks``). Coherent integration over :math:`T_\mathrm{coh}`
+narrows the equivalent noise bandwidth to order :math:`1/T_\mathrm{coh}`, giving
+:math:`B\,T_\mathrm{coh}`. The additional :math:`\sqrt{M}` represents the reduction in estimator
+standard deviation from averaging independent power looks. The detector expresses both effects as a
+single **detection-equivalent** noise scale
+
+.. math::
+   :label: lb-noise-eff
+
+   N_\mathrm{eff} = \frac{N}{G_p} = \frac{k\,T_\mathrm{sys}}{T_\mathrm{coh}\,\sqrt{M}}
+
+The bandwidth cancels algebraically. However, incoherent averaging does **not** reduce the mean thermal
+noise power by :math:`\sqrt{M}`; it reduces the fluctuation of an estimator. Consequently
+``noise_power_effective_w`` and the resulting threshold comparison are a sensitivity approximation, not
+a literal post-detection mean-noise power or a probability-of-detection calculation. A rigorous detector
+would specify the statistic, false-alarm probability and signal/noise distributions.
+
+The gain acts on the **noise term only**. The ocean clutter carries the same PRN code as the target, so it
+despreads with the same :math:`G_p`; the gain cancels in the signal-to-clutter ratio
+:math:`P_\mathrm{ship}/P_\mathrm{ocean}` and merely lifts both returns above the thermal floor. The SINR
+formed in :class:`~object_definitions.MovingTargetDetection_def.MovingTargetDetection` is therefore the
+implemented detection metric
+
+.. math::
+   :label: lb-sinr
+
+   \mathrm{SINR} = \frac{P_\mathrm{ship}}{P_\mathrm{ocean} + N_\mathrm{eff}}
+
+so a long enough :math:`T_\mathrm{coh}` moves the system from noise-limited
+(:math:`N_\mathrm{eff} > P_\mathrm{ocean}`) to clutter-limited (:math:`N_\mathrm{eff} < P_\mathrm{ocean}`):
+noise- vs clutter-limited is a receiver-setting choice, not a fixed property.
+
+:math:`T_\mathrm{coh}` is physically bounded by the navigation-data bit period and, over the sea, by the
+surface decorrelation time (a few ms for the diffuse return). The model applies :math:`G_p` to the thermal
+noise and leaves the clutter at full strength -- it assumes the clutter stays coherent over
+:math:`T_\mathrm{coh}` (the conservative choice). A clutter return that decorrelates faster than
+:math:`T_\mathrm{coh}` would gain less than a steady target, so a finer model would apply separate,
+coherence-time-limited gains to the ship and the ocean; that differential-coherence discriminator is not
+yet modelled.
 
 API reference
 ^^^^^^^^^^^^^
@@ -163,6 +298,8 @@ API reference
 
 .. autofunction:: functions.link_budget.compute_bistatic_link_budget
 
+.. autofunction:: functions.link_budget.coherent_processing_gain_linear
+
 Module Assumptions and Limitations
 ----------------------------------
 
@@ -173,10 +310,16 @@ Module Assumptions and Limitations
   WGS-84 ellipsoid normals (see :func:`ellipsoid_surface_normals_eci`).
 - **Simplified point-target radar equation.** Distributed-target physics enters only through :math:`\sigma`
   and the illuminated area; multiple scattering and coherent speckle statistics are not modelled here.
-- **SNR is pre-correlation.** ``snr_rf_db`` omits the despreading / integration gain, so it understates
-  the achievable detection SNR by that processing gain. This is the dominant reason the end-to-end system
-  is currently noise-limited.
-- **Grazing clip.** :math:`\cos\theta_i` is clipped to ``[0.05, 1.0]`` in the footprint area.
+- **Link-budget SNR is pre-correlation.** ``snr_rf_db`` and ``cn0_db_hz`` report the raw RF link, before
+  any despreading / integration gain. The moving-target detector applies the coherent and incoherent
+  sensitivity factor :math:`B\,T_\mathrm{coh}\,\sqrt{M}` in its threshold metric (see
+  :func:`functions.link_budget.coherent_processing_gain_linear`). The :math:`\sqrt{M}` part is an
+  estimator-variance approximation, not a physical reduction of mean noise power.
+- **Approximate footprint.** :math:`4\pi/G_r` treats peak directivity as an equivalent beam solid angle
+  and projects it with :math:`\cos\theta_s`, clipped to ``[0.05, 1.0]``. It is not an integration of the
+  actual contour unless patch integration is enabled.
+- **Incoherent-look metric.** The :math:`\sqrt{M}` term models sensitivity improvement through estimator
+  variance. It must not be interpreted as a reduction in mean thermal noise power.
 - **Isotropic fallback.** ``antenna=None`` assumes a 0 dBi receiver and imposes no footprint area.
 
 Validation and Tests
@@ -191,7 +334,7 @@ The module is regression-locked from pure geometry up to the end-to-end ocean ph
    * - Test module
      - What it pins
    * - ``tests/test_bistatic_geometry.py``
-     - Zenith geometry gives all angles 0; the mirror geometry gives :math:`\beta = 2\theta_i`; ranges;
+     - Zenith geometry gives all angles 0; the specular geometry gives :math:`\beta = 2\theta_i`; ranges;
        NaN propagation and shape validation.
    * - ``tests/test_link_budget.py``
      - ``compute_rx_look_direction_antenna_frame`` NaN guards and match to the manual rotation chain;
@@ -201,8 +344,8 @@ The module is regression-locked from pure geometry up to the end-to-end ocean ph
    * - ``tests/test_link_budget_sanity.py``
      - End-to-end through :class:`~object_definitions.OceanTarget_def.OceanTarget`: finite Pr across
        incidence; the per-constellation EIRP plumbing produces the exact 5 dB Galileo-vs-GPS shift;
-       forward specular exceeds oblique backscatter; Pr sits in a CYGNSS-class envelope
-       (-160 .. -110 dBm); the Bragg :math:`\sigma_0` sits in the L-band envelope.
+       forward specular exceeds oblique backscatter; received power and Bragg :math:`\sigma_0` sit in
+       deliberately broad plausibility envelopes. These are sanity bounds, not CYGNSS calibration.
    * - ``tests/test_link_budget_golden.py``
      - Golden-file regression against ``tests/golden/reference_link_budget.npz``; any change in geometry,
        ocean physics or the link equation flips it red. Regenerate intentionally via
@@ -239,8 +382,11 @@ required keys raise).
      - Use one delay-Doppler resolution cell as the distributed-clutter area (mutually exclusive with
        patch integration).
    * - ``coherent_integration_time_s``
-     - Coherent integration time :math:`T_\mathrm{coh}` [s]; sets the cell Doppler bin :math:`1/T_\mathrm{coh}`.
-       Required when the cell is enabled.
+     - Coherent integration time :math:`T_\mathrm{coh}` [s]; sets the cell Doppler bin :math:`1/T_\mathrm{coh}`
+       and the coherent processing gain :math:`B\,T_\mathrm{coh}`. Required when the cell is enabled.
+   * - ``num_incoherent_looks``
+     - Independent incoherent looks :math:`M` (>= 1); applies a heuristic :math:`\sqrt{M}` detection
+       sensitivity improvement, not a reduction in mean noise power.
 
 A minimal call (isotropic receiver, GPS L1, area-coverage-style settings):
 

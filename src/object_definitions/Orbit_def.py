@@ -7,24 +7,55 @@ from object_definitions.Constants_def import Constants
 
 
 class Orbit_specification:
+    """A set of classical (Keplerian) orbital elements, with a TLE-format epoch.
+
+    The mean motion ``n`` is derived from the semi-major axis. With an epoch set, a Satellite can turn
+    these elements into a TLE and propagate.
+    """
+
     def __init__(self, i, e, raan, p, M, a, epochTime=None) -> None:
-        """
-        =========================================================================================================
-        Orbit_specification class:
-          - Defines an orbit object: Initialized with the following parameters:
-            - Inclination                       (i)          [degrees]
-            - Eccentricity                      (e)          [-]
-            - Right Ascension of Ascending Node (RAAN)       [deg]
-            - Argument of perigee               (p)          [deg]
-            - Mean anomaly                      (M)          [deg]
-            - Semi-major axis                   (a)          [m]
-            - "start time of Orbit_specification"      (dt_start)   [YYYY:MM:DD HH:mm:ss UTC] (optional)
-            - Mean motion                       (n)          [rev/day]                 (calculated from a)
-        =========================================================================================================
+        """Store the orbital elements and derive the mean motion from the semi-major axis.
+
+        Parameters
+        ----------
+        i : float
+            Inclination [deg].
+        e : float
+            Eccentricity [-].
+        raan : float
+            Right ascension of the ascending node [deg].
+        p : float
+            Argument of perigee [deg].
+        M : float
+            Mean anomaly [deg].
+        a : float
+            Semi-major axis [m].
+        epochTime : datetime, optional
+            Orbit epoch (UTC); sets the TLE epoch string.
         """
         # Check if enough variables are provided
         if any(var is None for var in [i, e, raan, p, M, a]):
             raise ValueError("Orbit_specification undefined, not sufficient variables provided")
+        try:
+            i, e, raan, p, M, a = (float(value) for value in (i, e, raan, p, M, a))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Orbital elements must be finite numeric values.") from exc
+        if not np.isfinite([i, e, raan, p, M, a]).all():
+            raise ValueError("Orbital elements must be finite numeric values.")
+        if not (0.0 <= i <= 180.0):
+            raise ValueError(f"Inclination must be in [0, 180] deg; got {i}.")
+        if not (0.0 <= e < 1.0):
+            raise ValueError(f"Eccentricity must be in [0, 1); got {e}.")
+        if a * (1.0 - e) <= Constants.RADIUS_EARTH_EQUAT:
+            raise ValueError(
+                f"Orbit perigee radius a*(1-e) must exceed the WGS-84 equatorial radius; got {a * (1.0 - e)} m."
+            )
+        if epochTime is not None and (
+            not isinstance(epochTime, datetime)
+            or epochTime.tzinfo is None
+            or epochTime.utcoffset() != UTC.utcoffset(epochTime)
+        ):
+            raise ValueError("epochTime must be a timezone-aware UTC datetime.")
 
         # Initialize orbit
         self.i = i  # Inclination in degrees

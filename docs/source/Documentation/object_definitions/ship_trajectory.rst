@@ -1,43 +1,103 @@
-Ship trajectory (``object_definitions.ShipTrajectory_def``)
-===========================================================================
+Ship trajectory
+===============
 
 .. module:: object_definitions.ShipTrajectory_def
 
-Executive Summary
------------------
+Summary
+-------
 
-``ShipTrajectory`` turns a start point, an end point, a start time and a speed into a **time-stamped,
-land-avoiding maritime route**. It is the moving-target source for the detection mode: it produces the
-ordered ``(timestamp, latitude, longitude)`` samples that
-:class:`~object_definitions.MovingTargetDetection_def.MovingTargetDetection` queries to place the target
-at each epoch, plus a trajectory shapefile (referenced by ``[COVERAGE].shapefile_path``) and a metadata
-JSON for caching.
+``ShipTrajectory`` builds a ship's route from a start point, an end point, a start time, and a speed.
+The route stays on water and is time-stamped: it is a list of ``(timestamp, latitude, longitude)`` samples.
+The moving-target detector (:class:`~object_definitions.MovingTargetDetection_def.MovingTargetDetection`)
+reads these samples to place the target at each time step.
 
-The route is planned over a **navigation mesh** built from the Natural Earth ocean polygons
-(:data:`Constants.earth_coastline_path`): grid points that fall in open water become graph nodes, nearby
-nodes are connected if the straight leg between them does not cross land, and a shortest path is found
-with ``networkx``. Endpoints on land are snapped to the nearest safe water point. The result is
-simplified, time-sampled at a fixed interval, and cached so an unchanged run reloads instantly.
+The route is planned on a **navigation mesh** -- a graph of points on the sea. The points come from an
+ocean-polygon shapefile (:data:`Constants.earth_coastline_path`; `Natural Earth <https://www.naturalearthdata.com/>`_ ``ne_10m_ocean.shp`` by
+default, though any water-polygon layer works -- see the assumptions below). Points that fall on water
+become graph nodes, and two nodes are linked when the straight line between them stays on water. The
+shortest path across this graph is the route (found with ``networkx``). A start or end point on land is
+moved to the nearest water. The finished route is simplified, sampled at a fixed time step, and saved to
+disk, so an unchanged run loads it back instead of planning it again.
 
 Interface
 ---------
 
-.. list-table:: Consumed / produced
-   :widths: 22 78
+.. list-table:: Inputs / outputs
+   :widths: 12 26 48 14
    :header-rows: 1
 
-   * - Role
-     - Quantity
-   * - Consumes (constructor)
-     - ``ship_id``; ``ship_speed_knot``; ``start_position`` / ``end_position`` as ``(latitude, longitude)``;
-       ``start_time`` (UTC datetime); and meshing controls ``interval_minutes``, ``grid_resolution_km``,
-       ``delta_boudingBox_km``, ``fast_path_gen_method``, ``mesh_connection_radius_km``, ``water_buffer_km``.
-       The Natural Earth ocean shapefile is read from :data:`Constants.earth_coastline_path`.
-   * - Produces
-     - ``trajectory_points`` (list of ``(lat, lon)``) and ``timestamps`` (aligned UTC datetimes);
-       ``waypoints`` and ``route_distance``; ``end_time`` (derived from distance / speed); and
-       ``shapefile_path`` (the time-series shapefile + metadata JSON, written under
-       :data:`Constants.autogen_ship_shapefiles`). ``get_position_at_time`` is the per-epoch query.
+   * -
+     - Variable
+     - Description
+     - Unit
+   * - **Inputs**
+     - ``ship_id``
+     - Identifier used for the shapefile / cache filenames.
+     - --
+   * -
+     - ``ship_speed_knot``
+     - Cruise speed.
+     - knots
+   * -
+     - ``start_position`` / ``end_position``
+     - Endpoints as ``(latitude, longitude)``.
+     - deg
+   * -
+     - ``start_time``
+     - Journey start (UTC).
+     - dd.MM.YYYY HH:mm:ss
+   * -
+     - ``interval_minutes``
+     - Trajectory time step.
+     - min
+   * -
+     - ``grid_resolution_km``
+     - Navigation-mesh spacing.
+     - km
+   * -
+     - ``delta_boudingBox_km``
+     - Bounding-box margin.
+     - km
+   * -
+     - ``fast_path_gen_method``
+     - Fast / coarse path toggle.
+     - boolean
+   * -
+     - ``mesh_connection_radius_km``
+     - Max graph edge length.
+     - km
+   * -
+     - ``water_buffer_km``
+     - Shore safety margin.
+     - km
+   * -
+     - ocean-polygon shapefile
+     - Water-polygon layer read from :data:`Constants.earth_coastline_path` (Natural Earth by default).
+     - --
+   * - **Outputs**
+     - ``trajectory_points``
+     - List of ``(lat, lon)`` samples.
+     - deg
+   * -
+     - ``timestamps``
+     - Aligned UTC datetimes.
+     - --
+   * -
+     - ``waypoints`` / ``route_distance``
+     - Simplified route corners and total length.
+     - deg, m
+   * -
+     - ``end_time``
+     - Derived from distance / speed.
+     - --
+   * -
+     - ``shapefile_path``
+     - Time-series shapefile + metadata JSON (under :data:`Constants.autogen_ship_shapefiles`).
+     - --
+   * -
+     - ``get_position_at_time``
+     - The per-epoch position query.
+     - --
 
 .. note::
 
@@ -50,38 +110,48 @@ Detailed Module Description
 Endpoint conditioning
 ^^^^^^^^^^^^^^^^^^^^^^
 
-Each endpoint is first passed through ``get_safe_water_point``: if it falls on land it is pushed out to
-the nearest point on the ocean boundary plus a ``water_buffer`` margin (default 22.2 km = 12 nautical
-miles, the territorial-sea limit). This guarantees both ends are routable water nodes.
+Each endpoint must sit on water. If an endpoint is on land, it is moved to the nearest water and pushed a
+little further out by the ``water_buffer`` margin (default 22.2 km, or 12 nautical miles -- the
+territorial-sea limit). The shoreline direction is found in geographic coordinates, converted to local
+east/north metres with WGS-84 radii of curvature, normalised there, and converted back to latitude and
+longitude after applying the metre-valued buffer.
 
 Navigation mesh and graph
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-A bounding box around the (buffered) endpoints is gridded at ``grid_resolution_km``; the longitude step
-is widened with latitude (``fn.delta_lon_from_distance``) so spacing stays roughly metric. Only grid
-points inside the ocean polygon become graph nodes. Nodes within ``mesh_connection_radius`` of each other
-are joined by an edge **iff** the straight leg does not cross land, with the edge weight set to the
-great-circle (haversine) leg length. A ``cKDTree`` over the water points makes the radius queries fast.
+A box is drawn around the two endpoints and filled with a grid of points, spaced ``grid_resolution_km``
+apart. The east-west spacing grows with latitude (``fn.delta_lon_from_distance``) so the grid stays
+roughly even in kilometres. Only points on water are kept as nodes. Two nodes are joined by an edge when
+they are closer than ``mesh_connection_radius`` and the straight line between them stays on water; the
+edge length is the great-circle (haversine) distance. A ``cKDTree`` makes the search for nearby points fast.
+
+.. _fig-ship-mesh:
+.. figure:: _images/Meshgrid_ship_Detail3.png
+   :align: center
+   :width: 90%
+
+   Navigation mesh over the North Sea: green markers are the in-ocean grid nodes; red lines are the
+   land-free edges connecting nodes within ``mesh_connection_radius``. The shortest land-avoiding route
+   is found over this graph.
 
 Shortest path and component bridging
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The route is the minimum-weight ``start -> end`` path (``networkx.shortest_path``, Dijkstra on the
-haversine weights). If the start and end fall in **disconnected** components (e.g. separated by a narrow
-strait the grid missed), ``_bridge_components`` runs a Delaunay triangulation across the two component
-point sets and adds the shortest land-free triangulation edges (and, if needed, midpoints in narrow
-passages) until the components connect.
+The route is the shortest path from start to end through the graph (``networkx.shortest_path``, using the
+edge lengths as weights). Sometimes the start and end fall in two separate pieces of the graph -- for
+example, split by a narrow strait the grid stepped over. When that happens, ``_bridge_components`` looks
+for short, water-only links between the two pieces (using a Delaunay triangulation, and adding midpoints
+in tight passages if needed) until they join up.
 
 Path simplification and sampling
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-``simplify_path`` applies a Douglas-Peucker-style filter: a waypoint is dropped when the leg that skips
-it still does not cross land, leaving only the corners that actually matter. The simplified waypoints are
-then time-sampled. ``generate_trajectory_equal_time`` distributes the total travel time across the
-segments in proportion to their length and emits a sample every ``interval_minutes``, interpolating
-linearly in ``(lat, lon)`` within each segment; ``generate_trajectory_equal_dist`` instead emits a sample
-every fixed number of metres. The total travel time follows from the route distance and the ship speed,
-``end_time = start_time + route_distance / ship_speed``.
+``simplify_path`` drops waypoints that are not needed: if skipping a waypoint still keeps the path on
+water, it is removed, leaving only the real corners. The simplified route is then sampled in time.
+``generate_trajectory_equal_time`` splits the total travel time across the legs by their length and places
+a sample every ``interval_minutes``, moving in a straight line in ``(lat, lon)`` along each leg.
+``generate_trajectory_equal_dist`` instead places a sample every fixed number of metres. The total travel
+time comes from the route length and the ship speed: ``end_time = start_time + route_distance / ship_speed``.
 
 Distance and bearing
 ^^^^^^^^^^^^^^^^^^^^^
@@ -92,26 +162,30 @@ Leg lengths use the haversine great-circle distance on a sphere of radius
 .. math::
    :label: ship-haversine
 
-   a = \sin^2\!\frac{\Delta\phi}{2} + \cos\phi_1\,\cos\phi_2\,\sin^2\!\frac{\Delta\lambda}{2}, \qquad
+   a = \sin^2\! \left(\frac{\Delta\phi}{2}\right) + \cos \left( \phi_1 \right)\,\cos\left( \phi_2 \right)\,\sin^2\!\left(\frac{\Delta\lambda}{2}\right), \qquad
    d = 2R\,\arcsin\!\sqrt{a},
 
-with latitudes :math:`\phi` and longitudes :math:`\lambda`. The initial bearing between two points is
+where :math:`\phi` is latitude and :math:`\lambda` is longitude. The starting heading from one point to
+the next is
 
 .. math::
    :label: ship-bearing
 
-   \theta = \operatorname{atan2}\!\big(\sin\Delta\lambda\,\cos\phi_2,\;
-   \cos\phi_1\,\sin\phi_2 - \sin\phi_1\,\cos\phi_2\,\cos\Delta\lambda\big),
+   \theta = \operatorname{atan2}\!\left(
+   \sin(\Delta\lambda)\cos\phi_2,\;
+   \cos\phi_1\sin\phi_2-\sin\phi_1\cos\phi_2\cos(\Delta\lambda)
+   \right),
 
-normalised to ``[0, 360)`` degrees.
+wrapped to the range ``[0, 360)`` degrees.
 
 Caching
 ^^^^^^^
 
-``create_trajectory_files`` writes the time-series shapefile and a metadata JSON (positions, speed,
-start time, interval, mesh parameters). On the next construction, ``_cache_matches_inputs`` reloads that
-cache only when the start / end positions, start time, speed and interval all match; any mismatch (the
-metadata is printed) triggers a full re-plan, because the trajectory is time-sampled from the speed.
+``create_trajectory_files`` saves the route as a shapefile plus a small JSON file with its settings
+(positions, speed, start time, interval, mesh parameters). Next time, ``_cache_matches_inputs`` reuses the
+saved route only if the start/end points, start time, speed, interval, fast-method flag, grid resolution,
+connection radius, water buffer and bounding-box margin all match. Missing fields in an older cache make
+it stale.
 
 Public interface
 ^^^^^^^^^^^^^^^^
@@ -122,33 +196,42 @@ Public interface
 Module Assumptions and Limitations
 ----------------------------------
 
-- **Spherical haversine.** Distances use a sphere at the equatorial radius, not the WGS-84 ellipsoid; the
-  sub-percent error is negligible against the routing-grid resolution.
-- **Linear interpolation between waypoints.** Within a segment the position is interpolated linearly in
-  ``(lat, lon)`` rather than along a great circle or rhumb line. Fine for short legs; coarser for very
+- **Round-Earth distances.** Distances assume a perfect sphere, not the slightly flattened real Earth.
+  The error is well under 1% -- much smaller than the grid spacing -- so it does not matter here.
+- **Straight lines between waypoints.** Between two waypoints the ship moves in a straight line in
+  latitude/longitude, not along a true great circle. This is fine for short legs and rougher for very
   long ones.
-- **Constant speed.** Time sampling assumes a single cruise speed; there is no acceleration, current, or
-  weather model.
-- **Routing fidelity is grid-limited.** Land avoidance quality depends on ``grid_resolution_km`` and
-  ``mesh_connection_radius_km``; ``fast_path_gen_method`` trades route optimality for speed. Both
-  endpoints must be reachable open water (they are snapped to a 12 nm buffer if on land).
-- **Nearest-sample query.** ``get_position_at_time`` returns the closest stored sample, not an
-  interpolated position.
-- **Shapefiles are for GIS.** They are written in EPSG:4326 for visualization; the simulation consumes
-  ``trajectory_points`` / ``timestamps`` directly.
+- **One fixed speed.** The ship travels at a single cruise speed. There is no speeding up, slowing down,
+  current, or weather.
+- **Which shapefile you can use.** The water data is not tied to Natural Earth. Any vector file that
+  :func:`geopandas.read_file` can open works (``.shp``, GeoPackage, GeoJSON, ...), as long as it (1) stores
+  the **water as polygons** (the code treats *inside a polygon* as water), and (2) uses longitude/latitude
+  in degrees (EPSG:4326), since distances are measured straight from those coordinates. Natural Earth
+  ``ne_10m_ocean.shp`` is the default; point :data:`Constants.earth_coastline_path` at another file to
+  change it. A land or coastline-line file would flip the water test and break the routing.
+- **Route detail depends on the grid.** How well the route avoids land depends on ``grid_resolution_km``
+  and ``mesh_connection_radius_km``. ``fast_path_gen_method`` gives a faster run with a rougher route.
+  Both endpoints must be on open water that can be reached (an endpoint on land is moved to a 12 nm buffer).
+- **Shore buffer is locally planar.** The metre/degree conversion uses local WGS-84 curvature, but the
+  nearest polygon boundary and its direction are still found in EPSG:4326 planar coordinates. This is
+  adequate for a local buffer, not a geodesic coastal-distance guarantee.
+- **Position lookup is approximate.** ``get_position_at_time`` returns the nearest stored sample, not an
+  exact interpolated position.
+- **Shapefiles are only for viewing.** They are written in EPSG:4326 for use in GIS tools; the simulation
+  itself uses ``trajectory_points`` and ``timestamps`` directly.
 
 Validation and Tests
 --------------------
 
-The full constructor needs the >100 MB Natural Earth mesh, so ``tests/test_ship_trajectory.py`` bypasses
-``__init__`` (via ``object.__new__``) and pins the argument-driven helpers:
+Building the full object needs the large (>100 MB) ocean shapefile, so ``tests/test_ship_trajectory.py``
+skips ``__init__`` (with ``object.__new__``) and tests the helper functions on their own:
 
 .. list-table::
    :widths: 38 62
    :header-rows: 1
 
    * - Test group
-     - What it pins
+     - What it checks
    * - ``TestHaversineDistance``
      - Zero distance for identical points; one degree of latitude ~ 111 km; Oslo->Trondheim ~ 392 km;
        antipodal points ~ :math:`\pi R`; symmetry.
@@ -157,15 +240,19 @@ The full constructor needs the >100 MB Natural Earth mesh, so ``tests/test_ship_
        ``clip(a, 0, 1)`` guard returns 0 (not NaN) for coincident points.
    * - ``TestCalculateBearing``
      - Due north / east / south / west give 0 / 90 / 180 / 270 deg; results always lie in ``[0, 360)``.
+   * - ``TestSafeWaterPoint``
+     - A 22.2 km buffer is converted from metres to angular coordinates and lands approximately 22.2 km
+       inside a simple water polygon.
    * - ``TestTrajectoryCacheLoading``
-     - Matching metadata reloads the cache (no re-plan); a changed ``ship_speed_m_s`` marks the cache
-       stale and forces a re-plan.
+     - Matching metadata reloads the cache (no re-plan); changed speed or mesh resolution marks it stale
+       and forces a re-plan.
 
 User Guide
 ----------
 
-The route inputs come from the moving-target configuration; the mesh-resolution knobs are currently set
-where the trajectory is constructed in ``main_simulation_movingTarget.py`` (not exposed in the INI).
+The route inputs come from the moving-target configuration file. The mesh-resolution settings are
+currently set in code, where the trajectory is built in ``main_simulation_movingTarget.py`` (they are
+not in the INI file yet).
 
 .. list-table:: Route inputs (INI)
    :widths: 34 66

@@ -24,6 +24,7 @@ from object_definitions.BackScattPoint_def import (
     b as WGS84_B,
     calculate_ellipsoid_intersection_t,
 )
+from object_definitions.Constants_def import Constants
 
 
 class TestEllipsoidIntersection:
@@ -100,12 +101,51 @@ class TestEllipsoidIntersection:
         assert brp is None
         assert t is None
 
+    def test_spherical_axes_return_mean_radius_surface(self):
+        radius = Constants.R_EARTH_MEAN
+        rx_ecef = np.array([radius + 700_000.0, 0.0, 0.0])
+        tx_ecef = np.array([radius + 20_200_000.0, 0.0, 0.0])
+        brp, _, reason = calculate_ellipsoid_intersection_t(
+            tx_ecef,
+            rx_ecef,
+            a=radius,
+            b=radius,
+            max_central_angle_deg=80.0,
+        )
+        assert reason == "ok"
+        np.testing.assert_allclose(brp, [radius, 0.0, 0.0], atol=1e-6)
+
+    def test_intersection_before_receiver_is_not_a_brp(self):
+        # Receiver placed beyond the Earth on the far side: the first positive line root is before
+        # the receiver, so no receiver-side continuation root exists.
+        tx_ecef = np.array([WGS84_A + 20_200_000.0, 0.0, 0.0])
+        rx_ecef = np.array([-(WGS84_A + 700_000.0), 0.0, 0.0])
+        brp, _, reason = calculate_ellipsoid_intersection_t(
+            tx_ecef,
+            rx_ecef,
+            max_central_angle_deg=181.0,
+        )
+        assert reason == "outside_segment"
+        assert brp is None
+
 
 def _make_satellite_stub(positions_eci: np.ndarray, velocities_eci: np.ndarray) -> types.SimpleNamespace:
     """
     Tiny stand-in for a Satellite — only the two attributes BRP.compute_brp_coordinates reads.
     """
     return types.SimpleNamespace(positions_eci=positions_eci, velocities_eci=velocities_eci)
+
+
+class TestBrpConstruction:
+    @pytest.mark.parametrize("angle", [0.0, -1.0, 181.0, np.nan])
+    def test_nonphysical_central_angle_rejected(self, angle):
+        with pytest.raises(ValueError, match="max_central_angle_deg"):
+            BRP(0, 0, max_central_angle_deg=angle, max_incidence_angle_deg=45.0)
+
+    @pytest.mark.parametrize("angle", [0.0, -1.0, 91.0, np.nan])
+    def test_nonphysical_incidence_angle_rejected(self, angle):
+        with pytest.raises(ValueError, match="max_incidence_angle_deg"):
+            BRP(0, 0, max_central_angle_deg=80.0, max_incidence_angle_deg=angle)
 
 
 class TestAntennaFovPreGate:
@@ -181,3 +221,42 @@ class TestAntennaFovPreGate:
             link_budget_settings=link_budget_settings(),
         )
         assert np.isfinite(brp.refl_LL_vec).all()
+
+    def test_fov_gate_uses_elevation_for_antenna_x_axis(self, monkeypatch):
+        # Production convention: antenna x is elevation and antenna y is azimuth. Use asymmetric
+        # limits so the legacy swapped mapping would reject this x-only command.
+        antenna = make_test_antenna()
+        antenna.max_azimuth_steering_deg = 5.0
+        antenna.max_elevation_steering_deg = 30.0
+        theta = np.radians(20.0)
+        look_a = np.array([np.sin(theta), 0.0, np.cos(theta)])
+        rx_pos = np.array([[7.1e6], [0.0], [0.0]])
+        tx_pos = rx_pos - 20.0e6 * look_a[:, None]
+        zero_vel = np.zeros((3, 1))
+        times = np.array([dt.datetime(2025, 4, 2, 12, 0, tzinfo=dt.UTC)])
+        called = {"intersection": False}
+
+        monkeypatch.setattr(
+            "object_definitions.BackScattPoint_def.eci_to_antenna_rotation_from_state",
+            lambda *_args, **_kwargs: np.eye(3),
+        )
+
+        def fake_intersection(*_args, **_kwargs):
+            called["intersection"] = True
+            return None, None, "outside_segment"
+
+        monkeypatch.setattr(
+            "object_definitions.BackScattPoint_def.calculate_ellipsoid_intersection_t",
+            fake_intersection,
+        )
+
+        brp = BRP(0, 0, earth_model="elliptical", max_central_angle_deg=180.0, max_incidence_angle_deg=80.0)
+        brp.compute_brp_coordinates(
+            _make_satellite_stub(tx_pos, zero_vel),
+            _make_satellite_stub(rx_pos, zero_vel),
+            times,
+            tx_eirp_dbw=27.0,
+            antenna=antenna,
+            compute_link_budget=False,
+        )
+        assert called["intersection"] is True

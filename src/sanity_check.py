@@ -1,6 +1,6 @@
 """Sanity check: at low latitudes, the elliptical specular point should
 agree with the spherical FF result to within a few km. Catches regressions
-in the SLSQP setup, frame conversions, or residual definition.
+in the two-angle stationary-path solve, frame conversions, or residual definition.
 
 The test geometry is built directly in ECEF, which both
 - avoids an ECI <-> ECEF roundtrip purely for the test, and

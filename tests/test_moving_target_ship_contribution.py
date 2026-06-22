@@ -328,6 +328,24 @@ class TestDetectionMetrics:
         np.testing.assert_allclose(event.detection_margin_db, -3.1)
         assert event.is_sinr_detection is False
 
+    def test_processing_gain_lowers_effective_noise_floor(self):
+        # A 10x processing gain divides the noise floor by 10, so SINR uses (pr_ocean + noise/10).
+        event = MovingTargetDetectionStruct(
+            pr_ocean_w=2.0,
+            pr_ship_w=8.0,
+            noise_power_w=2.0,
+            processing_gain_linear=10.0,
+            detection_sinr_threshold_db=0.0,
+        )
+
+        MovingTargetDetection._populate_detection_metrics(event)
+
+        np.testing.assert_allclose(event.processing_gain_db, 10.0)
+        np.testing.assert_allclose(event.noise_power_effective_w, 0.2)
+        np.testing.assert_allclose(event.sinr_ship_db, 10.0 * np.log10(8.0 / (2.0 + 0.2)))
+        # The raw RF SNR is unchanged: it still reports against the un-reduced k T B floor.
+        np.testing.assert_allclose(event.snr_total_rf_db, 10.0 * np.log10(10.0 / 2.0))
+
 
 class TestLinkBudgetContributionPlot:
     def test_plot_includes_lb4c_noise_and_sinr_metrics(self, mtd, tmp_path, monkeypatch, capsys):

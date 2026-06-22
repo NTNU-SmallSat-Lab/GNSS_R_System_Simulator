@@ -85,15 +85,28 @@ class TestSatelliteWriteTleFile:
         )
         assert sat.tle_exists() is False
 
-    def test_write_tle_smoke(self):
+    def test_write_tle_smoke(self, tmp_path, monkeypatch):
         """Constructing a Satellite from a list that includes start_time should write a TLE.
         Same coverage as the legacy testFreeFlyerConnection (which was misnamed — it never
         connected to FreeFlyer, only smoke-tested write_tle_file)."""
+        monkeypatch.setattr(Constants, "tle_eph_folder_path", str(tmp_path))
         sat = Satellite(9, [*ORBIT_ARGS, START_TIME])
         # The constructor already calls write_tle_file when the list includes an epoch.
         # Calling it again here exercises the second-write codepath as well.
         sat.write_tle_file()
         assert sat.tle_exists() is True
+        assert os.path.isfile(sat.tle_file_path)
+        with open(sat.tle_file_path, encoding="ascii") as tle_file:
+            assert tle_file.read().strip() == sat.tle_str
+
+    def test_set_epoch_writes_loadable_tle(self, orbit_no_epoch, tmp_path, monkeypatch):
+        monkeypatch.setattr(Constants, "tle_eph_folder_path", str(tmp_path))
+        sat = Satellite(11, orbit_no_epoch, satName="epoch_later")
+
+        sat.set_epoch(START_TIME)
+
+        assert sat.tle_exists()
+        assert sat.skf is not None
 
 
 class TestSatelliteFromTleFile:
@@ -106,3 +119,24 @@ class TestSatelliteFromTleFile:
         assert isinstance(sat, Satellite)
         sat.write_tle_file()
         assert sat.tle_exists() is True
+
+    def test_multi_satellite_index_keeps_metadata_and_skyfield_record_aligned(self):
+        galileo_path = os.path.join(Constants.tle_folderpath, "GALILEO.tle")
+        if not os.path.exists(galileo_path):
+            pytest.skip(f"GALILEO.tle missing at {galileo_path}.")
+
+        sat = Satellite(0, tle_file_path=galileo_path, satNo_in_tle=10)
+
+        assert sat.satName == sat.skf.name
+        assert sat.satID == sat.skf.model.satnum
+
+    def test_multi_satellite_name_selects_matching_skyfield_record(self):
+        galileo_path = os.path.join(Constants.tle_folderpath, "GALILEO.tle")
+        if not os.path.exists(galileo_path):
+            pytest.skip(f"GALILEO.tle missing at {galileo_path}.")
+        selected_name = "GSAT0208 (GALILEO 11)"
+
+        sat = Satellite(0, tle_file_path=galileo_path, satName=selected_name)
+
+        assert sat.satName == selected_name
+        assert sat.skf.name == selected_name

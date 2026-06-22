@@ -8,27 +8,27 @@ from object_definitions.Constants_def import Constants
 
 
 class RxAntenna:
+    """Receiver antenna: holds the phased-array patterns and returns gain along a look direction.
+
+    Built from the ``[ANTENNA]`` settings. It loads the generated radiation-pattern files, steers the beam
+    analytically toward a requested direction, and reports the gain there (in dBi). It also owns the
+    footprint contour used to project the beam onto the ground.
+
+    Parameters
+    ----------
+    settings : dict
+        Antenna configuration with keys: ``antenna_pattern_files`` (``{(azimuth, elevation,
+        frequency_mhz) -> json path}``), ``polarizations`` (e.g. ``["LHCP", "RHCP"]``), ``bands``
+        (e.g. ``["L1", "L5"]``), and ``footprint_dB`` (the footprint contour level, below 0 dB).
+
+    Notes
+    -----
+    The per-axis maximum steering angles are derived from the generated steering grid (the largest
+    ``|azimuth|`` and ``|elevation|``), not set directly.
+    """
+
     def __init__(self, settings: dict = None):
-        """
-        =========================================================================================================
-        RxAntenna class:
-            - Receiver antenna object initialized from a settings dictionary parsed from the [ANTENNA]
-              INI section.
-
-            INPUTS:
-                settings: [dict]   Antenna configuration with keys:
-                                       antenna_pattern_files: dict {(azimuth, elevation, frequency_mhz) -> json filepath}.
-                                                              One steered pattern per grid steering direction; the
-                                                              elevation=0 patterns also serve as the unsteered
-                                                              footprint contour / boresight directivity baseline.
-                                       polarizations:         list (e.g. ["LHCP", "RHCP"])
-                                       bands:                 list (e.g. ["L1", "L5"])
-                                       footprint_dB:          float, dB contour for the footprint
-
-            Per-axis max steering angles are derived from the generated steering grid (max |azimuth|,
-            max |elevation|), not configured directly.
-        =========================================================================================================
-        """
+        """Load the pattern files, validate them, and derive the steering grid and footprint baseline."""
         if settings is None:
             raise ValueError("Settings dictionary must be provided.")
         self.antenna_lookuptable = {}
@@ -312,8 +312,8 @@ class RxAntenna:
 
         INPUTS:
             frequency_mhz: [float]   Target frequency [MHz] (snapped to closest available)
-            az_target:     [float]   Target steering azimuth (x-axis tilt) [deg]
-            el_target:     [float]   Target steering elevation (y-axis tilt) [deg]
+            az_target:     [float]   Target steering azimuth (y-axis tilt) [deg]
+            el_target:     [float]   Target steering elevation (x-axis tilt) [deg]
 
         OUTPUT:
             corners: [list[tuple]]   [(pattern_key, weight), ...] of length 4; weights sum to 1.
@@ -347,7 +347,7 @@ class RxAntenna:
         =========================================================================================================
         Convert a unit look direction in antenna coordinates to two-plane steering angles.
 
-        Sine-space: azimuth = asin(x-component), elevation = asin(y-component); boresight is +z.
+        Sine-space: azimuth = asin(y-component), elevation = asin(x-component); boresight is +z.
 
         INPUTS:
             direction: [np.ndarray, shape (3,)]   Look direction in antenna frame
@@ -368,8 +368,8 @@ class RxAntenna:
         if direction[2] <= 0.0:
             return None
 
-        azimuth_deg = float(np.degrees(np.arcsin(np.clip(direction[0], -1.0, 1.0))))
-        elevation_deg = float(np.degrees(np.arcsin(np.clip(direction[1], -1.0, 1.0))))
+        azimuth_deg = float(np.degrees(np.arcsin(np.clip(direction[1], -1.0, 1.0))))    # azimuth steers the y-axis
+        elevation_deg = float(np.degrees(np.arcsin(np.clip(direction[0], -1.0, 1.0))))  # elevation steers the x-axis
         return azimuth_deg, elevation_deg
 
     def resolve_steering_angles_for_direction(self, direction_antenna_frame: np.ndarray) -> tuple[float, float] | None:
@@ -569,8 +569,8 @@ class RxAntenna:
 
         INPUTS:
             rad_pattern_spherical_dB: [np.ndarray]   Radiation pattern [dB], shape (n_theta, n_phi)
-            steering_azimuth_deg:     [float]        Commanded x-axis steering angle [deg]
-            steering_elevation_deg:   [float]        Commanded y-axis steering angle [deg]
+            steering_azimuth_deg:     [float]        Commanded y-axis steering angle [deg]
+            steering_elevation_deg:   [float]        Commanded x-axis steering angle [deg]
 
         OUTPUT:
             contour_vectors: [np.ndarray, shape (footprint_resolution, 3)]   Main-lobe-centred ring vectors
@@ -585,8 +585,8 @@ class RxAntenna:
             raise ValueError("Steering command points outside the antenna front hemisphere.")
 
         n_peak = np.array([
-            sin_az,
-            sin_el,
+            sin_el,   # elevation steers the x-axis
+            sin_az,   # azimuth steers the y-axis
             np.sqrt(z_squared),
         ])
 

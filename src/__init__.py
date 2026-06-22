@@ -118,14 +118,14 @@ def build_selected_signals(antenna_bands, loaded_constellation_names) -> list[di
     return selected_signals
 
 
-def initialize(config_file_name="Configuration.ini"):
+def initialize(config_file_name="Configuration_area.ini"):
     """
     =========================================================================================================
-    Read the configuration file (default: 'Configuration.ini') and initialize the simulation settings.
+    Read a scenario configuration file and initialize the simulation settings.
     The configuration file acts as the main input for the simulation.
 
     INPUTS:
-        config_file_name: [str, optional]   The name of the configuration file to read. Default is 'Configuration.ini'.
+        config_file_name: [str, optional]   The name of the configuration file to read. Default is 'Configuration_area.ini'.
 
     OUTPUT:
         result: [tuple]   (config: ConfigParser, simulation_settings: dict) — the configuration settings read from the file
@@ -153,8 +153,7 @@ def initialize(config_file_name="Configuration.ini"):
         orbit2 = ...
 
         [GNSS CONSTELLATIONS]
-        gnss_tle_files   = [file1.tle, file2.tle, ...]    (TLE files for GNSS constellations)
-        gnss_const_names = [const1, const2, ...]          (Names of the GNSS constellations, e.g., GPS, GLONASS, GALILEO, BEIDOU)
+        gnss_tle_files = [file1.tle, file2.tle, ...]       (TLE files for GNSS constellations; constellation names are inferred from filenames)
 
         [LINK BUDGET] (required) and [OCEAN] (required)
         Receiver-system losses and sea-state inputs for the bistatic ocean RCS. See
@@ -398,6 +397,8 @@ def initialize(config_file_name="Configuration.ini"):
         raise ValueError("[REFLECTION] section is required in the configuration file.")
     section = config["REFLECTION"]
     reflection_type = section.get("reflection_type", "specular").strip('"').strip("'")
+    if reflection_type not in {"specular", "backscatter"}:
+        raise ValueError("[REFLECTION].reflection_type must be either 'specular' or 'backscatter'.")
     if "max_central_angle_deg" not in section:
         raise ValueError("[REFLECTION].max_central_angle_deg is required in the configuration file.")
     try:
@@ -406,6 +407,8 @@ def initialize(config_file_name="Configuration.ini"):
         raise ValueError(
             f"Invalid value for 'max_central_angle_deg' in [REFLECTION]: {section['max_central_angle_deg']}"
         ) from None
+    if not math.isfinite(max_central_angle_deg) or not (0.0 < max_central_angle_deg <= 180.0):
+        raise ValueError("[REFLECTION].max_central_angle_deg must be finite and in (0, 180] deg.")
     max_incidence_angle_deg = None
     if reflection_type == "backscatter":
         if "max_incidence_angle_deg" not in section:
@@ -418,6 +421,8 @@ def initialize(config_file_name="Configuration.ini"):
             raise ValueError(
                 f"Invalid value for 'max_incidence_angle_deg' in [REFLECTION]: {section['max_incidence_angle_deg']}"
             ) from None
+        if not math.isfinite(max_incidence_angle_deg) or not (0.0 < max_incidence_angle_deg <= 90.0):
+            raise ValueError("[REFLECTION].max_incidence_angle_deg must be finite and in (0, 90] deg.")
 
     #[LINK BUDGET] (REQUIRED SECTION)
     # Receiver-system parameters. No fallback defaults; missing keys raise.
@@ -494,6 +499,15 @@ def initialize(config_file_name="Configuration.ini"):
             raise ValueError(
                 f"[LINK BUDGET].coherent_integration_time_s must be > 0; got {link_budget['coherent_integration_time_s']}"
             )
+    if "num_incoherent_looks" in section:
+        try:
+            link_budget["num_incoherent_looks"] = int(section["num_incoherent_looks"])
+        except ValueError:
+            raise ValueError(f"Invalid value for 'num_incoherent_looks' in [LINK BUDGET]: {section['num_incoherent_looks']}") from None
+        if link_budget["num_incoherent_looks"] < 1:
+            raise ValueError(
+                f"[LINK BUDGET].num_incoherent_looks must be >= 1; got {link_budget['num_incoherent_looks']}"
+            )
 
     #[OCEAN] (REQUIRED SECTION)
     # Sea-state and water-property inputs for the bistatic ocean RCS model. INI-strict.
@@ -525,6 +539,7 @@ def initialize(config_file_name="Configuration.ini"):
         "ocean_patch_grid_size",
         "delay_doppler_cell_enabled",
         "coherent_integration_time_s",
+        "num_incoherent_looks",
     }
     missing_required = (expected_fields - optional_link_budget_keys) - parsed_keys
     if unknown_keys or missing_required:

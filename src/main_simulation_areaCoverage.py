@@ -28,7 +28,7 @@ def run_area_coverage_simulation(sim_settings):
     Run satellite simulation to calculate the coverage of GNSS-R satellites over the Norwegian coast.
     This function initializes the simulation, propagates orbits, calculates reflection points,
     and generates coverage statistics. The simulation is based on the provided simulation settings
-    which are loaded from a configuration file (Configuration.ini).
+    which are loaded from Configuration_area.ini.
 
     INPUTS:
         sim_settings: [dict]   Dictionary containing simulation parameters
@@ -85,7 +85,7 @@ def run_area_coverage_simulation(sim_settings):
         sat_const,
         gnss_constl_dict,
         sim_settings["shapefile_path"],
-        grid_size_m=30_000,
+        grid_size_m=sim_settings["grid_size_m"],
         earth_model=earth,
         link_budget_settings=sim_settings.get("link_budget"),
         max_central_angle_deg=sim_settings["max_central_angle_deg"],

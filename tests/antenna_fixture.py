@@ -3,10 +3,11 @@ Deterministic in-memory RxAntenna fixture for golden-file regression tests.
 
 Bypasses RxAntenna.__init__ and populates the attributes that get_gain_dbi_for_direction
 depends on: a tuple-keyed (azimuth, elevation, frequency) lookup of steered patterns plus the
-steering grid. Steering is two-plane (sine-space): azimuth = beam tilt along the array x-axis,
-elevation = tilt along y-axis, each a signed bounded angle. Each synthetic steered pattern peaks
-at its steering direction, so the bilinear interpolation across the four bracketing steering
-patterns is genuinely exercised.
+steering grid. Steering is two-plane (sine-space): azimuth and elevation are signed bounded angles,
+and each synthetic steered pattern peaks at the sine-space direction set by its command, so the
+bilinear interpolation across the four bracketing steering patterns is genuinely exercised. The
+fixture's internal angle->axis mapping is arbitrary and self-consistent; it does not track the
+production azimuth/elevation axis convention, so this golden file is unaffected by changes to it.
 """
 
 import numpy as np

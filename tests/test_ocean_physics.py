@@ -97,7 +97,7 @@ class TestCircularPolReflectivities:
     def test_normal_incidence_co_pol_vanishes(self):
         eps_r = seawater_permittivity(1.57542e9, 15.0, 35.0)
         R_RL_sq, R_RR_sq = circular_pol_reflectivities(0.0, eps_r)
-        # |R_RR|^2 = |0.5 (R_v - R_h)|^2 and at normal incidence R_v == R_h, so R_RR = 0.
+        # R_RR = 0.5 (R_h + R_v), and this Fresnel basis has R_v(0) = -R_h(0).
         np.testing.assert_allclose(R_RR_sq, 0.0, atol=1e-20)
         assert R_RL_sq > 0.5  # cross-pol carries the full reflectivity at normal incidence
 
@@ -249,20 +249,15 @@ class TestBraggBackscatterNrcs:
         )
         return float(sigma0_rl if pol == "RL" else sigma0_rr)
 
-    def test_calibration_anchor_l_band_level(self):
-        # Absolute-level anchor: the textbook 8 pi SPM prefactor with the Elfouhaily spectrum
-        # normalisation places sigma0_RL at 30 deg / 7 m/s at the published L-band level (~ -21 dB)
-        # with no free scaling. A prefactor or spectrum-normalisation change trips this.
+    def test_representative_l_band_value_stays_in_broad_envelope(self):
+        # Broad plausibility/regression bound, not measurement calibration: circular-polarisation
+        # sigma0_RL at 30 deg / 7 m/s should remain in an oceanic L-band range.
         sigma0_db = 10.0 * np.log10(self._sigma0(30.0))
         assert -25.0 < sigma0_db < -17.0, f"anchor sigma0_RL = {sigma0_db:.2f} dB outside L-band band"
 
-    def test_aquarius_beam_levels_in_l_band_envelope(self):
-        # External anchor, backscatter regime: cross-validate against Aquarius L-band ocean radar
-        # backscatter (1.26 GHz, three beams at 29 / 38 / 46 deg). The model is first-order *circular*
-        # (RHCP->LHCP) Bragg; Aquarius reports *linear* VV/HH, so this checks the envelope, not an exact
-        # match -- sigma0_RL sits at the L-band oceanic level, a few dB below Aquarius VV as expected for
-        # first-order circular Bragg without two-scale tilt. Ref: Meissner, Wentz & Ricciardulli, JGR
-        # Oceans 119, 6499-6522, 2014.
+    def test_representative_incidence_angles_stay_in_broad_l_band_envelope(self):
+        # Broad plausibility only. Aquarius used linear VV/HH whereas this model is circular RL, so
+        # these limits cannot be interpreted as cross-validation.
         for th in (29.0, 38.0, 46.0):
             sigma0_db = 10.0 * np.log10(self._sigma0(th, wind=7.0))
             assert -32.0 < sigma0_db < -12.0, f"sigma0_RL {sigma0_db:.1f} dB at {th} deg outside L-band envelope"

@@ -17,6 +17,7 @@ from antenna_fixture import FREQUENCY_MHZ, compute_gain_grid, make_test_antenna
 import numpy as np
 import pytest
 
+from object_definitions.AntennaPatternGenerator_def import AntennaPatternGenerator, ArrayFactor
 from object_definitions.Rx_antenna_def import RxAntenna
 
 GOLDEN_PATH = Path(__file__).parent / "golden" / "reference_gains.npz"
@@ -154,3 +155,56 @@ def test_antenna_footprint_directivity_uses_endpoint_exclusive_phi_grid():
     )
 
     assert directivity == pytest.approx(expected_directivity)
+
+
+def test_array_factor_elevation_steers_x_and_azimuth_steers_y():
+    frequency_hz = FREQUENCY_MHZ * 1e6
+    wavelength_m = 299_792_458.0 / frequency_hz
+    k = 2.0 * np.pi / wavelength_m
+    spacing = wavelength_m / 2.0
+    command = np.radians(20.0)
+    theta_samples = np.array([[command], [command]])
+    phi_x_y = np.array([[0.0], [np.pi / 2.0]])
+
+    elevation_pattern = ArrayFactor(4, 4, frequency_hz, spacing, spacing, -k * spacing * np.sin(command), 0.0)
+    elevation_cuts = elevation_pattern.calculate_array_factor(theta_samples, phi_x_y)
+    gain_el_x, gain_el_y = elevation_cuts[:, 0]
+    assert gain_el_x == pytest.approx(0.0, abs=1e-12)
+    assert gain_el_x > gain_el_y
+
+    azimuth_pattern = ArrayFactor(4, 4, frequency_hz, spacing, spacing, 0.0, -k * spacing * np.sin(command))
+    azimuth_cuts = azimuth_pattern.calculate_array_factor(theta_samples, phi_x_y)
+    gain_az_x, gain_az_y = azimuth_cuts[:, 0]
+    assert gain_az_y == pytest.approx(0.0, abs=1e-12)
+    assert gain_az_y > gain_az_x
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"elements_along_x": 0},
+        {"elements_along_x": 3.5},
+        {"d_x": 0.0},
+        {"freqs": []},
+        {"theta_resolution": 1},
+        {"phi_resolution": 10.5},
+        {"azimuth_steering": [-40.0, 40.0, 4.5]},
+        {"azimuth_steering": [-90.0, 0.0, 2]},
+    ],
+)
+def test_pattern_generator_rejects_nonphysical_grid_inputs(tmp_path, overrides):
+    kwargs = {
+        "elements_along_x": 3,
+        "elements_along_y": 4,
+        "d_x": 0.095,
+        "d_y": 0.095,
+        "freqs": [FREQUENCY_MHZ],
+        "azimuth_steering": [-40.0, 40.0, 5],
+        "elevation_steering": [-40.0, 40.0, 5],
+        "output_folder": tmp_path,
+        "theta_resolution": 180,
+        "phi_resolution": 360,
+    }
+    kwargs.update(overrides)
+    with pytest.raises(ValueError):
+        AntennaPatternGenerator(**kwargs)

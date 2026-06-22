@@ -4,16 +4,17 @@ from object_definitions.Constants_def import Constants
 
 
 def quat_to_rotation_matrix(q: list) -> np.ndarray:
-    """
-    =========================================================================================================
-    Convert quaternion ``[w, x, y, z]`` to a 3x3 rotation matrix.
+    """Convert a quaternion ``[w, x, y, z]`` to a 3x3 rotation matrix.
 
-    INPUTS:
-        q: [list]   Quaternion as [w, x, y, z]
+    Parameters
+    ----------
+    q : list
+        Quaternion as ``[w, x, y, z]``.
 
-    OUTPUT:
-        R: [np.ndarray, shape (3, 3)]   Rotation matrix
-    =========================================================================================================
+    Returns
+    -------
+    numpy.ndarray
+        Rotation matrix, shape ``(3, 3)``.
     """
     w, x, y, z = q
     norm = np.sqrt(w**2 + x**2 + y**2 + z**2)
@@ -29,22 +30,23 @@ def quat_to_rotation_matrix(q: list) -> np.ndarray:
 
 
 def build_vnc_frame(r_eci: np.ndarray, v_eci: np.ndarray) -> np.ndarray | None:
-    """
-    =========================================================================================================
-    Build the VNC (Velocity-Normal-Cross-track) frame from a satellite state in ECI.
+    """Build the VNC (Velocity-Normal-Cross-track) frame from a satellite state in ECI.
 
-    Returns the 3×3 rotation matrix ``R_eci_to_vnc`` such that ``v_vnc = R_eci_to_vnc @ v_eci``.
-    Rows of the matrix are the V, N, C unit vectors expressed in ECI.
+    Returns the 3x3 rotation matrix ``R_eci_to_vnc`` such that ``v_vnc = R_eci_to_vnc @ v_eci``. The rows
+    are the V, N, C unit vectors expressed in ECI.
 
-    INPUTS:
-        r_eci: [np.ndarray, shape (3,)]   Satellite position in ECI [m]
-        v_eci: [np.ndarray, shape (3,)]   Satellite velocity in ECI [m/s]
+    Parameters
+    ----------
+    r_eci : numpy.ndarray
+        Satellite position in ECI [m], shape ``(3,)``.
+    v_eci : numpy.ndarray
+        Satellite velocity in ECI [m/s], shape ``(3,)``.
 
-    OUTPUT:
-        R_eci_to_vnc: [np.ndarray, shape (3, 3) | None]   None if the state is degenerate
-                                                          (zero velocity, zero position, or r_eci parallel
-                                                          to v_eci so the orbit-normal is undefined).
-    =========================================================================================================
+    Returns
+    -------
+    numpy.ndarray or None
+        The rotation matrix, or ``None`` for a degenerate state (zero velocity / position, or position
+        parallel to velocity so the orbit normal is undefined).
     """
     v_norm = np.linalg.norm(v_eci)
     if v_norm <= 0.0:
@@ -75,24 +77,26 @@ def eci_to_antenna_rotation(
     R_body_to_vnc: np.ndarray,
     R_antenna_to_body: np.ndarray,
 ) -> np.ndarray:
-    """
-    =========================================================================================================
-    Compose the full ECI → antenna-frame rotation matrix from the per-sample VNC frame and the
-    (assumed constant) attitude / body / antenna mounting matrices.
+    """Compose the full ECI-to-antenna rotation from the VNC frame and the attitude / mounting matrices.
 
-    Chain: ECI → VNC → body → antenna. Convention A (vector-coordinate-transform), so
+    Chain: ECI -> VNC -> body -> antenna. Vector-coordinate-transform convention, so
     ``v_antenna = R_eci_to_antenna @ v_eci`` and the reverse rotation is the transpose.
 
-    INPUTS:
-        R_eci_to_vnc:      [np.ndarray, shape (3, 3)]   From build_vnc_frame()
-        q_sat:             [np.ndarray, shape (4,) | None]   Attitude quaternion [w, x, y, z]
-                                                             (default: identity [1, 0, 0, 0])
-        R_body_to_vnc:     [np.ndarray, shape (3, 3)]   Body-to-VNC rotation (Constants.R_body_to_vnc_normal)
-        R_antenna_to_body: [np.ndarray, shape (3, 3)]   Antenna-to-body mounting rotation (RxAntenna.R_antenna_to_body)
+    Parameters
+    ----------
+    R_eci_to_vnc : numpy.ndarray
+        From :func:`build_vnc_frame`, shape ``(3, 3)``.
+    q_sat : numpy.ndarray or None
+        Attitude quaternion ``[w, x, y, z]`` (default identity).
+    R_body_to_vnc : numpy.ndarray
+        Body-to-VNC rotation (``Constants.R_body_to_vnc_normal``).
+    R_antenna_to_body : numpy.ndarray
+        Antenna-to-body mounting rotation (``RxAntenna.R_antenna_to_body``).
 
-    OUTPUT:
-        R_eci_to_antenna: [np.ndarray, shape (3, 3)]   Full chain rotation
-    =========================================================================================================
+    Returns
+    -------
+    numpy.ndarray
+        The full ECI-to-antenna rotation, shape ``(3, 3)``.
     """
     if q_sat is None:
         q_sat = np.array([1.0, 0.0, 0.0, 0.0], dtype=float)

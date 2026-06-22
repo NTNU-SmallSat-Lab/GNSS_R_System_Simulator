@@ -26,7 +26,8 @@
     sigma_coherent = 4 * pi * |R_pol|^2 * (R_t R_r / (R_t + R_r))^2 * exp(-kappa)
     - the flat-mirror cross-section that reproduces the two-ray coherent power
       Pr = Pt Gt Gr (lambda / (4 pi (R_t + R_r)))^2 |R|^2 through the bistatic radar equation
-    - kappa = (4 pi sigma_h cos(theta_local) / lambda)^2 is the Rayleigh roughness attenuation
+    - kappa = (4 pi sigma_h cos(theta_local) / lambda)^2 is the Rayleigh roughness attenuation,
+      with RMS surface height sigma_h approximated as significant wave height / 4
     - gated to specular geometry (required facet slope ~ 0); zero off-specular
 
     For typical sea state (sigma_h >> lambda) kappa is large and the coherent term collapses, leaving
@@ -34,9 +35,9 @@
 
     NOTE: This RCS model is area-agnostic -- it multiplies an NRCS by whatever illuminated_area_m2 the
     link-budget layer supplies. That area is the antenna footprint by default, the per-patch cell under
-    LB-2b patch integration, or one delay-Doppler resolution cell when the cell model is enabled
-    (functions.delay_doppler.delay_doppler_cell_area). The cell shrinks the distributed-clutter area
-    from the footprint (~1e4 km^2) to the code-chip x Doppler-bin pixel (~1 km^2).
+    LB-2b patch integration, or a first-order delay-Doppler resolution cell when the cell model is enabled
+    (functions.delay_doppler.delay_doppler_cell_area). At the exact specular point that first-order map is
+    singular and the link-budget layer uses the antenna-footprint cap.
 """
 
 from __future__ import annotations
@@ -80,15 +81,17 @@ class OceanTarget(Target):
         salinity_psu: float,
         inverse_wave_age: float = 0.84,
     ) -> None:
-        if wave_height_m < 0.0:
+        if not np.isfinite(wave_height_m) or wave_height_m < 0.0:
             raise ValueError(f"wave_height_m must be >= 0; got {wave_height_m}")
-        if wind_speed_m_s <= 0.0:
+        if not np.isfinite(wind_speed_m_s) or wind_speed_m_s <= 0.0:
             raise ValueError(f"wind_speed_m_s must be > 0; got {wind_speed_m_s}")
-        if not (-90.0 <= sea_temperature_c <= 90.0):
-            raise ValueError(f"sea_temperature_c outside plausible range: {sea_temperature_c}")
-        if not (0.0 <= salinity_psu <= 50.0):
-            raise ValueError(f"salinity_psu outside plausible range: {salinity_psu}")
-        if not (0.84 <= inverse_wave_age <= 5.0):
+        if not (-2.0 <= sea_temperature_c <= 30.0):
+            raise ValueError(f"sea_temperature_c outside the Klein-Swift range [-2, 30] degC: {sea_temperature_c}")
+        if not (0.0 <= salinity_psu <= 40.0):
+            raise ValueError(f"salinity_psu outside the Klein-Swift range [0, 40] PSU: {salinity_psu}")
+        if not np.isfinite(wind_direction_deg):
+            raise ValueError(f"wind_direction_deg must be finite; got {wind_direction_deg}")
+        if not np.isfinite(inverse_wave_age) or not (0.84 <= inverse_wave_age <= 5.0):
             raise ValueError(f"inverse_wave_age (Omega_c) outside Elfouhaily range [0.84, 5.0]: {inverse_wave_age}")
 
         self.wave_height_m = float(wave_height_m)
@@ -100,6 +103,7 @@ class OceanTarget(Target):
 
     @classmethod
     def from_settings(cls, settings: BistaticLinkBudgetSettings) -> OceanTarget:
+        """Build an OceanTarget from the ``[OCEAN]`` sea-state fields of a link-budget settings object."""
         return cls(
             wave_height_m=settings.ocean_wave_height_m,
             wind_speed_m_s=settings.ocean_wind_speed_m_s,
@@ -110,6 +114,23 @@ class OceanTarget(Target):
         )
 
     def compute_rcs(self, geometry: BistaticGeometry, wavelength_m: float, illuminated_area_m2: np.ndarray | None = None) -> TargetRcs:
+        """Per-sample ocean RCS = coherent (specular) + incoherent (diffuse) cross-sections.
+
+        Parameters
+        ----------
+        geometry : BistaticGeometry
+            Per-sample directions, ranges and angles.
+        wavelength_m : float
+            Carrier wavelength [m].
+        illuminated_area_m2 : numpy.ndarray or None, optional
+            Distributed-clutter area per sample (antenna footprint, a patch, or one delay-Doppler cell).
+            If ``None``, the model uses its own analytic glistening-zone area.
+
+        Returns
+        -------
+        TargetRcs
+            ``rcs_m2`` plus an ``info`` dict with the coherent / incoherent / Bragg breakdown.
+        """
         n_surface = geometry.n_surface          # (n, 3) outward surface unit normal
         n_tx2s = geometry.n_tx2s                # (n, 3) Tx -> surface unit vector
         n_s2rx = geometry.n_s2rx                # (n, 3) surface -> Rx unit vector
@@ -180,16 +201,14 @@ class OceanTarget(Target):
         fresnel_radius_sq = wavelength_m * reduced_range                 # r_F^2 = lambda * R_t * R_r / (R_t + R_r)
         fresnel_area = np.pi * fresnel_radius_sq                         # A_F: first Fresnel zone footprint (diagnostic)
 
-        # Glistening-zone area for the incoherent regime: integration of the slope PDF
-        # over the surface, expressed as an effective area at the specular peak. The
-        # sec^3(theta_inc) factor is the projection of the surface patch onto the
-        # ranges geometry; capped near grazing to avoid an unphysical sec divergence.
+        # Peak-equivalent glistening area for the incoherent specular regime. Linearising the required
+        # facet slopes around the specular point gives dA = 4 R_red^2 ds_x ds_y. Therefore replacing
+        # the full GO surface integral by sigma0_peak * A_eff requires
+        # A_eff = 4 R_red^2 / P_slope(0) = 8 pi R_red^2 sqrt(var_u var_c).
         cos_inc = np.cos(np.radians(incidence_deg))
         cos_inc_safe = np.clip(cos_inc, 0.05, 1.0)                        # cap below ~87 deg
-        slope_var_total = sigma_u_sq + sigma_c_sq                         # total slope variance (Cox-Munk)
-        glistening_area = (
-            np.pi * (range_tx * range_rx / denom) ** 2 * slope_var_total / cos_inc_safe ** 3
-        )
+        peak_slope_pdf = cox_munk_slope_pdf(0.0, 0.0, sigma_u_sq, sigma_c_sq)
+        glistening_area = 4.0 * reduced_range**2 / peak_slope_pdf
 
         # NRCS from the Z-V geometric-optics formula (per-unit-area, dimensionless)
         geom_factor = np.full(n_samples, np.nan)
@@ -244,8 +263,11 @@ class OceanTarget(Target):
         # zero (the macroscopic surface IS the mirror). Off-specular geometries get sigma_coh = 0.
         # sigma_coh is the flat-mirror cross-section that reproduces the two-ray coherent power
         # Pr = Pt Gt Gr (lambda / (4 pi (R_t + R_r)))^2 |R|^2 through the bistatic radar equation.
+        # The public sea-state input is significant wave height H_s. For a Gaussian sea,
+        # H_s ~= 4 sigma_h, where sigma_h is the RMS height required by the Rayleigh factor.
+        rms_surface_height_m = self.wave_height_m / 4.0
         rayleigh_kappa = (
-            4.0 * np.pi * self.wave_height_m * np.cos(theta_local_rad) / wavelength_m
+            4.0 * np.pi * rms_surface_height_m * np.cos(theta_local_rad) / wavelength_m
         ) ** 2                                                            # kappa = (4 pi sigma_h cos theta_local / lambda)^2
         coherent_mirror_rcs = 4.0 * np.pi * reduced_range ** 2           # 4 pi (R_t R_r / (R_t + R_r))^2
         slope_mag_sq = s_u ** 2 + s_c ** 2
@@ -286,6 +308,7 @@ class OceanTarget(Target):
                     else np.where(valid, illuminated_area, np.nan)
                 ),
                 "rayleigh_roughness_kappa": np.where(valid, rayleigh_kappa, np.nan),
+                "rms_surface_height_m": np.where(valid, rms_surface_height_m, np.nan),
                 "nrcs": np.where(valid, nrcs, np.nan),
                 "nrcs_bragg_RL": np.where(valid, nrcs_bragg, np.nan),
                 "nrcs_bragg_RR": np.where(valid, nrcs_bragg_co, np.nan),

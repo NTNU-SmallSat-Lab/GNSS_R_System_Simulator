@@ -46,6 +46,15 @@ def _doppler(r, tx, rx, v_tx, v_rx, wavelength_m):
     return (n_tx2s @ v_tx - n_s2rx @ v_rx) / wavelength_m
 
 
+def _doppler_rotating_surface(r, tx, rx, v_tx, v_rx, wavelength_m):
+    """Doppler with a surface point fixed to the rigidly rotating Earth."""
+    n_tx2s = (r - tx) / np.linalg.norm(r - tx)
+    n_s2rx = (rx - r) / np.linalg.norm(rx - r)
+    omega = np.array([0.0, 0.0, Constants.EARTH_ROTATION_RATE_RAD_S])
+    v_surface = np.cross(omega, r)
+    return (n_tx2s @ (v_tx - v_surface) - n_s2rx @ (v_rx - v_surface)) / wavelength_m
+
+
 def _tangent_basis(normal):
     n = normal / np.linalg.norm(normal)
     seed = np.array([0.0, 0.0, 1.0]) if abs(n[2]) < 0.9 else np.array([1.0, 0.0, 0.0])
@@ -89,6 +98,40 @@ class TestJacobianAgainstFiniteDifferences:
         dL_de2 = (_path_length(r0 + h * e2, tx, rx) - _path_length(r0 - h * e2, tx, rx)) / (2 * h)
         grad_mag_fd = np.hypot(dL_de1, dL_de2)
         assert result["delay_gradient"][0] == pytest.approx(grad_mag_fd, rel=1e-5)
+
+    def test_rotating_surface_doppler_jacobian_matches_finite_difference(self):
+        geom = _geometry()
+        result = delay_doppler_cell_area(
+            geom,
+            TX_VEL,
+            RX_VEL,
+            WAVELENGTH_L1,
+            CHIP_LENGTH_CA,
+            T_COH,
+            surface_positions_eci=SURFACE,
+        )
+        r0 = SURFACE[0]
+        tx = TX_POS[:, 0]
+        rx = RX_POS[:, 0]
+        v_tx = TX_VEL[:, 0]
+        v_rx = RX_VEL[:, 0]
+        e1, e2 = _tangent_basis(NORMAL[0])
+        h = 1.0
+
+        dL_de1 = (_path_length(r0 + h * e1, tx, rx) - _path_length(r0 - h * e1, tx, rx)) / (2 * h)
+        dL_de2 = (_path_length(r0 + h * e2, tx, rx) - _path_length(r0 - h * e2, tx, rx)) / (2 * h)
+        dfD_de1 = (
+            _doppler_rotating_surface(r0 + h * e1, tx, rx, v_tx, v_rx, WAVELENGTH_L1)
+            - _doppler_rotating_surface(r0 - h * e1, tx, rx, v_tx, v_rx, WAVELENGTH_L1)
+        ) / (2 * h)
+        dfD_de2 = (
+            _doppler_rotating_surface(r0 + h * e2, tx, rx, v_tx, v_rx, WAVELENGTH_L1)
+            - _doppler_rotating_surface(r0 - h * e2, tx, rx, v_tx, v_rx, WAVELENGTH_L1)
+        ) / (2 * h)
+        det_fd = abs(dL_de1 * dfD_de2 - dL_de2 * dfD_de1)
+
+        assert result["abs_jacobian_det_hz_m"][0] == pytest.approx(det_fd, rel=1e-5)
+        assert result["surface_rotation_included"] is True
 
 
 class TestChipLength:

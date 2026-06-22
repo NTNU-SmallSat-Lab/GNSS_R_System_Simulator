@@ -1,0 +1,165 @@
+Coverage
+========
+
+.. module:: object_definitions.Coverage_def
+
+Summary
+-------
+
+``Coverage`` answers the area-coverage question: *over this region and this time window, how many
+continuous reflection-track visits cross each cell?* It lays a grid over a region (from a shapefile),
+then builds a track for every contiguous valid segment of every GNSS/LEO pair. Each cell crossed by a
+segment receives one visit. The result is a pass-count map, not a count of propagated time samples.
+
+This is a **geometric** measure: it depends only on the orbit and constellation geometry. The band's
+frequency and EIRP feed only a finiteness check (is the reflection inside the antenna's field of view), not
+a detect/no-detect threshold, so two bands of the same constellation give the same map. The band list
+therefore just selects *which constellations* take part. (Detectability-gated coverage, where the band
+would matter, is future work.)
+
+Interface
+---------
+
+.. list-table:: Inputs / outputs
+   :widths: 16 28 42 14
+   :header-rows: 1
+
+   * -
+     - Variable
+     - Description
+     - Unit
+   * - **Inputs**
+     - ``sat_const`` / ``gnss_const``
+     - LEO receiver constellation and GNSS transmitter constellations.
+     - --
+   * -
+     - ``shapefile``
+     - Region outline; the grid is generated next to it.
+     - --
+   * -
+     - ``grid_size_deg`` / ``grid_size_m``
+     - Cell size, equiangular (deg) or equidistant (m).
+     - deg or m
+   * -
+     - ``earth_model``
+     - "spherical" or "elliptical".
+     - --
+   * -
+     - ``max_central_angle_deg``
+     - Tx-Rx geometric gate.
+     - deg
+   * -
+     - ``selected_signals``
+     - INI band plan (deduplicated to one per constellation).
+     - --
+   * - **Outputs**
+     - ``coverage_dict``
+     - Per-constellation per-cell hit counts.
+     - --
+   * -
+     - ``*_gridded_m.shp`` / ``*_gridded_deg.shp``
+     - The generated grid shapefile.
+     - --
+   * -
+     - ``OUTPUT/Coverage_grid_<CONST>.png``
+     - Per-constellation track-visit maps (plus a combined map).
+     - --
+
+Detailed Module Description
+---------------------------
+
+The grid
+^^^^^^^^
+
+The region shapefile is turned into a grid of cells (a "fishnet"). An **equidistant** grid (cells a fixed
+number of metres across, ``*_gridded_m.shp``) keeps cell area roughly constant; an **equiangular** grid
+(cells a fixed number of degrees, ``*_gridded_deg.shp``) is simpler but its cells shrink toward the poles.
+The grid is generated once and cached next to the input shapefile, so later runs just load it.
+
+Counting reflections
+^^^^^^^^^^^^^^^^^^^^^
+
+For each (LEO, GNSS) pair the specular reflections are found with
+:class:`~object_definitions.Reflection_def.Reflection`. Consecutive valid samples form a ``LineString``;
+an invalid or out-of-bounds sample splits the track into separate segments. A one-sample segment is kept
+as a ``Point``. Every cell intersected by a segment receives at most one visit for that pair and segment,
+including cells crossed between propagated samples.
+
+The track-visit count :math:`C` for a cell is
+
+.. math::
+   :label: cov-count
+
+   C_\mathrm{cell} = \sum_{\text{Tx, Rx, contiguous segment}}
+   \mathbb{1}\big[\text{segment intersects cell and nearest-sample power is finite}\big],
+
+The time, incidence angle and power stored for that visit come from the segment sample nearest the cell
+centroid; the crossing time is not interpolated. The finite-power condition acts as the antenna
+field-of-view gate. The band changes neither geometric term's truth value, which is why coverage is per
+constellation.
+
+API reference
+^^^^^^^^^^^^^
+
+.. list-table:: Key public methods
+   :widths: 42 58
+   :header-rows: 1
+
+   * - Method
+     - What it does
+   * - ``compute_coverage_for_constellation(constellation, freq_hz, eirp_dbw)``
+     - Count reflections into the grid for one constellation.
+   * - ``calculate_statistics(...)``
+     - Summarise the per-cell counts (coverage fraction, track-visit statistics).
+   * - ``plot_coverage_gridded_shapefile(...)``
+     - Draw the track-visit map for a constellation.
+   * - ``plot_reflection_points()``
+     - Scatter the raw reflection points.
+
+.. autoclass:: object_definitions.Coverage_def.Coverage
+   :no-members:
+
+Module Assumptions and Limitations
+----------------------------------
+
+- **Geometric metric.** Coverage counts reflections, not detections; the band's frequency/EIRP only gate
+  finiteness. Per-band coverage is meaningless until a detection threshold is added.
+- **Specular only.** Coverage uses the specular reflection point, not the backscatter BRP.
+- **Grid choice matters.** Equiangular cells distort with latitude; use the equidistant (metre) grid for
+  area-fair counts.
+- **Track-intersection counting.** Counts are one per contiguous Tx/Rx track segment crossing a cell, not
+  one per time sample. Results can change with propagation cadence because straight lines interpolate
+  between samples and invalid samples split passes.
+- **No footprint spreading.** Only the specular track is intersected with cells; the receiver footprint
+  is not distributed across neighbouring cells.
+- **Approximate visit metadata.** Stored times, angles and powers are those of the sample nearest the cell
+  centroid, not an interpolated boundary-crossing event.
+
+Validation and Tests
+--------------------
+
+.. list-table::
+   :widths: 40 60
+   :header-rows: 1
+
+   * - Test module
+     - What it pins
+   * - ``tests/test_coverage.py``
+     - Grid generation and loading, bounding-box handling for both grid types, preservation of singleton
+       and separated contiguous runs, per-cell counting, and the statistics summary.
+
+User Guide
+----------
+
+This is the class behind ``python SRC/main_simulation_areaCoverage.py`` (configured by
+``Configuration_area.ini``). The relevant INI pieces:
+
+- ``[COVERAGE].shapefile_path`` -- the region outline.
+- ``[COVERAGE].grid_size_meters`` (or a degree size) -- the cell size.
+- ``[ANTENNA].bands`` -- selects which constellations take part.
+- ``[ORBITS]`` / ``[GNSS CONSTELLATIONS]`` -- the receiver and transmitter fleets.
+
+References
+----------
+
+- Jales, P. & Unwin, M., "Mission description -- GNSS Reflectometry on TDS-1 with the SGR-ReSI", SSTL, 2015.

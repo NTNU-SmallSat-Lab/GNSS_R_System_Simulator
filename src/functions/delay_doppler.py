@@ -11,12 +11,17 @@
     with outward normal n_surface and the two scalar surface fields
 
         L(r)    = R_t(r) + R_r(r)                                 total path length [m]
-        f_D(r)  = (1 / lambda) ( n_tx2s . v_tx - n_s2rx . v_rx )  Doppler [Hz]
+        f_D(r)  = (1 / lambda) [
+                      n_tx2s . (v_tx - v_s) - n_s2rx . (v_rx - v_s)
+                  ]                                               Doppler [Hz]
 
     the tangent-plane gradients are
 
         grad L   = n_tx2s - n_s2rx                                (then projected onto the tangent plane)
-        grad f_D = (1 / lambda) ( v_tx_perp / R_t + v_rx_perp / R_r )   (v_perp = component perpendicular to the line of sight)
+        grad f_D = (1 / lambda) [
+                       v_tx,rel,perp / R_t + v_rx,rel,perp / R_r
+                       + omega_E x (n_tx2s - n_s2rx)
+                   ]
 
     One chip maps to a path-length step  delta_L = c / R_chip  and one Doppler bin is  delta_fD = 1 / T_coh.
     Because grad L and grad f_D both lie in the tangent plane, the magnitude of the (L, f_D) -> (x, y)
@@ -34,6 +39,9 @@
     capping A_cell at the antenna footprint area, the largest surface the receiver can integrate.
     The exact near-specular cell (first iso-delay ellipse from the curvature of L) is a future
     refinement; the footprint cap is the conservative bound used here.
+
+    Production calls supply the surface position, so ``v_s = omega_E x r`` is included. Omitting
+    ``surface_positions_eci`` retains the earlier stationary-in-ECI convention for direct API callers.
 """
 
 from __future__ import annotations
@@ -41,6 +49,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
+
+from object_definitions.Constants_def import Constants
 
 if TYPE_CHECKING:
     from functions.link_budget import BistaticGeometry
@@ -54,31 +64,39 @@ def delay_doppler_cell_area(
     chip_length_m: float,
     coherent_integration_time_s: float,
     footprint_area_m2: np.ndarray | float | None = None,
+    surface_positions_eci: np.ndarray | None = None,
 ) -> dict:
-    """
-    =========================================================================================================
-    Delay-Doppler resolution-cell area per sample from the (delay, Doppler) -> surface Jacobian.
+    """Delay-Doppler resolution-cell area per sample from the (delay, Doppler) -> surface Jacobian.
 
-    INPUTS:
-        geometry:                    [BistaticGeometry]            Per-sample directions/ranges (n samples)
-        tx_velocities_eci:           [np.ndarray, shape (3, n)]    Transmitter ECI velocities [m/s]
-        rx_velocities_eci:           [np.ndarray, shape (3, n)]    Receiver ECI velocities [m/s]
-        wavelength_m:                [float]                       Carrier wavelength [m]
-        chip_length_m:               [float]                       One code-chip path length delta_L = c / R_chip [m]
-        coherent_integration_time_s: [float]                       Coherent integration time T_coh [s]; Doppler bin = 1 / T_coh
-        footprint_area_m2:           [np.ndarray | float | None]   Upper-bound cap (antenna footprint area) [m^2]; None -> no cap
+    Parameters
+    ----------
+    geometry : BistaticGeometry
+        Per-sample directions and ranges (n samples).
+    tx_velocities_eci : numpy.ndarray
+        Transmitter ECI velocities [m/s], shape ``(3, n)``.
+    rx_velocities_eci : numpy.ndarray
+        Receiver ECI velocities [m/s], shape ``(3, n)``.
+    wavelength_m : float
+        Carrier wavelength [m].
+    chip_length_m : float
+        One code-chip path length ``delta_L = c / R_chip`` [m].
+    coherent_integration_time_s : float
+        Coherent integration time ``T_coh`` [s]; the Doppler bin is ``1 / T_coh``.
+    footprint_area_m2 : numpy.ndarray or float or None
+        Upper-bound cap (antenna footprint area) [m^2]; ``None`` means no cap.
+    surface_positions_eci : numpy.ndarray or None
+        Surface positions [m], shape ``(n, 3)``. When supplied, rigid Earth rotation is included in
+        the Doppler field and its spatial gradient. ``None`` retains a stationary-in-ECI surface.
 
-    OUTPUT:
-        result: [dict]   Per-sample (n,) arrays:
-            cell_area_m2           DDM cell area, footprint-capped [m^2]
-            uncapped_cell_area_m2  cell area before the footprint cap [m^2]
-            delay_width_m          one-chip width across the surface, delta_L / |grad L| [m]
-            doppler_width_m        one-bin width across the surface, delta_fD / |grad f_D| [m]
-            delay_gradient         |grad L| (tangent), dimensionless [m/m]
-            doppler_gradient_hz_m  |grad f_D| (tangent) [Hz/m]
-            abs_jacobian_det_hz_m  |det J| = |grad L x grad f_D| [Hz/m]
-            footprint_capped       True where the cap (or a near-specular degeneracy) set the area to the footprint
-    =========================================================================================================
+    Returns
+    -------
+    dict
+        Per-sample ``(n,)`` arrays: ``cell_area_m2`` (footprint-capped cell area),
+        ``uncapped_cell_area_m2``, ``delay_width_m`` (``delta_L / |grad L|``),
+        ``doppler_width_m`` (``delta_fD / |grad f_D|``), ``delay_gradient`` (``|grad L|``),
+        ``doppler_gradient_hz_m`` (``|grad f_D|``), ``abs_jacobian_det_hz_m``
+        (``|grad L x grad f_D|``), and ``footprint_capped`` (True where the cap or a near-specular
+        degeneracy set the area to the footprint).
     """
     if wavelength_m <= 0.0 or not np.isfinite(wavelength_m):
         raise ValueError(f"wavelength_m must be finite and > 0; got {wavelength_m}")
@@ -101,6 +119,17 @@ def delay_doppler_cell_area(
     v_tx = v_tx.T                                             # (n, 3)
     v_rx = v_rx.T                                             # (n, 3)
 
+    include_surface_rotation = surface_positions_eci is not None
+    if include_surface_rotation:
+        surface_positions = np.asarray(surface_positions_eci, dtype=float)
+        if surface_positions.shape != (n, 3):
+            raise ValueError(f"surface_positions_eci must have shape ({n}, 3); got {surface_positions.shape}")
+        omega_eci = np.array([0.0, 0.0, Constants.EARTH_ROTATION_RATE_RAD_S])
+        v_surface = np.cross(np.broadcast_to(omega_eci, surface_positions.shape), surface_positions)
+    else:
+        omega_eci = np.zeros(3, dtype=float)
+        v_surface = np.zeros((n, 3), dtype=float)
+
     delta_L = float(chip_length_m)                            # one chip in path length [m]
     delta_fD = 1.0 / float(coherent_integration_time_s)       # one Doppler bin [Hz]
 
@@ -111,11 +140,18 @@ def delay_doppler_cell_area(
     # Delay-field surface gradient: grad L = n_tx2s - n_s2rx, projected onto the tangent plane.
     grad_L = _project_tangent(n_tx2s - n_s2rx)
 
-    # Doppler-field surface gradient: line-of-sight-perpendicular velocity over range, per platform.
+    # Doppler-field surface gradient. With a rotating surface,
+    # f_D = [n_i.(v_tx-v_s) - n_o.(v_rx-v_s)] / lambda and grad(v_s) contributes
+    # omega x (n_i-n_o) in addition to the two LOS-derivative terms.
     with np.errstate(invalid="ignore", divide="ignore"):
-        v_tx_perp = v_tx - np.einsum("ij,ij->i", v_tx, n_tx2s)[:, None] * n_tx2s   # v_tx perpendicular to Tx LOS
-        v_rx_perp = v_rx - np.einsum("ij,ij->i", v_rx, n_s2rx)[:, None] * n_s2rx   # v_rx perpendicular to Rx LOS
-        grad_fD = _project_tangent((v_tx_perp / range_tx[:, None] + v_rx_perp / range_rx[:, None]) / wavelength_m)
+        v_tx_relative = v_tx - v_surface
+        v_rx_relative = v_rx - v_surface
+        v_tx_perp = v_tx_relative - np.einsum("ij,ij->i", v_tx_relative, n_tx2s)[:, None] * n_tx2s
+        v_rx_perp = v_rx_relative - np.einsum("ij,ij->i", v_rx_relative, n_s2rx)[:, None] * n_s2rx
+        rotation_term = np.cross(np.broadcast_to(omega_eci, n_tx2s.shape), n_tx2s - n_s2rx)
+        grad_fD = _project_tangent(
+            (v_tx_perp / range_tx[:, None] + v_rx_perp / range_rx[:, None] + rotation_term) / wavelength_m
+        )
 
     # |det J| = | grad L x grad f_D | because both gradients lie in the tangent plane.
     abs_det_J = np.linalg.norm(np.cross(grad_L, grad_fD), axis=1)     # [Hz/m]
@@ -158,4 +194,5 @@ def delay_doppler_cell_area(
         "delay_chip_length_m": delta_L,
         "doppler_bin_hz": delta_fD,
         "footprint_capped": footprint_capped,
+        "surface_rotation_included": include_surface_rotation,
     }
