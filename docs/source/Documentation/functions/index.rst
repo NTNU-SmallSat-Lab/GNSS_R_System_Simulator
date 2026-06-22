@@ -11,6 +11,12 @@ modes:
 - ``functions`` -- the shared geometry / propagation / IO helper module.
 - ``ship_physics`` -- ship-target scattering helpers.
 
+.. toctree::
+   :maxdepth: 1
+   :caption: Module pages
+
+   link_budget
+
 .. note::
 
-   Module pages are added per the documentation rollout (pilot: ``link_budget``).
+   Remaining module pages are added per the documentation rollout.

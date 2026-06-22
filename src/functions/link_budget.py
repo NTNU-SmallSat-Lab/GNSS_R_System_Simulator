@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
-cd import pymap3d
+import pymap3d
 
 from functions.rotations import eci_to_antenna_rotation_from_state
 from object_definitions.Constants_def import Constants
@@ -119,21 +119,29 @@ def coerce_link_budget_settings(settings: dict | BistaticLinkBudgetSettings) -> 
 
 @dataclass(frozen=True, slots=True)
 class BistaticGeometry:
-    """
-    =========================================================================================================
-    Per-sample bistatic geometry: surface normal, propagation directions, ranges and angles.
+    """Per-sample bistatic geometry: surface normal, propagation directions, ranges and angles.
 
-    Conventions:
-        - `n_tx2s`  points from Tx to surface (incoming propagation direction, unit).
-        - `n_s2rx`  points from surface to Rx (outgoing propagation direction, unit).
-        - `n_surface` is the outward surface unit normal.
-        - `incidence_angle_deg`  is between -n_tx2s and n_surface (0deg = normal incidence).
-        - `scattering_angle_deg` is between  n_s2rx  and n_surface.
-        - `bistatic_angle_deg`   is between -n_tx2s and  n_s2rx
-          (0deg = backscatter, 2 * theta_i for the specular mirror geometry, 180deg = forward).
+    Vectors are shape ``(n, 3)``; scalar quantities are ``(n,)``. Invalid samples carry NaN.
 
-    Shapes: vectors are (n, 3); scalar quantities are (n,). Invalid samples carry NaN.
-    =========================================================================================================
+    Attributes
+    ----------
+    n_surface : numpy.ndarray
+        Outward surface unit normal.
+    n_tx2s : numpy.ndarray
+        Unit direction from Tx to surface (incoming propagation).
+    n_s2rx : numpy.ndarray
+        Unit direction from surface to Rx (outgoing propagation).
+    range_tx_m : numpy.ndarray
+        Tx-to-surface slant range [m].
+    range_rx_m : numpy.ndarray
+        Surface-to-Rx slant range [m].
+    incidence_angle_deg : numpy.ndarray
+        Angle between -n_tx2s and n_surface (0 deg = normal incidence).
+    scattering_angle_deg : numpy.ndarray
+        Angle between n_s2rx and n_surface.
+    bistatic_angle_deg : numpy.ndarray
+        Angle between -n_tx2s and n_s2rx (0 deg = backscatter, 2*theta_i for the specular mirror
+        geometry, 180 deg = forward).
     """
 
     n_surface: np.ndarray
@@ -152,22 +160,26 @@ def build_bistatic_geometry(
     surface_positions: np.ndarray,
     surface_normals: np.ndarray,
 ) -> BistaticGeometry:
-    """
-    =========================================================================================================
-    Compute per-sample bistatic geometry from Tx, Rx, surface positions and surface normals.
+    """Compute per-sample bistatic geometry from Tx, Rx, surface positions and surface normals.
 
-    INPUTS:
-        tx_positions:      [np.ndarray, shape (3, n)]   Transmitter positions [m]
-        rx_positions:      [np.ndarray, shape (3, n)]   Receiver positions [m]
-        surface_positions: [np.ndarray, shape (n, 3)]   Surface (reflection) positions [m]
-        surface_normals:   [np.ndarray, shape (n, 3)]   Outward surface normals (any magnitude)
+    All four arrays must share the same reference frame at the same time samples. Invalid entries
+    (NaN, zero range, zero-length normal) propagate as NaN in the output.
 
-    All four arrays must share the same reference frame at the same time samples.
-    Invalid entries (NaN, zero range, zero-length normal) propagate as NaN in the output.
+    Parameters
+    ----------
+    tx_positions : numpy.ndarray
+        Transmitter positions [m], shape ``(3, n)``.
+    rx_positions : numpy.ndarray
+        Receiver positions [m], shape ``(3, n)``.
+    surface_positions : numpy.ndarray
+        Surface (reflection) positions [m], shape ``(n, 3)``.
+    surface_normals : numpy.ndarray
+        Outward surface normals (any magnitude), shape ``(n, 3)``.
 
-    OUTPUT:
-        geometry: [BistaticGeometry]   Per-sample directions, ranges and angles.
-    =========================================================================================================
+    Returns
+    -------
+    BistaticGeometry
+        Per-sample directions, ranges and angles.
     """
     tx = np.asarray(tx_positions, dtype=float)
     rx = np.asarray(rx_positions, dtype=float)
@@ -770,35 +782,49 @@ def compute_reflection_link_budget(
     tx_velocities_eci: np.ndarray | None = None,
     chip_length_m: float | None = None,
 ) -> dict:
-    """
-    =========================================================================================================
-    Compute the common GNSS-R reflection link budget for specular and BRP paths.
+    """Compute the common GNSS-R reflection link budget for specular and BRP paths.
 
     Position and velocity arrays are expected in the simulator's existing convention: satellite state
     vectors as shape ``(3, n)`` and reflection points as shape ``(n, 3)``.
 
-    INPUTS:
-        tx_positions_eci:         [np.ndarray, shape (3, n)]  Transmitter ECI positions [m]
-        rx_positions_eci:         [np.ndarray, shape (3, n)]  Receiver ECI positions [m]
-        rx_velocities_eci:        [np.ndarray, shape (3, n)]  Receiver ECI velocities [m/s]
-        reflection_positions_eci: [np.ndarray, shape (n, 3)]  Reflection point ECI positions [m]
-        incidence_deg:            [np.ndarray, shape (n,)]    Incidence angle at reflection point [deg]
-        antenna:                  [RxAntenna | None]          Receiver antenna (None => isotropic 0 dBi)
-        frequency_hz:             [float]                     Carrier frequency [Hz]
-        tx_eirp_dbw:              [float]                     Transmitter EIRP for this (constellation, band) [dBW]
-        settings:                 [dict | BistaticLinkBudgetSettings | None]  Rx-system link-budget settings
-        q_sat:                    [np.ndarray, shape (4,) | None]  Satellite attitude quaternion [w, x, y, z]
-        target:                   [Target | None]             RCS model; defaults to OceanTarget.from_settings(settings)
-        surface_normals_eci:      [np.ndarray, shape (n, 3) | None]  Outward surface normals in ECI.
-                                  Defaults to geocentric normals, which are exact only for a sphere.
-        tx_velocities_eci:        [np.ndarray, shape (3, n) | None]  Transmitter ECI velocities [m/s];
-                                  required only when settings.delay_doppler_cell_enabled (Doppler axis of the cell).
-        chip_length_m:            [float | None]              One-chip path length delta_L = c / R_chip [m];
-                                  required only when settings.delay_doppler_cell_enabled (delay axis of the cell).
+    Parameters
+    ----------
+    tx_positions_eci : numpy.ndarray
+        Transmitter ECI positions [m], shape ``(3, n)``.
+    rx_positions_eci : numpy.ndarray
+        Receiver ECI positions [m], shape ``(3, n)``.
+    rx_velocities_eci : numpy.ndarray
+        Receiver ECI velocities [m/s], shape ``(3, n)``.
+    reflection_positions_eci : numpy.ndarray
+        Reflection point ECI positions [m], shape ``(n, 3)``.
+    incidence_deg : numpy.ndarray
+        Incidence angle at the reflection point [deg], shape ``(n,)``.
+    antenna : RxAntenna or None
+        Receiver antenna (None => isotropic 0 dBi).
+    frequency_hz : float
+        Carrier frequency [Hz].
+    tx_eirp_dbw : float
+        Transmitter EIRP for this (constellation, band) [dBW].
+    settings : dict or BistaticLinkBudgetSettings or None
+        Rx-system link-budget settings.
+    q_sat : numpy.ndarray or None
+        Satellite attitude quaternion [w, x, y, z], shape ``(4,)``.
+    target : Target or None
+        RCS model; defaults to ``OceanTarget.from_settings(settings)``.
+    surface_normals_eci : numpy.ndarray or None
+        Outward surface normals in ECI, shape ``(n, 3)``. Defaults to geocentric normals, which are
+        exact only for a sphere.
+    tx_velocities_eci : numpy.ndarray or None
+        Transmitter ECI velocities [m/s], shape ``(3, n)``; required only when
+        ``settings.delay_doppler_cell_enabled`` (Doppler axis of the cell).
+    chip_length_m : float or None
+        One-chip path length ``delta_L = c / R_chip`` [m]; required only when
+        ``settings.delay_doppler_cell_enabled`` (delay axis of the cell).
 
-    OUTPUT:
-        link_budget: [dict]   Link budget components and received power arrays
-    =========================================================================================================
+    Returns
+    -------
+    dict
+        Link budget components and received power arrays.
     """
     settings_obj = coerce_link_budget_settings(settings)
     if q_sat is None:
@@ -1008,28 +1034,35 @@ def compute_bistatic_link_budget(
     tx_eirp_dbw: float,
     settings: dict | BistaticLinkBudgetSettings | None = None,
 ) -> dict:
-    """
-    =========================================================================================================
-    Compute simplified bistatic GNSS-R received power from a precomputed RCS.
+    """Compute simplified bistatic GNSS-R received power from a precomputed RCS.
 
-    Pr = EIRP * G_rx * lambda^2 * sigma / ((4 pi)^3 * R_t^2 * R_r^2 * L)
+    ``Pr = EIRP * G_rx * lambda^2 * sigma / ((4 pi)^3 * R_t^2 * R_r^2 * L)``.
 
-    `fspl_sum_db` is the sum of one-way FSPL terms (Tx->surface plus surface->Rx).
-    `bistatic_spreading_loss_db` is the corresponding spreading term used in the simplified
+    ``fspl_sum_db`` is the sum of one-way FSPL terms (Tx->surface plus surface->Rx).
+    ``bistatic_spreading_loss_db`` is the corresponding spreading term used in the simplified
     bistatic radar equation implementation.
 
-    INPUTS:
-        range_tx_m:    [np.ndarray]   Distance transmitter to reflection point [m]
-        range_rx_m:    [np.ndarray]   Distance reflection point to receiver [m]
-        rx_gain_dbi:   [np.ndarray]   Receiver antenna gain along look direction [dBi]
-        rcs_m2:        [np.ndarray]   Target RCS per sample [m^2]; supplied by a Target implementation
-        frequency_hz:  [float]        Carrier frequency [Hz]
-        tx_eirp_dbw:   [float]        Transmitter EIRP for the specific (constellation, band) [dBW]
-        settings:      [dict | BistaticLinkBudgetSettings | None]   Rx-system link-budget settings
+    Parameters
+    ----------
+    range_tx_m : numpy.ndarray
+        Distance transmitter to reflection point [m].
+    range_rx_m : numpy.ndarray
+        Distance reflection point to receiver [m].
+    rx_gain_dbi : numpy.ndarray
+        Receiver antenna gain along the look direction [dBi].
+    rcs_m2 : numpy.ndarray
+        Target RCS per sample [m^2]; supplied by a Target implementation.
+    frequency_hz : float
+        Carrier frequency [Hz].
+    tx_eirp_dbw : float
+        Transmitter EIRP for the specific (constellation, band) [dBW].
+    settings : dict or BistaticLinkBudgetSettings or None
+        Rx-system link-budget settings.
 
-    OUTPUT:
-        link_budget: [dict]   Link budget components and received power arrays
-    =========================================================================================================
+    Returns
+    -------
+    dict
+        Link budget components and received power arrays.
     """
     settings_obj = coerce_link_budget_settings(settings)
 

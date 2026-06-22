@@ -24,32 +24,55 @@ from object_definitions.Constants_def import Constants  # noqa: E402
 
 # from Coverage_def   import Coverage
 class ShipTrajectory:
-    """
-    =========================================================================================================
-    ShipTrajectory class:
-        - Represent the trajectory of a ship and generate a shapefile for a certain time period.
-        - Includes land avoidance for realistic maritime routing.
+    """Time-stamped, land-avoiding maritime route for a single ship.
 
-        ATTRIBUTES:
-            ship_id:                [str]        Unique identifier for the ship
-            start_time:             [datetime]   Start time of the trajectory
-            end_time:               [datetime]   End time of the trajectory
-            start_position:         [tuple]      Starting position (latitude, longitude)
-            end_position:           [tuple]      Ending position (latitude, longitude)
-            ship_speed:             [float]      Ship speed [m/s]
-            ocean_polygons:         [object]     Loaded coastline data
-            water_buffer:           [float]      Safety distance from shore [m]
-            fast_method:            [bool]       Flag for simplified path generation
-            mesh_connection_radius: [float]      Connection radius for grid points [m]
-            interval_minutes:       [int]        Time interval [min] for trajectory generation
-            grid_resolution:        [float]      Grid resolution [m] for the navigation mesh
-            delta_m:                [float]      Bounding box margin [m] added to min/max lon/lat
-            trajectory_points:      [list]       List of trajectory points
-            timestamps:             [list]       List of timestamps for trajectory points
-            waypoints:              [list]       List of waypoints for the ship's route
-            route_distance:         [float]      Total distance of the route [m]
-            shapefile_path:         [dict]       Dict of shapefile paths per trajectory type
-    =========================================================================================================
+    Plans a route from ``start_position`` to ``end_position`` over a navigation mesh built from the
+    Natural Earth ocean polygons, time-samples it at a fixed interval, and writes a trajectory shapefile
+    plus metadata JSON (cached between runs).
+
+    Parameters
+    ----------
+    ship_id : str
+        Unique identifier; used for the shapefile / cache filenames.
+    ship_speed_knot : float
+        Cruise speed [knots]; stored internally as m/s.
+    start_position : tuple
+        Start point (latitude, longitude); snapped to water if on land.
+    start_time : datetime
+        Journey start (UTC).
+    end_position : tuple
+        End point (latitude, longitude); snapped to water if on land.
+    interval_minutes : int, optional
+        Time-sampling interval [min] for the trajectory (default 10).
+    grid_resolution_km : float, optional
+        Navigation-mesh grid spacing [km] (default 50); dominates planning cost.
+    delta_boudingBox_km : float, optional
+        Margin [km] added around the endpoints' bounding box (default 500).
+    fast_path_gen_method : bool, optional
+        Use the simplified (faster, coarser) path generator (default True).
+    mesh_connection_radius_km : float, optional
+        Maximum edge length [km] when connecting mesh nodes (default 2000).
+    water_buffer_km : float, optional
+        Safety margin from shore [km] (default 22.2 = 12 nautical miles).
+    trajectory_type : list, optional
+        Extra shapefile types to also write ("points", "line", "waypoints").
+    save_graph : bool, optional
+        Persist the navigation graph to disk for inspection (default False).
+
+    Attributes
+    ----------
+    trajectory_points : list
+        Ordered (latitude, longitude) samples.
+    timestamps : list
+        UTC datetimes aligned with ``trajectory_points``.
+    waypoints : list
+        Simplified route corners (latitude, longitude).
+    route_distance : float
+        Total route length [m].
+    end_time : datetime
+        Arrival time, derived from distance / speed.
+    shapefile_path : dict
+        Output paths per trajectory type.
     """
 
     def __init__(
@@ -112,14 +135,14 @@ class ShipTrajectory:
         self.initialize(trajectory_type, save_graph)
 
     def initialize(self, trajectory_type: list, save_graph: bool) -> None:
-        """
-        =========================================================================================================
-        Initialize the trajectory data, loading from disk if available or planning a new route.
+        """Initialize the trajectory: load from disk if a valid cache exists, else plan a new route.
 
-        INPUTS:
-            trajectory_type: [list]   Trajectory shapefile types to generate ("points", "line", "waypoints")
-            save_graph:      [bool]   If True, persist the navigation graph for inspection
-        =========================================================================================================
+        Parameters
+        ----------
+        trajectory_type : list
+            Trajectory shapefile types to generate ("points", "line", "waypoints").
+        save_graph : bool
+            If True, persist the navigation graph for inspection.
         """
         trajectory_path = os.path.join(Constants.autogen_ship_shapefiles, f"{self.ship_id}_trajectory.shp")
         metadata_path = os.path.join(Constants.autogen_ship_shapefiles, f"{self.ship_id}_trajectory_metadata.json")
@@ -190,13 +213,12 @@ class ShipTrajectory:
             return False
 
     def get_travel_duration_hours(self) -> float:
-        """
-        =========================================================================================================
-        Calculate the travel duration in hours from the ship's start and end time.
+        """Travel duration in hours from the ship's start and end time.
 
-        OUTPUT:
-            travel_duration: [float]   Duration [hours]
-        =========================================================================================================
+        Returns
+        -------
+        float
+            Duration [hours].
         """
         if self.start_time and self.end_time:
             #            end_time_dt     = datetime.strptime(self.end_time, '%Y-%m-%d %H:%M:%S')
@@ -207,11 +229,7 @@ class ShipTrajectory:
             raise ValueError("Start time or end time not set. Cannot calculate travel duration.")
 
     def load_class_from_file(self) -> None:
-        """
-        =========================================================================================================
-        Load existing trajectory shapefile + metadata JSON for this ship from disk.
-        =========================================================================================================
-        """
+        """Load the existing trajectory shapefile and metadata JSON for this ship from disk."""
         # Load the shapefile using geopandas
         try:
             self.shapefile_path["time_series"] = os.path.join(Constants.autogen_ship_shapefiles, f"{self.ship_id}_trajectory.shp")
@@ -254,13 +272,12 @@ class ShipTrajectory:
             print(f"Error loading shapefile: {e}")
 
     def load_coastline_data(self) -> bool:
-        """
-        =========================================================================================================
-        Load coastline data from the shapefile referenced by `Constants.earth_coastline_path`.
+        """Load coastline data from the shapefile at ``Constants.earth_coastline_path``.
 
-        OUTPUT:
-            success: [bool]   True if the data was loaded
-        =========================================================================================================
+        Returns
+        -------
+        bool
+            True if the data was loaded.
         """
         try:
             ocean_data = gpd.read_file(Constants.earth_coastline_path)
@@ -352,17 +369,19 @@ class ShipTrajectory:
         return self._calculate_haversine_vectorized(pos1_array, pos2_array)
 
     def calculate_bearing(self, pos1: tuple, pos2: tuple) -> float:
-        """
-        =========================================================================================================
-        Calculate the bearing (heading) from pos1 to pos2.
+        """Initial bearing (heading) from pos1 to pos2.
 
-        INPUTS:
-            pos1: [tuple]   First position (latitude, longitude)
-            pos2: [tuple]   Second position (latitude, longitude)
+        Parameters
+        ----------
+        pos1 : tuple
+            First position (latitude, longitude).
+        pos2 : tuple
+            Second position (latitude, longitude).
 
-        OUTPUT:
-            bearing: [float]   Bearing in degrees (0-360)
-        =========================================================================================================
+        Returns
+        -------
+        float
+            Bearing in degrees (0-360).
         """
         lat1_rad, lon1_rad = radians(pos1[0]), radians(pos1[1])
         lat2_rad, lon2_rad = radians(pos2[0]), radians(pos2[1])
@@ -380,17 +399,19 @@ class ShipTrajectory:
         return bearing
 
     def intersects_land(self, point1: tuple, point2: tuple) -> bool:
-        """
-        =========================================================================================================
-        Check if the line between two points intersects with land.
+        """Check whether the line between two points crosses land.
 
-        INPUTS:
-            point1: [tuple]   First point (latitude, longitude)
-            point2: [tuple]   Second point (latitude, longitude)
+        Parameters
+        ----------
+        point1 : tuple
+            First point (latitude, longitude).
+        point2 : tuple
+            Second point (latitude, longitude).
 
-        OUTPUT:
-            intersects: [bool]   True if the line crosses land
-        =========================================================================================================
+        Returns
+        -------
+        bool
+            True if the line crosses land.
         """
         if self.ocean_polygons is None:
             warnings.warn("No ocean data available", stacklevel=2)
@@ -415,16 +436,17 @@ class ShipTrajectory:
         return True
 
     def is_point_in_ocean(self, point: tuple) -> bool:
-        """
-        =========================================================================================================
-        Check if a point is in the ocean.
+        """Check whether a point lies in the ocean.
 
-        INPUTS:
-            point: [tuple]   Point to check (latitude, longitude)
+        Parameters
+        ----------
+        point : tuple
+            Point to check (latitude, longitude).
 
-        OUTPUT:
-            in_ocean: [bool]   True if the point is contained in the ocean polygon
-        =========================================================================================================
+        Returns
+        -------
+        bool
+            True if the point is contained in the ocean polygon.
         """
         if self.ocean_polygons is None:
             warnings.warn("No ocean data available", stacklevel=2)
@@ -437,16 +459,17 @@ class ShipTrajectory:
         return self.ocean_polygons.contains(point_geom)
 
     def get_safe_water_point(self, point: tuple) -> tuple:
-        """
-        =========================================================================================================
-        If a point is on land, find the nearest water point with `self.water_buffer` margin.
+        """If a point is on land, return the nearest water point with a ``self.water_buffer`` margin.
 
-        INPUTS:
-            point: [tuple]   Original point (latitude, longitude)
+        Parameters
+        ----------
+        point : tuple
+            Original point (latitude, longitude).
 
-        OUTPUT:
-            safe_point: [tuple]   Safe water point (latitude, longitude)
-        =========================================================================================================
+        Returns
+        -------
+        tuple
+            Safe water point (latitude, longitude).
         """
         if self.ocean_polygons is None:
             warnings.warn("No ocean data available", stacklevel=2)
@@ -488,15 +511,14 @@ class ShipTrajectory:
         )  # Fallback to original point (this should not happen)
 
     def plan_route(self, save_graph: bool = False) -> None:
-        """
-        =========================================================================================================
-        Plan a route that avoids land. Uses a simplified path-finding approach over a navigation mesh.
+        """Plan a land-avoiding route over the navigation mesh.
 
-        Updates `self.waypoints` and `self.route_distance` in place.
+        Updates ``self.waypoints`` and ``self.route_distance`` in place.
 
-        INPUTS:
-            save_graph: [bool]   If True, persist the navigation graph to disk for inspection
-        =========================================================================================================
+        Parameters
+        ----------
+        save_graph : bool, optional
+            If True, persist the navigation graph to disk for inspection.
         """
         # If no land data, just return direct path
         if self.ocean_polygons is None:
@@ -951,16 +973,17 @@ class ShipTrajectory:
                 pickle.dump(G, f)
 
     def simplify_path(self, waypoints: list) -> list:
-        """
-        =========================================================================================================
-        Simplify a path by removing unnecessary points (Douglas-Peucker-style filtering).
+        """Simplify a path by removing unnecessary points (Douglas-Peucker-style filtering).
 
-        INPUTS:
-            waypoints: [list]   List of waypoints to simplify
+        Parameters
+        ----------
+        waypoints : list
+            List of waypoints to simplify.
 
-        OUTPUT:
-            simplified: [list]   Simplified list of waypoints
-        =========================================================================================================
+        Returns
+        -------
+        list
+            Simplified list of waypoints.
         """
         if len(waypoints) <= 2:
             return waypoints
@@ -977,17 +1000,17 @@ class ShipTrajectory:
         return result
 
     def generate_trajectory_equal_dist(self, interval_meters: float = 100) -> list:
-        """
-        =========================================================================================================
-        Generate points along the trajectory at regular distance intervals.
-        Uses waypoints for land avoidance if available.
+        """Generate trajectory points at regular distance intervals (uses waypoints if available).
 
-        INPUTS:
-            interval_meters: [float]   Distance interval between points [m] (defaults to 100 if non-positive)
+        Parameters
+        ----------
+        interval_meters : float, optional
+            Distance interval between points [m] (defaults to 100 if non-positive).
 
-        OUTPUT:
-            trajectory: [list]   List of (timestamp, (latitude, longitude)) tuples
-        =========================================================================================================
+        Returns
+        -------
+        list
+            List of (timestamp, (latitude, longitude)) tuples.
         """
         # Ensure valid interval (minimum 100 meters)
         if interval_meters <= 0:
@@ -1060,13 +1083,10 @@ class ShipTrajectory:
         return list(zip(self.timestamps, self.trajectory_points, strict=False))
 
     def generate_trajectory_equal_time(self) -> None:
-        """
-        =========================================================================================================
-        Generate points along the trajectory at regular time intervals (uses `self.interval_minutes`).
-        Uses waypoints for land avoidance if available.
+        """Generate trajectory points at regular time intervals (uses ``self.interval_minutes``).
 
-        Updates `self.trajectory_points` and `self.timestamps` in place.
-        =========================================================================================================
+        Uses waypoints for land avoidance if available. Updates ``self.trajectory_points`` and
+        ``self.timestamps`` in place.
         """
         # Clear existing trajectory data
         self.trajectory_points = []
@@ -1135,17 +1155,18 @@ class ShipTrajectory:
                 self.timestamps.append(self.end_time)
 
     def create_shapefile(self, output_filename: str = None, trajectory_type: str = "points", crs: str = "EPSG:4326") -> None:
-        """
-        =========================================================================================================
-        Create a shapefile from the trajectory. Updates `self.shapefile_path[trajectory_type]` in place.
+        """Create a shapefile from the trajectory; updates ``self.shapefile_path[trajectory_type]`` in place.
 
-        INPUTS:
-            output_filename: [str | None]   Output filename (defaults to a per-ship name)
-            trajectory_type: [str]          'points', 'line', or 'waypoints'
-            crs:             [str]          Coordinate reference system (default: EPSG:4326)
+        Used for visualization in GIS software; not consumed by the GNSS simulation itself.
 
-        NOTE: Used for visualization in GIS software; not consumed by the GNSS simulation itself.
-        =========================================================================================================
+        Parameters
+        ----------
+        output_filename : str or None, optional
+            Output filename (defaults to a per-ship name).
+        trajectory_type : str, optional
+            'points', 'line', or 'waypoints'.
+        crs : str, optional
+            Coordinate reference system (default EPSG:4326).
         """
         # Generate trajectory if it hasn't been generated yet
         if not self.trajectory_points:
@@ -1205,13 +1226,10 @@ class ShipTrajectory:
         self.shapefile_path[trajectory_type] = output_path
 
     def create_trajectory_files(self) -> None:
-        """
-        =========================================================================================================
-        Create the time-series shapefile of ship positions and the matching metadata JSON.
+        """Create the time-series shapefile of ship positions and the matching metadata JSON.
 
-        Stores the resulting paths in `self.shapefile_path["time_series"]` and
-        `self.shapefile_path["time_series_metadata"]`.
-        =========================================================================================================
+        Stores the resulting paths in ``self.shapefile_path["time_series"]`` and
+        ``self.shapefile_path["time_series_metadata"]``.
         """
         # Generate trajectory with specified interval
         self.generate_trajectory_equal_time()
@@ -1281,16 +1299,18 @@ class ShipTrajectory:
         self.shapefile_path["time_series_metadata"] = metadata_output_path
 
     def plot_route(self, show_trajectory: bool = True, show_waypoints: bool = True, title: str = None, show: bool = False) -> None:
-        """
-        =========================================================================================================
-        Plot the ship's route on a map and save it to OUTPUT/.
+        """Plot the ship's route on a map and save it to OUTPUT/.
 
-        INPUTS:
-            show_trajectory: [bool]   Show the full trajectory (default: True)
-            show_waypoints:  [bool]   Show the waypoints (default: True)
-            title:           [str]    Plot title (defaults to "Ship Route: {ship_id}")
-            show:            [bool]   Display the figure interactively (default: False)
-        =========================================================================================================
+        Parameters
+        ----------
+        show_trajectory : bool, optional
+            Show the full trajectory (default True).
+        show_waypoints : bool, optional
+            Show the waypoints (default True).
+        title : str, optional
+            Plot title (defaults to "Ship Route: {ship_id}").
+        show : bool, optional
+            Display the figure interactively (default False).
         """
         # Generate trajectory if needed
         if not self.trajectory_points and show_trajectory:
@@ -1359,16 +1379,17 @@ class ShipTrajectory:
             plt.show()
 
     def get_position_at_time(self, timestamp: datetime) -> tuple:
-        """
-        =========================================================================================================
-        Get the ship's position at a specific timestamp.
+        """Get the ship's position at a specific timestamp (nearest stored sample).
 
-        INPUTS:
-            timestamp: [datetime]   The timestamp to look up
+        Parameters
+        ----------
+        timestamp : datetime
+            The timestamp to look up.
 
-        OUTPUT:
-            position: [tuple]   (latitude, longitude) at the given timestamp, or None on error
-        =========================================================================================================
+        Returns
+        -------
+        tuple
+            (latitude, longitude) at the given timestamp, or None on error.
         """
         # Make sure timestamps are not none
         if not self.timestamps:
