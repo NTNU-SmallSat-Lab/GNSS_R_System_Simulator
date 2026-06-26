@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, fields as _dc_fields
 
 import numpy as np
 
@@ -48,7 +48,8 @@ def coerce_link_budget_settings(settings: dict | BistaticLinkBudgetSettings | No
     if isinstance(settings, BistaticLinkBudgetSettings):
         return settings
     if isinstance(settings, dict):
-        return BistaticLinkBudgetSettings(**settings)
+        known = {f.name for f in _dc_fields(BistaticLinkBudgetSettings)}
+        return BistaticLinkBudgetSettings(**{k: v for k, v in settings.items() if k in known})
     raise TypeError("settings must be None, dict, or BistaticLinkBudgetSettings")
 
 

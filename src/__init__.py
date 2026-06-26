@@ -183,7 +183,7 @@ def initialize(config_file_name="Configuration.ini"):
     except KeyError:
         raise KeyError("The 'stepSize' key is missing in the 'SIMULATION SETTINGS' section of the configuration file.")  # noqa: B904
 
-    sim_duration = int(config["SIMULATION SETTINGS"]["simulationDuration"]) if "simulationDuration" in config["SIMULATION SETTINGS"] else None  # Hours
+    sim_duration = float(config["SIMULATION SETTINGS"]["simulationDuration"]) if "simulationDuration" in config["SIMULATION SETTINGS"] else None  # Hours
 
     #[MOVING TARGET]
     try:
@@ -366,8 +366,35 @@ def initialize(config_file_name="Configuration.ini"):
     # --- [REFLECTION] (NEW SECTION) ---
     # We read the reflection type here to pass it to MovingTargetDetection later
     reflection_type = "specular"  # Default fallback
+    cutoff_angle = 45.0           # Default fallback (degrees)
+    min_tx_elevation_deg = 5.0       # Default: permissive (old behaviour)
+    max_bistatic_angle_deg = 0.0     # Default: no filter (old behaviour)
+    max_bistatic_angle_deg_cc = None  # Default: no filter
     if "REFLECTION" in config:
         reflection_type = config["REFLECTION"].get("reflection_type", "specular").strip('"').strip("'")
+        raw_cutoff = config["REFLECTION"].get("cutoff_angle", "45.0")
+        try:
+            cutoff_angle = float(raw_cutoff)
+        except ValueError:
+            raise ValueError(f"Invalid value for 'cutoff_angle' in [REFLECTION]: {raw_cutoff!r}") from None
+        raw_min_tx = config["REFLECTION"].get("min_tx_elevation_deg", "5.0")
+        try:
+            min_tx_elevation_deg = float(raw_min_tx)
+        except ValueError:
+            raise ValueError(f"Invalid value for 'min_tx_elevation_deg' in [REFLECTION]: {raw_min_tx!r}") from None
+        raw_max_bistatic = config["REFLECTION"].get("max_bistatic_angle_deg", "0.0")
+        try:
+            max_bistatic_angle_deg = float(raw_max_bistatic)
+        except ValueError:
+            raise ValueError(f"Invalid value for 'max_bistatic_angle_deg' in [REFLECTION]: {raw_max_bistatic!r}") from None
+        raw_max_bistatic_cc = config["REFLECTION"].get("max_bistatic_angle_deg_cc", "none")
+        if raw_max_bistatic_cc.strip().lower() in ("none", ""):
+            max_bistatic_angle_deg_cc = None
+        else:
+            try:
+                max_bistatic_angle_deg_cc = float(raw_max_bistatic_cc)
+            except ValueError:
+                raise ValueError(f"Invalid value for 'max_bistatic_angle_deg_cc' in [REFLECTION]: {raw_max_bistatic_cc!r}") from None
 
     # --- [LINK BUDGET] (OPTIONAL SECTION) ---
     # Defaults derived from BistaticLinkBudgetSettings so the two stay in sync.
@@ -381,6 +408,24 @@ def initialize(config_file_name="Configuration.ini"):
                 except ValueError:
                     raise ValueError(f"Invalid value for '{key}' in [LINK BUDGET]: {section[key]}") from None
 
+        # Extended link budget parameters (not in BistaticLinkBudgetSettings)
+        if "tx_type" in section:
+            link_budget["tx_type"] = section["tx_type"].strip().strip("'\"")
+        for _lb_key in ("tx_pa_output_dbm", "tx_gain_dbi",
+                        "tx_isoflux_nadir_dbi", "tx_isoflux_edge_dbi",
+                        "tx_isoflux_max_nadir_deg", "tx_frequency_mhz",
+                        "rx_system_noise_temp_k", "rx_bandwidth_mhz"):
+            if _lb_key in section:
+                try:
+                    link_budget[_lb_key] = float(section[_lb_key])
+                except ValueError:
+                    raise ValueError(f"Invalid value for '{_lb_key}' in [LINK BUDGET]: {section[_lb_key]}") from None
+
+
+    nadir_pointing = False
+    if "COVERAGE" in config:
+        raw_nadir = config["COVERAGE"].get("nadir_pointing", "false")
+        nadir_pointing = raw_nadir.strip().lower() in ("true", "1", "yes")
 
     simulation_settings = {
         #[SIMULATION SETTINGS]
@@ -388,6 +433,10 @@ def initialize(config_file_name="Configuration.ini"):
         "step_size": step_size,
         "sim_duration": sim_duration,
         "reflection_type": reflection_type,
+        "cutoff_angle": cutoff_angle,
+        "min_tx_elevation_deg": min_tx_elevation_deg,
+        "max_bistatic_angle_deg": max_bistatic_angle_deg,
+        "max_bistatic_angle_deg_cc": max_bistatic_angle_deg_cc,
         #[ORBITS]
         "orbits": orbits_input,
         "No_satellites": len(orbits_input),
@@ -396,6 +445,7 @@ def initialize(config_file_name="Configuration.ini"):
         #[COVERAGE]
         "shapefile_path": coverage_file_path,
         "grid_size_m": grid_size_m,
+        "nadir_pointing": nadir_pointing,
         #[MOVING TARGET]
         "moving_target_speed": moving_tgt_speed,
         "start_coord_ll": start_coord_ll,

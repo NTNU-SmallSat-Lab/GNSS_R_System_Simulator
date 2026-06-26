@@ -60,17 +60,17 @@ def testObjOrbit() -> bool:
 
 def testObjSatellite() -> bool:
     passed = 1
-    start_time = datetime(2024, 10, 31, 12, 0, 0, tzinfo=UTC)
-    apogee = 525e3 + Constants.R_EARTH_MEAN
+    start_time = datetime(2026, 6, 3, 12, 0, 0, tzinfo=UTC)
+    apogee = 575e3 + Constants.R_EARTH_MEAN
 
     
     #this is where i work now
 
     celeste_constellation = Satellite(1,  # Satellite ID        [number]
             [
-                97,  # inclination         [°]
+                97.4,  # inclination         [°]
                 0.0001,  # eccentricity        [-]
-                0,    # RAAN                [°]
+                255,     # RAAN                [°]
                 0,  # argument of perigee [°]
                 0,  # Mean anomaly        [°]
                 apogee,  # apogee              [m]
@@ -83,7 +83,7 @@ def testObjSatellite() -> bool:
                 0.0001,  # eccentricity        [-]
                 255,     # RAAN                [°]
                 0,  # argument of perigee [°]
-                30,  # Mean anomaly        [°]
+                330,  # Mean anomaly        [°]
                 apogee,  # apogee              [m]
                 start_time,  # epoch               [YYYY:MM:DD HH:mm:ss UTC]
             ],
@@ -92,9 +92,9 @@ def testObjSatellite() -> bool:
             [
                 97.4,  # inclination         [°]
                 0.0001,  # eccentricity        [-]
-                223,     # RAAN                [°]
+                210,     # RAAN                [°]
                 0,  # argument of perigee [°]
-                15,  # Mean anomaly        [°]
+                0,  # Mean anomaly        [°]
                 apogee,  # apogee              [m]
                 start_time,  # epoch               [YYYY:MM:DD HH:mm:ss UTC]
             ],
@@ -103,9 +103,141 @@ def testObjSatellite() -> bool:
             [
                 97.4,  # inclination         [°]
                 0.0001,  # eccentricity        [-]
-                223,     # RAAN                [°]
+                210,     # RAAN                [°]
                 0,  # argument of perigee [°]
-                45,  # Mean anomaly        [°]
+                330,  # Mean anomaly        [°]
+                apogee,  # apogee              [m]
+                start_time,  # epoch               [YYYY:MM:DD HH:mm:ss UTC]
+            ],
+    )
+    celeste_constellation5 = Satellite(1.1,  # Satellite ID        [number]
+            [
+                97.4,  # inclination         [°]
+                0.0001,  # eccentricity        [-]
+                165,     # RAAN                [°]
+                0,  # argument of perigee [°]
+                0,  # Mean anomaly        [°]
+                apogee,  # apogee              [m]
+                start_time,  # epoch               [YYYY:MM:DD HH:mm:ss UTC]
+            ]
+    )
+    celeste_constellation6  = Satellite(2.1,  # Satellite ID        [number]
+            [
+                97.4,  # inclination         [°]
+                0.0001,  # eccentricity        [-]
+                165,     # RAAN                [°]
+                0,  # argument of perigee [°]
+                330,  # Mean anomaly        [°]
+                apogee,  # apogee              [m]
+                start_time,  # epoch               [YYYY:MM:DD HH:mm:ss UTC]
+            ],
+    )
+    celeste_constellation7 = Satellite(3.1,  # Satellite ID        [number]
+            [
+                97.4,  # inclination         [°]
+                0.0001,  # eccentricity        [-]
+                120,     # RAAN                [°]
+                0,  # argument of perigee [°]
+                0,  # Mean anomaly        [°]
+                apogee,  # apogee              [m]
+                start_time,  # epoch               [YYYY:MM:DD HH:mm:ss UTC]
+            ],
+    )
+    celeste_constellation8 = Satellite(4.1,  # Satellite ID        [number]
+            [
+                97.4,  # inclination         [°]
+                0.0001,  # eccentricity        [-]
+                120,     # RAAN                [°]
+                0,  # argument of perigee [°]
+                330,  # Mean anomaly        [°]
+                apogee,  # apogee              [m]
+                start_time,  # epoch               [YYYY:MM:DD HH:mm:ss UTC]
+            ],
+    )
+    celeste_constellation9 = Satellite(1.2,  # Satellite ID        [number]
+            [
+                97.4,  # inclination         [°]
+                0.0001,  # eccentricity        [-]
+                75,     # RAAN                [°]
+                0,  # argument of perigee [°]
+                0,  # Mean anomaly        [°]
+                apogee,  # apogee              [m]
+                start_time,  # epoch               [YYYY:MM:DD HH:mm:ss UTC]
+            ]
+    )
+    celeste_constellation10 = Satellite(2.2,  # Satellite ID        [number]
+            [
+                97.4,  # inclination         [°]
+                0.0001,  # eccentricity        [-]
+                75,     # RAAN                [°]
+                0,  # argument of perigee [°]
+                330,  # Mean anomaly        [°]
+                apogee,  # apogee              [m]
+                start_time,  # epoch               [YYYY:MM:DD HH:mm:ss UTC]
+            ],
+    )
+    celeste_constellation11 = Satellite(3.2,  # Satellite ID        [number]
+            [
+                97.4,  # inclination         [°]
+                0.0001,  # eccentricity        [-]
+                30,    # RAAN                [°]
+                0,  # argument of perigee [°]
+                0,  # Mean anomaly        [°]
+                apogee,  # apogee              [m]
+                start_time,  # epoch               [YYYY:MM:DD HH:mm:ss UTC]
+            ],
+    )
+    celeste_constellation12 = Satellite(4.2,  # Satellite ID        [number]
+            [
+                97.4,  # inclination         [°]
+                0.0001,  # eccentricity        [-]
+                30,     # RAAN                [°]
+                0,  # argument of perigee [°]
+                330,  # Mean anomaly        [°]
+                apogee,  # apogee              [m]
+                start_time,  # epoch               [YYYY:MM:DD HH:mm:ss UTC]
+            ],
+    )
+    celeste_constellation13 = Satellite(1.3,  # Satellite ID        [number]
+            [
+                97.4,  # inclination         [°]
+                0.0001,  # eccentricity        [-]
+                345,     # RAAN                [°]
+                0,  # argument of perigee [°]
+                0,  # Mean anomaly        [°]
+                apogee,  # apogee              [m]
+                start_time,  # epoch               [YYYY:MM:DD HH:mm:ss UTC]
+            ]
+    )
+    celeste_constellation14 = Satellite(2.3,  # Satellite ID        [number]
+            [
+                97.4,  # inclination         [°]
+                0.0001,  # eccentricity        [-]
+                345,     # RAAN                [°]
+                0,  # argument of perigee [°]
+                330,  # Mean anomaly        [°]
+                apogee,  # apogee              [m]
+                start_time,  # epoch               [YYYY:MM:DD HH:mm:ss UTC]
+            ],
+    )
+    celeste_constellation15 = Satellite(3.3,  # Satellite ID        [number]
+            [
+                97.4,  # inclination         [°]
+                0.0001,  # eccentricity        [-]
+                300,    # RAAN                [°]
+                0,  # argument of perigee [°]
+                0,  # Mean anomaly        [°]
+                apogee,  # apogee              [m]
+                start_time,  # epoch               [YYYY:MM:DD HH:mm:ss UTC]
+            ],
+    )
+    celeste_constellation16 = Satellite(4.3,  # Satellite ID        [number]
+            [
+                97.4,  # inclination         [°]
+                0.0001,  # eccentricity        [-]
+                300,     # RAAN                [°]
+                0,  # argument of perigee [°]
+                330,  # Mean anomaly        [°]
                 apogee,  # apogee              [m]
                 start_time,  # epoch               [YYYY:MM:DD HH:mm:ss UTC]
             ],
@@ -115,6 +247,18 @@ def testObjSatellite() -> bool:
     celeste_constellation2.write_tle_file()
     celeste_constellation3.write_tle_file()
     celeste_constellation4.write_tle_file()
+    celeste_constellation5.write_tle_file()
+    celeste_constellation6.write_tle_file()
+    celeste_constellation7.write_tle_file()
+    celeste_constellation8.write_tle_file()
+    celeste_constellation9.write_tle_file()
+    celeste_constellation10.write_tle_file()
+    celeste_constellation11.write_tle_file()
+    celeste_constellation12.write_tle_file()
+    celeste_constellation13.write_tle_file()
+    celeste_constellation14.write_tle_file()
+    celeste_constellation15.write_tle_file()
+    celeste_constellation16.write_tle_file()
     return passed
     
     for i in range(10):

@@ -33,13 +33,16 @@ class MovingTargetDetection:
         self,
         sat_const,
         gnss_const,
-        moving_target_object,        
+        moving_target_object,
         antenna_obj,
         create_shapefile_for_visualization=False,
         deltaT=60,
         earth_model="spherical",
-        reflection_mode="specular",  # <--- add this argument
+        reflection_mode="specular",
         link_budget_settings=None,
+        cutoff_angle=45,
+        min_tx_elevation_deg=5.0,
+        max_bistatic_angle_deg=0.0,
     ) -> None:
         """
         =========================================================================================================
@@ -83,6 +86,7 @@ class MovingTargetDetection:
         self.reflection_dict_timeSorted = {}  # Reflection dictionary for storing reflection vector containing reflection points for each GNSS constellations
         self.target_detect_dict = {}  # Coverage vector for storing coverage information over each grid-cell in the gridded shapefile
         self.sat_antenna = antenna_obj  # Antenna object for the satellite (RxAntenna)
+        self.max_steering_angle_deg = getattr(antenna_obj, "max_steering_off_boresight_deg", None) or 40.0
 
         self.sat_constellation = sat_const  # Satellite constellation object
         self.gnss_constellation = gnss_const  # Dictionary with GNSS constellation objects
@@ -90,6 +94,9 @@ class MovingTargetDetection:
         self.deltaT_sec = deltaT  # Time tolerance in seconds for matching reflection points to moving target positions (default: 60 seconds) | This should match the time step of the simulation
         self.earth_model = earth_model  # Earth model to use for the reflection calculation (default: 'spherical')
         self.reflection_mode = reflection_mode  # Either Specular reflection, or backscattering calculation
+        self.cutoff_angle = cutoff_angle  # Central-angle cutoff [deg] passed to Reflection / BRP objects
+        self.min_tx_elevation_deg = min_tx_elevation_deg
+        self.max_bistatic_angle_deg = max_bistatic_angle_deg
         self.link_budget_settings = link_budget_settings
         self.link_budget_frequency_hz = lb.resolve_single_link_budget_frequency_hz(self.sat_antenna)
         self.initialization()
@@ -257,7 +264,7 @@ class MovingTargetDetection:
                                 sat_tx.satID,
                                 sat_rx.satID,
                                 earth_model=self.earth_model,
-                                angle=45,
+                                angle=self.cutoff_angle,
                                 gnss_const=gnss_name,
                             )
                             reflection.compute_reflection_coordinates(
@@ -274,8 +281,11 @@ class MovingTargetDetection:
                                 sat_tx.satID,
                                 sat_rx.satID,
                                 earth_model=self.earth_model,
-                                cutoff_angle=45,
+                                cutoff_angle=self.cutoff_angle,
                                 gnss_const=gnss_name,
+                                max_steering_angle_deg=self.max_steering_angle_deg,
+                                min_tx_elevation=self.min_tx_elevation_deg,
+                                max_bistatic_angle_deg=self.max_bistatic_angle_deg,
                             )
                             reflection.compute_brp_coordinates(
                                 sat_tx,

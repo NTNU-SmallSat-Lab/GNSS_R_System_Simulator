@@ -5,6 +5,7 @@ from datetime import timedelta
 import functions.functions as fn
 from __init__ import initialize
 from object_definitions.MovingTargetDetection_def import MovingTargetDetection
+from object_definitions.MovingTargetCellCentric_def import MovingTargetCellCentric
 from object_definitions.Rx_antenna_def import RxAntenna as GNSS_R_antenna
 from object_definitions.SatConstellation_def import SatelliteConstellation
 from object_definitions.Satellite_def import Satellite
@@ -15,31 +16,30 @@ from object_definitions.Static_classes_def import Plotting
 matplotlib.use("Agg", force=True)
 
 
-def _format_footprint_db_label(footprint_db: float | None) -> str:
-    if footprint_db is None:
-        return "unknown_dB"
-
-    footprint_db = float(footprint_db)
-    if footprint_db.is_integer():
-        value = str(int(footprint_db))
-    else:
-        value = f"{footprint_db:g}"
-    return f"{value}dB"
-
-
-def run_moving_target_detection(settings: dict):
+def run_moving_target_detection(settings: dict, epoch_offset_minutes: float = 0, output_suffix: str = ""):
     """
     =========================================================================================================
     Calculate the probability of detecting a ship traveling from point A to B using GNSS-R LEO satellites.
 
     INPUTS:
-        settings: [dict]   Simulation settings dictionary loaded from Configuration_ship.ini
+        settings:               [dict]    Simulation settings loaded from Configuration_ship.ini
+        epoch_offset_minutes:   [float]   Shift the simulation start time by this many minutes (default: 0)
+        output_suffix:          [str]     Appended to the output plot filename before the extension
+
+    OUTPUT:
+        cc: [MovingTargetCellCentric]  Completed cell-centric detection object (detections in cc.detections)
     =========================================================================================================
     """
-    
+
+    # --- 0. Apply epoch offset ---
+    import copy
+    settings = copy.copy(settings)
+    if epoch_offset_minutes:
+        settings["start_time"] = settings["start_time"] + timedelta(minutes=epoch_offset_minutes)
+
     # --- 1. Environment & Ship Setup ---
     earth_model = "elliptical"
-    
+
     ship_trajectory = ShipTrajectory(
         ship_id="DarkShip_001",
         ship_speed_knot=settings["moving_target_speed"],
@@ -90,11 +90,18 @@ def run_moving_target_detection(settings: dict):
         earth_model=earth_model,
         reflection_mode=settings["reflection_type"],
         link_budget_settings=settings.get("link_budget"),
+        cutoff_angle=settings.get("cutoff_angle", 45),
+        min_tx_elevation_deg=settings.get("min_tx_elevation_deg", 5.0),
+        max_bistatic_angle_deg=settings.get("max_bistatic_angle_deg", 0.0),
     )
+
+    # In backscatter mode the BRP is steered toward Tx, not the ship, so Rx does not
+    # need to be overhead the ship — just above the horizon from it.
+    rx_elev_min = 5 if settings["reflection_type"] == "backscatter" else 40
 
     # Optimize: only compute and propagate for visible windows
     ship_resampled, sat_visible_times = fn.compute_visible_times_and_resample_ship(
-        mtd, sat_const, elev_min=40
+        mtd, sat_const, elev_min=rx_elev_min
     )
 
     _ = fn.propagate_only_visible_satellites(
@@ -103,25 +110,25 @@ def run_moving_target_detection(settings: dict):
         gnss_constl_dict=mtd.gnss_constellation
     )
 
-    # --- 5. Output & Visualization ---
-    mtd.calculate_moving_target_reflection_intersection()
-    
-    # Save detection plot
-    footprint_db_label = _format_footprint_db_label(settings.get("footprint_dB"))
-    output_plot = f"Detection_points_{mtd.reflection_mode}_footprint_{footprint_db_label}.png"
-    mtd.show_track_and_detection_points(file_name=output_plot, show_figure=False)
-    print(f"Detection plot saved as: {output_plot}")
+    # --- 5. Cell-centric detection ---
+    suffix = f"_{output_suffix}" if output_suffix else ""
+    cc = MovingTargetCellCentric(mtd, gnss_r_antenna, steer_fraction=0.2,
+                                 max_bistatic_angle_deg=settings.get("max_bistatic_angle_deg_cc"))
+    cc.calculate(verbose=True)
 
-    # Optional: Animation (Set to True via settings if needed)
-    if settings.get("create_animation", False):
-        mtd.create_reflection_animation(
-            time_step_min=5, 
-            output_format="mp4", 
-            output_filename="Reflection_animation.mp4", 
-            fps=2
-        )
+    cc.show_detections(file_name=f"Detection{suffix}.png")
+    cc.show_timeline(file_name=f"Detection_timeline{suffix}.png")
+
+    for const, dets in cc.detections.items():
+        print(f"DETECTION_COUNT {const}: {len(dets)}")
+
+    return cc
+
 
 if __name__ == "__main__":
-    # Initialize returns both config (raw) and settings (processed)
-    _, simulation_settings = initialize("Configuration_ship.ini")
-    run_moving_target_detection(simulation_settings)
+    import os
+    import sys
+    config_file = sys.argv[1] if len(sys.argv) > 1 else "Configuration_ship.ini"
+    tag = os.path.splitext(os.path.basename(config_file))[0].replace("Configuration_", "")
+    _, simulation_settings = initialize(config_file)
+    run_moving_target_detection(simulation_settings, output_suffix=tag)

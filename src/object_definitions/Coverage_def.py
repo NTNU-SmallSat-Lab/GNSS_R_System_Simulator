@@ -521,6 +521,7 @@ class Coverage:
         #        ax.plot(refl_vec[i].refl_LL_vec[:, 1], refl_vec[i].refl_LL_vec[:, 0], color='red', transform=ccrs.PlateCarree())
 
         # Plot reflection lines for selected GNSS constellations
+        """
         for gnss_name in gnss_const:
             if gnss_name in self.reflection_dict:
                 color = fn.color_gnss_const(gnss_name)
@@ -532,7 +533,7 @@ class Coverage:
                         color=color,
                         transform=ccrs.PlateCarree(),
                     )
-
+        """
         # Add labels and gridlines
         if title is None:
             title_string = "Coverage of grid cells by reflection lines"
@@ -542,9 +543,13 @@ class Coverage:
         ax.set_xlabel("Longitude")
         ax.set_ylabel("Latitude")
 
-        gl = ax.gridlines(draw_labels=True, linewidth=0.5, color="gray", alpha=0.5, linestyle="--")
-        gl.top_labels = False
-        gl.right_labels = False
+        try:
+            # Try simpler gridlines without labels first (avoids complex geometry calculation)
+            gl = ax.gridlines(draw_labels=False, linewidth=0.5, color="gray", alpha=0.5, linestyle="--")
+        except Exception as e:
+            print(f"Warning: Could not add gridlines: {e}")
+            # Skip gridlines entirely if there's an issue with the shapefile geometry
+            pass
 
         ## Add legend
         legend_elements = [
@@ -567,9 +572,17 @@ class Coverage:
         plt.tight_layout()
 
         file_path = os.path.join(Constants.output_folder_path, file_name)
-        plt.savefig(file_path, dpi=600)
-
-        print(f"Coverage plot saved to {file_path}")
+        try:
+            plt.savefig(file_path, dpi=600)
+            print(f"Coverage plot saved to {file_path}")
+        except Exception as e:
+            print(f"Warning: Could not save plot with gridlines: {e}")
+            try:
+                # Try saving without the axis (simpler plot)
+                plt.savefig(file_path, dpi=300)
+                print(f"Coverage plot saved to {file_path} (simplified)")
+            except Exception as e2:
+                print(f"Error: Could not save plot at all: {e2}")
 
         # Close the plot to free up memory
         plt.close()

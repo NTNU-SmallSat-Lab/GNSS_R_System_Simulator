@@ -1,9 +1,11 @@
+import os
+import sys
 import matplotlib
 import numpy as np
 
 import functions.functions as fn
 
-matplotlib.use("TkAgg", force=True)
+matplotlib.use("Agg", force=True)
 from __init__ import initialize
 from object_definitions.Coverage_def import Coverage
 from object_definitions.Rx_antenna_def import RxAntenna
@@ -15,7 +17,7 @@ from object_definitions.Static_classes_def import Plotting
 #############################################################################################################################
 ##################################################### - MAIN FUNCTION - #####################################################
 #############################################################################################################################
-def run_area_coverage_simulation(sim_settings):
+def run_area_coverage_simulation(sim_settings, output_tag=""):
     """
     =========================================================================================================
     Run satellite simulation to calculate the coverage of GNSS-R satellites over the Norwegian coast.
@@ -88,11 +90,10 @@ def run_area_coverage_simulation(sim_settings):
     ####################################
     # 7. Plot reflection points
     ####################################
+    tag = f"_{output_tag}" if output_tag else ""
     coverage.plot_reflection_points()
-    coverage.plot_coverage_shapefile(gnss_constellation="CELESTE_TEST", file_name="Coverage.png")
-    coverage.plot_coverage_shapefile(file_name="Coverage_all_configurations.png")
-    coverage.plot_coverage_gridded_shapefile(gnss_constellation="CELESTE_TEST", file_name="Coverage_grid_CELESTE.png")
-    coverage.plot_coverage_gridded_shapefile(file_name="Coverage_grid_CELESTE_TEST.png")
+    coverage.plot_coverage_shapefile(file_name=f"Coverage{tag}.png")
+    coverage.plot_coverage_gridded_shapefile(file_name=f"Coverage_grid{tag}.png")
 
     ####################################
     # 9. Plot orbits
@@ -106,5 +107,7 @@ def run_area_coverage_simulation(sim_settings):
 
 
 if __name__ == "__main__":
-    config, settings = initialize("Configuration_area.ini")
-    run_area_coverage_simulation(settings)
+    config_file = sys.argv[1] if len(sys.argv) > 1 else "Configuration_area.ini"
+    tag = os.path.splitext(os.path.basename(config_file))[0].replace("Configuration_", "")
+    config, settings = initialize(config_file)
+    run_area_coverage_simulation(settings, output_tag=tag)
