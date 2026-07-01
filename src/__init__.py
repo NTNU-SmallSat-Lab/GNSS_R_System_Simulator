@@ -35,6 +35,8 @@ warnings.filterwarnings(
 
 # import numpy              as np
 # import xmltodict          as xd
+import yaml
+
 from functions.link_budget import BistaticLinkBudgetSettings
 from object_definitions.AntennaPatternGenerator_def import AntennaPatternGenerator
 from object_definitions.Constants_def import Constants
@@ -71,14 +73,14 @@ def _check_python_version() -> None:
         )
 
 def parse_antenna_angles(filename: str) -> tuple[float, float, float]:
-    """Extract (steering-azimuth, steering-elevation, frequency) in (deg, deg, MHz) from an
-    array_factor_{freq}MHz_{az}az_{el}el.json filename. Azimuth/elevation may be negative."""
-    az_match = re.search(r'(-?\d+\.?\d*)az', filename)
-    el_match = re.search(r'(-?\d+\.?\d*)el', filename)
+    """Extract (steering-across-track, steering-along-track, frequency) in (deg, deg, MHz) from an
+    array_factor_{freq}MHz_{across}across_{along}along.json filename. Across/along-track may be negative."""
+    across_match = re.search(r'(-?\d+\.?\d*)across', filename)
+    along_match = re.search(r'(-?\d+\.?\d*)along', filename)
     freq_match = re.search(r'(\d+\.?\d*)MHz', filename)
-    if not (az_match and el_match and freq_match):
-        raise ValueError(f"Could not parse azimuth/elevation/frequency from filename: {filename}")
-    return float(az_match.group(1)), float(el_match.group(1)), float(freq_match.group(1))
+    if not (across_match and along_match and freq_match):
+        raise ValueError(f"Could not parse across-track/along-track/frequency from filename: {filename}")
+    return float(across_match.group(1)), float(along_match.group(1)), float(freq_match.group(1))
 
 
 def build_selected_signals(antenna_bands, loaded_constellation_names) -> list[dict]:
@@ -118,6 +120,81 @@ def build_selected_signals(antenna_bands, loaded_constellation_names) -> list[di
     return selected_signals
 
 
+def load_simulator_settings(path: str | None = None) -> dict:
+    """
+    Load engine/numerical simulator settings from the YAML file, kept separate from the per-mission INI.
+
+    Mission scenario lives in Configuration_*.ini; simulator settings (angular resolutions, numerical
+    grids, ...) live in simulator_settings.yaml. Strict like the INI loader: the file must exist and any
+    requested key must be present -- there are no hidden defaults.
+    """
+    settings_path = Constants.simulator_settings_path if path is None else path
+    if not os.path.isfile(settings_path):
+        raise FileNotFoundError(
+            f"Simulator settings file not found: {settings_path}. It holds engine settings such as "
+            "antenna_pattern.theta_resolution / phi_resolution."
+        )
+    with open(settings_path) as handle:
+        data = yaml.safe_load(handle)
+    if not isinstance(data, dict):
+        raise ValueError(f"Simulator settings file {settings_path} must contain a top-level mapping; got {type(data).__name__}.")
+    return data
+
+
+_ANTENNA_PATTERN_YAML_KEYS = ("theta_resolution", "phi_resolution", "along_track_steering_steps", "across_track_steering_steps")
+
+
+def _antenna_pattern_settings_from_yaml() -> dict:
+    """Read the antenna-pattern engine settings (pattern resolution + steering step counts) strictly from the simulator YAML."""
+    antenna_pattern = load_simulator_settings().get("antenna_pattern")
+    if not isinstance(antenna_pattern, dict):
+        raise KeyError(f"Missing 'antenna_pattern' mapping in {Constants.simulator_settings_path}.")
+    missing = [key for key in _ANTENNA_PATTERN_YAML_KEYS if key not in antenna_pattern]
+    if missing:
+        raise KeyError(f"Missing key(s) {missing} under 'antenna_pattern' in {Constants.simulator_settings_path}.")
+    try:
+        return {key: int(antenna_pattern[key]) for key in _ANTENNA_PATTERN_YAML_KEYS}
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid antenna_pattern setting in {Constants.simulator_settings_path}: {exc}") from None
+
+
+def _simulation_step_size_from_yaml() -> int:
+    """Read the propagation/sampling step size [s] strictly from the 'simulation' block of the simulator YAML."""
+    simulation = load_simulator_settings().get("simulation")
+    if not isinstance(simulation, dict) or "step_size_s" not in simulation:
+        raise KeyError(f"Missing 'simulation.step_size_s' in {Constants.simulator_settings_path}.")
+    try:
+        return int(simulation["step_size_s"])
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid simulation.step_size_s in {Constants.simulator_settings_path}: {exc}") from None
+
+
+def _validate_antenna_steering(along_extent, across_extent, yaml_ap) -> None:
+    """
+    User-facing steering guards named for the config keys (the generator keeps antenna-frame backstops).
+
+    Symmetric steering: each extent must be strictly inside (-90, 90) deg, the two-plane corner must satisfy
+    sin^2 + sin^2 <= 1, and each step count must be odd so the symmetric sweep includes boresight (0 deg).
+    """
+    max_along = max(abs(float(along_extent[0])), abs(float(along_extent[1])))
+    max_across = max(abs(float(across_extent[0])), abs(float(across_extent[1])))
+    for cfg_key, max_deg in (("along_track", max_along), ("across_track", max_across)):
+        if max_deg >= 90.0:
+            raise ValueError(f"[ANTENNA PATTERN].{cfg_key}_steering must stay strictly within (-90, 90) deg; got extent up to {max_deg} deg.")
+    if math.sin(math.radians(max_along)) ** 2 + math.sin(math.radians(max_across)) ** 2 > 1.0 + 1e-9:
+        raise ValueError(
+            "[ANTENNA PATTERN] steering corner is unreachable: sin^2(max along-track) + sin^2(max across-track) > 1. "
+            "Reduce along_track_steering / across_track_steering."
+        )
+    for cfg_key in ("along_track", "across_track"):
+        steps = yaml_ap[f"{cfg_key}_steering_steps"]
+        if steps % 2 == 0:
+            raise ValueError(
+                f"simulator_settings.yaml antenna_pattern.{cfg_key}_steering_steps ({steps}) must be odd so the "
+                f"symmetric [ANTENNA PATTERN].{cfg_key}_steering sweep includes boresight (0 deg); use {steps + 1}."
+            )
+
+
 def initialize(config_file_name="Configuration_area.ini"):
     """
     =========================================================================================================
@@ -134,8 +211,8 @@ def initialize(config_file_name="Configuration_area.ini"):
     Configuration File Structure:
         [SIMULATION SETTINGS]
         startTime          = dd.MM.YYYY HH:mm:ss
-        stepSize           = step_size_in_seconds
         simulationDuration = simulation_duration_in_hours                               (only needed for area-coverage analysis)
+        (stepSize is an engine setting -> simulator_settings.yaml: simulation.step_size_s)
 
         [MOVING TARGET]
         start_pos = (longitude, latitude)                                               (only needed for moving target analysis)
@@ -145,7 +222,6 @@ def initialize(config_file_name="Configuration_area.ini"):
         [ANTENNA]
         (the antenna pattern folder is not an INI key; it is fixed in Constants.antenna_pattern_folder)
         antenna_beamwidth_3dB  = [x1, y1, x2, y2, ...] (from 0 to 90 degrees rotationally) (only needed for moving target analysis)
-        polarizations          = ["LHCP", "RHCP", "VP", "HP"]                              (only needed for moving target analysis)
         bands                  = ["L1", "L2", "L2", "L5"]                                        (only needed for moving target analysis)
 
         [ORBITS]
@@ -179,10 +255,7 @@ def initialize(config_file_name="Configuration_area.ini"):
     except KeyError:
         raise KeyError("The 'startTime' key is missing in the 'SIMULATION SETTINGS' section of the configuration file.")  # noqa: B904
 
-    try:
-        step_size = int(config["SIMULATION SETTINGS"]["stepSize"])  # Seconds
-    except KeyError:
-        raise KeyError("The 'stepSize' key is missing in the 'SIMULATION SETTINGS' section of the configuration file.")  # noqa: B904
+    step_size = _simulation_step_size_from_yaml()  # Seconds; engine setting -> simulator YAML, not the mission INI
 
     sim_duration = int(config["SIMULATION SETTINGS"]["simulationDuration"]) if "simulationDuration" in config["SIMULATION SETTINGS"] else None  # Hours
 
@@ -231,7 +304,7 @@ def initialize(config_file_name="Configuration_area.ini"):
     expected_antenna_pattern_files = None
     if "ANTENNA PATTERN" in config:
         section = config["ANTENNA PATTERN"]
-        required_keys = ("elements_along_x", "elements_along_y", "d_x", "d_y", "azimuth_steering", "elevation_steering")
+        required_keys = ("elements_along_x", "elements_along_y", "d_x", "d_y", "across_track_steering", "along_track_steering")
         missing = [k for k in required_keys if k not in section]
         if missing:
             raise KeyError(f"Missing required key(s) in [ANTENNA PATTERN] section: {missing}")
@@ -252,6 +325,21 @@ def initialize(config_file_name="Configuration_area.ini"):
                 "[ANTENNA PATTERN] is configured but no carrier frequencies could be derived from "
                 '[ANTENNA].bands. List at least one known band, e.g. bands = ["L1"].'
             )
+        # Engine/numerical settings (pattern resolution + steering step counts) -> simulator YAML (strict);
+        # the INI keeps only the mission-facing steering extent [min_deg, max_deg].
+        yaml_ap = _antenna_pattern_settings_from_yaml()
+        try:
+            along_extent = ast.literal_eval(section["along_track_steering"])
+            across_extent = ast.literal_eval(section["across_track_steering"])
+        except (ValueError, SyntaxError) as e:
+            raise ValueError(f"Invalid steering extent in [ANTENNA PATTERN] section: {e}") from None
+        for name, extent in (("along_track_steering", along_extent), ("across_track_steering", across_extent)):
+            if not (isinstance(extent, (list, tuple)) and len(extent) == 2):
+                raise ValueError(
+                    f"[ANTENNA PATTERN] {name} must be [min_deg, max_deg]; the step count moved to "
+                    f"simulator_settings.yaml (antenna_pattern.{name}_steps)."
+                )
+        _validate_antenna_steering(along_extent, across_extent, yaml_ap)
         try:
             antenna_pattern_settings = {
                 "elements_along_x": int(section["elements_along_x"]),
@@ -259,10 +347,11 @@ def initialize(config_file_name="Configuration_area.ini"):
                 "d_x": float(section["d_x"]),
                 "d_y": float(section["d_y"]),
                 "freqs": band_freqs_mhz,
-                "azimuth_steering": ast.literal_eval(section["azimuth_steering"]),
-                "elevation_steering": ast.literal_eval(section["elevation_steering"]),
-                "theta_resolution": int(section.get("theta_resolution", "180")),
-                "phi_resolution": int(section.get("phi_resolution", "360")),
+                # generator steering keys are antenna-frame axes: across-track = array y, along-track = array x
+                "across_track_steering": [across_extent[0], across_extent[1], yaml_ap["across_track_steering_steps"]],
+                "along_track_steering": [along_extent[0], along_extent[1], yaml_ap["along_track_steering_steps"]],
+                "theta_resolution": yaml_ap["theta_resolution"],
+                "phi_resolution": yaml_ap["phi_resolution"],
                 "output_folder": antenna_pattern_folder,
             }
         except (ValueError, SyntaxError) as e:
@@ -305,24 +394,29 @@ def initialize(config_file_name="Configuration_area.ini"):
                 if not os.path.isfile(file):
                     raise FileNotFoundError(f"The specified antenna pattern file '{file}' does not exist. Please check the file path in the configuration file.")
 
-                # Key each pattern by its (steering-azimuth, steering-elevation, frequency) parsed from the filename.
-                azimuth, elevation, freq = parse_antenna_angles(os.path.basename(file))
-                antenna_patterns[(azimuth, elevation, freq)] = file
+                # Key each pattern by its (steering-across-track, steering-along-track, frequency) parsed from the filename.
+                across_track, along_track, freq = parse_antenna_angles(os.path.basename(file))
+                antenna_patterns[(across_track, along_track, freq)] = file
             antenna_patterns = dict(sorted(antenna_patterns.items()))
-            antenna_polarizations = ast.literal_eval(config["ANTENNA"]["polarizations"]) if "ANTENNA" in config else None  # Antenna polarizations (e.g., ["LHCP", "RHCP"])
+            antenna_polarizations = None  # polarizations removed from the INI for now (currently unused downstream)
         else:
             antenna_polarizations = None
             antenna_bands = None
 
-        footprint_dB = config["ANTENNA"].get("footprint_dB", "-3.0") if "ANTENNA" in config else None
-        try:
-            footprint_dB = float(footprint_dB) if footprint_dB is not None else None
-        except ValueError:
-            raise ValueError(f"Invalid value for 'footprint_dB': {footprint_dB}. It must be a float.") from None
-        if footprint_dB is not None and footprint_dB >= 0.0:
-            raise ValueError("'footprint_dB' must be below 0 dB because antenna patterns are normalized to a 0 dB peak.")
-    except KeyError:
-        raise KeyError("The 'polarizations' or 'bands' key is missing in the 'ANTENNA' section of the configuration file.") # noqa: B904
+        if "ANTENNA" in config:
+            if "footprint_dB" not in config["ANTENNA"]:
+                raise ValueError("The 'footprint_dB' key is missing in the 'ANTENNA' section of the configuration file. It must be set to a value below 0 dB.")
+            footprint_dB_str = config["ANTENNA"]["footprint_dB"]
+            try:
+                footprint_dB = float(footprint_dB_str)
+            except ValueError:
+                raise ValueError(f"Invalid value for 'footprint_dB': {footprint_dB_str}. It must be a float.") from None
+            if footprint_dB >= 0.0:
+                raise ValueError("'footprint_dB' must be below 0 dB because antenna patterns are normalized to a 0 dB peak.")
+        else:
+            footprint_dB = None
+    except KeyError as e:
+        raise KeyError(f"A required key is missing in the 'ANTENNA' section of the configuration file: {e}") from None
 
     #[ORBITS]
     # Check how many orbits are specified in the configuration file

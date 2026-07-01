@@ -133,7 +133,7 @@ sight (not along it),
    \nabla f_D = \frac{1}{\lambda}\left(
    \frac{\mathbf{v}_{tx,rel,\perp}}{R_t}
    + \frac{\mathbf{v}_{rx,rel,\perp}}{R_r}
-   \boldsymbol{\omega}_E\times(\hat{n}_{tx2s}-\hat{n}_{s2rx})\right).
+   + \boldsymbol{\omega}_E\times(\hat{n}_{tx2s}-\hat{n}_{s2rx})\right).
 
 The final term is the spatial derivative of the rigid-rotation velocity. Both gradients are projected
 onto the tangent plane (the part along the surface normal is dropped).

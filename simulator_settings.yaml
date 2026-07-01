@@ -1,0 +1,20 @@
+# =============================================================================
+# Simulator settings (engine / numerical parameters), separate from the per-mission
+# scenario in Configuration_area.ini / Configuration_ship.ini. Loaded by
+# SRC/__init__.py::load_simulator_settings. Strict: required keys must be present
+# (no hidden defaults). Add new engine-setting sections here over time.
+# =============================================================================
+
+simulation:
+  # Propagation / sampling step size in whole seconds (integer > 0).
+  step_size_s: 20
+
+antenna_pattern:
+  # Polar-angle (theta) sample count over 0..180 deg off boresight (integer >= 2).
+  theta_resolution: 180
+  # Azimuth (phi) sample count over 0..360 deg around boresight (integer >= 3).
+  phi_resolution: 360
+  # Beam-steering sweep step counts per axis; must be ODD so the symmetric sweep includes boresight (0 deg).
+  # The min/max extent stays in the INI [ANTENNA PATTERN].along_track_steering / across_track_steering.
+  along_track_steering_steps: 21
+  across_track_steering_steps: 21

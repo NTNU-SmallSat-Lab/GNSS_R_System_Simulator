@@ -192,8 +192,8 @@ class TestAntennaFovPreGate:
         # angles tightened to 5°, even a modest tilt is rejected by the pre-gate before the
         # ellipsoid math runs, so the BRP stays NaN.
         antenna = make_test_antenna()
-        antenna.max_azimuth_steering_deg = 5.0    # tighter than the fixture default 40°
-        antenna.max_elevation_steering_deg = 5.0
+        antenna.max_across_track_steering_deg = 5.0    # tighter than the fixture default 40°
+        antenna.max_along_track_steering_deg = 5.0
         tx_pos, tx_vel, rx_pos, rx_vel, times = self._build_state(tx_offset_along_y=10_000_000.0)
         brp = BRP(gps_index=0, leo_index=0, earth_model="elliptical", max_central_angle_deg=80.0, max_incidence_angle_deg=45.0)
         brp.compute_brp_coordinates(
@@ -222,12 +222,12 @@ class TestAntennaFovPreGate:
         )
         assert np.isfinite(brp.refl_LL_vec).all()
 
-    def test_fov_gate_uses_elevation_for_antenna_x_axis(self, monkeypatch):
-        # Production convention: antenna x is elevation and antenna y is azimuth. Use asymmetric
+    def test_fov_gate_uses_along_track_for_antenna_x_axis(self, monkeypatch):
+        # Production convention: antenna x is along_track and antenna y is across_track. Use asymmetric
         # limits so the legacy swapped mapping would reject this x-only command.
         antenna = make_test_antenna()
-        antenna.max_azimuth_steering_deg = 5.0
-        antenna.max_elevation_steering_deg = 30.0
+        antenna.max_across_track_steering_deg = 5.0
+        antenna.max_along_track_steering_deg = 30.0
         theta = np.radians(20.0)
         look_a = np.array([np.sin(theta), 0.0, np.cos(theta)])
         rx_pos = np.array([[7.1e6], [0.0], [0.0]])

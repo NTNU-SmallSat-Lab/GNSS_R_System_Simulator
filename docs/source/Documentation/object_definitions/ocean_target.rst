@@ -152,7 +152,7 @@ left exactly unchanged:
 .. math::
    :label: ot-bragg-gate
 
-   \text{Bragg active} \iff \beta < 5^\circ \;\text{and}\; \theta_i > 20^\circ.
+   \text{Bragg active} \iff \beta < 5^\circ \;\text{and}\; \theta_i \ge 20^\circ.
 
 The clutter area
 ^^^^^^^^^^^^^^^^

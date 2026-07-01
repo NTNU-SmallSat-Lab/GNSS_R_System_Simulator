@@ -783,7 +783,7 @@ class MovingTargetDetection:
         steering_angles = self.sat_antenna.resolve_steering_angles_for_direction(look_dir_center_a)
         if steering_angles is None:
             return nan_result
-        steering_azimuth_deg, steering_elevation_deg = steering_angles
+        steering_across_track_deg, steering_along_track_deg = steering_angles
 
         look_dir_ship_a = lb.compute_rx_look_direction_antenna_frame(
             rx_pos[:, 0],
@@ -794,8 +794,8 @@ class MovingTargetDetection:
         rx_gain_dbi = self.sat_antenna.get_gain_dbi_for_direction(
             look_dir_ship_a,
             frequency_hz / 1e6,
-            azimuth_deg=steering_azimuth_deg,
-            elevation_deg=steering_elevation_deg,
+            across_track_deg=steering_across_track_deg,
+            along_track_deg=steering_along_track_deg,
         )
 
         link_budget = lb.compute_bistatic_link_budget(
@@ -873,11 +873,11 @@ class MovingTargetDetection:
         steering_angles = self.sat_antenna.resolve_steering_angles_for_direction(look_dir_center_a)
         if steering_angles is None:
             return nan_result
-        steering_azimuth_deg, steering_elevation_deg = steering_angles
+        steering_across_track_deg, steering_along_track_deg = steering_angles
 
         look_dir_ship_a = lb.compute_rx_look_direction_antenna_frame(rx_pos[:, 0], rx_vel, ship_pos_eci[0], self.sat_antenna)
         rx_gain_dbi = self.sat_antenna.get_gain_dbi_for_direction(
-            look_dir_ship_a, frequency_hz / 1e6, azimuth_deg=steering_azimuth_deg, elevation_deg=steering_elevation_deg
+            look_dir_ship_a, frequency_hz / 1e6, across_track_deg=steering_across_track_deg, along_track_deg=steering_along_track_deg
         )
 
         link_budget = lb.compute_bistatic_link_budget(

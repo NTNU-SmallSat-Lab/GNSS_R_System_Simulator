@@ -51,10 +51,10 @@ class ArrayFactor:
 class AntennaPatternGenerator:
     """Generate (or reuse cached) phased-array radiation-pattern files for the receiver antenna.
 
-    Uses two-plane (sine-space) steering: elevation tilts the beam about the array y-axis (peak moves along
-    x^a, the flight direction) and azimuth about the x-axis (peak moves along y^a), so the beam direction is
-    ``(sin el, sin az, sqrt(1 - sin^2 az - sin^2 el))`` and the steering rectangle must stay inside the unit
-    disk (``sin^2 az + sin^2 el <= 1``).
+    Uses two-plane (sine-space) steering: along-track tilts the beam about the array y-axis (peak moves along
+    x^a, the flight direction) and across-track about the x-axis (peak moves along y^a), so the beam direction is
+    ``(sin along, sin across, sqrt(1 - sin^2 across - sin^2 along))`` and the steering rectangle must stay inside the
+    unit disk (``sin^2 across + sin^2 along <= 1``).
 
     Parameters
     ----------
@@ -64,9 +64,9 @@ class AntennaPatternGenerator:
         Element spacing per axis [m].
     freqs : list of float
         Frequencies to simulate [MHz].
-    azimuth_steering, elevation_steering : list
-        ``[start_deg, end_deg, n_steps]`` beam-tilt sweep: azimuth tilts the peak along y^a (rotation about
-        the x-axis), elevation along x^a (rotation about the y-axis).
+    across_track_steering, along_track_steering : list
+        ``[start_deg, end_deg, n_steps]`` beam-tilt sweep: across-track tilts the peak along y^a (rotation about
+        the x-axis), along-track along x^a (rotation about the y-axis).
     output_folder : str
         Where to write the generated pattern files.
     theta_resolution : int, optional
@@ -82,8 +82,8 @@ class AntennaPatternGenerator:
         d_x,
         d_y,
         freqs,
-        azimuth_steering,
-        elevation_steering,
+        across_track_steering,
+        along_track_steering,
         output_folder,
         theta_resolution=180,
         phi_resolution=360,
@@ -103,8 +103,8 @@ class AntennaPatternGenerator:
         self.d_x = float(d_x)
         self.d_y = float(d_y)
         self.freqs = [float(f) for f in freqs]
-        self.azimuth_steering = list(azimuth_steering)
-        self.elevation_steering = list(elevation_steering)
+        self.across_track_steering = list(across_track_steering)
+        self.along_track_steering = list(along_track_steering)
         self.output_folder = Path(output_folder)
         self.theta_resolution = _integer_parameter("theta_resolution", theta_resolution, 2)
         self.phi_resolution = _integer_parameter("phi_resolution", phi_resolution, 3)
@@ -114,8 +114,8 @@ class AntennaPatternGenerator:
         if not self.freqs or not np.isfinite(self.freqs).all() or any(f <= 0.0 for f in self.freqs):
             raise ValueError("freqs must contain finite, positive frequencies in MHz")
         for axis_name, spec in (
-            ("azimuth_steering", self.azimuth_steering),
-            ("elevation_steering", self.elevation_steering),
+            ("across_track_steering", self.across_track_steering),
+            ("along_track_steering", self.along_track_steering),
         ):
             if len(spec) != 3:
                 raise ValueError(f"{axis_name} must be [start_deg, end_deg, n_steps]")
@@ -133,57 +133,41 @@ class AntennaPatternGenerator:
         # Two-plane sine-space constraint: the steered beam direction is
         # (sin el, sin az, sqrt(1 - sin^2 az - sin^2 el)), so the worst-case corner of the
         # steering rectangle must stay inside the unit disk or the beam points below the horizon.
-        max_az_rad = np.deg2rad(max(abs(self.azimuth_steering[0]), abs(self.azimuth_steering[1])))
-        max_el_rad = np.deg2rad(max(abs(self.elevation_steering[0]), abs(self.elevation_steering[1])))
-        if np.sin(max_az_rad) ** 2 + np.sin(max_el_rad) ** 2 > 1.0 + 1e-9:
+        max_across_rad = np.deg2rad(max(abs(self.across_track_steering[0]), abs(self.across_track_steering[1])))
+        max_along_rad = np.deg2rad(max(abs(self.along_track_steering[0]), abs(self.along_track_steering[1])))
+        if np.sin(max_across_rad) ** 2 + np.sin(max_along_rad) ** 2 > 1.0 + 1e-9:
             raise ValueError(
-                "Steering sweep corner is unreachable: sin^2(max_azimuth) + sin^2(max_elevation) > 1. "
-                "Reduce azimuth_steering / elevation_steering extents."
+                "Steering sweep corner is unreachable: sin^2(max_across_track) + sin^2(max_along_track) > 1. "
+                "Reduce across_track_steering / along_track_steering extents."
             )
 
     def _steering_sweeps_deg(self):
         """
-        Return (azimuth_sweep_deg, elevation_sweep_deg) arrays from the [start, end, n_steps] specs.
+        Return (across_track_sweep_deg, along_track_sweep_deg) arrays from the [start, end, n_steps] specs.
 
         Each sweep is guaranteed to contain boresight (0 deg); see _axis_sweep_with_boresight.
         """
-        azimuth_sweep = self._axis_sweep_with_boresight("azimuth", self.azimuth_steering)
-        elevation_sweep = self._axis_sweep_with_boresight("elevation", self.elevation_steering)
-        return azimuth_sweep, elevation_sweep
+        across_track_sweep = self._axis_sweep_with_boresight("across_track", self.across_track_steering)
+        along_track_sweep = self._axis_sweep_with_boresight("along_track", self.along_track_steering)
+        return across_track_sweep, along_track_sweep
 
     @staticmethod
     def _axis_sweep_with_boresight(axis_name, spec):
         """
-        Build a steering sweep [deg] guaranteed to include boresight (0 deg).
+        Build a steering sweep [deg] that must include boresight (0 deg), else raise.
 
-        linspace(start, end, n_steps) lands exactly on 0 only for particular (range, count) pairs --
-        for a symmetric range that means an ODD count. The boresight pattern is required downstream
-        (nadir gain + footprint reference), so when 0 is missing this raises the count by one (which
-        fixes the common symmetric-even case while keeping the grid uniform) and, failing that, inserts
-        0 explicitly. Either repair emits a warning so the configuration can be corrected.
+        linspace(start, end, n_steps) lands on 0 only for particular (range, count) pairs -- for a
+        symmetric range that means an ODD count. Boresight is the nadir-gain + footprint reference, so a
+        sweep that skips it is rejected rather than silently repaired.
         """
         start, end, n_steps = spec[0], spec[1], int(spec[2])
         sweep = np.linspace(start, end, n_steps)
-        if np.any(np.isclose(sweep, 0.0, atol=1e-9)):
-            return sweep
-
-        bumped = np.linspace(start, end, n_steps + 1)
-        if np.any(np.isclose(bumped, 0.0, atol=1e-9)):
-            warnings.warn(
-                f"[ANTENNA PATTERN] {axis_name}_steering = [{start}, {end}, {n_steps}] skips boresight "
-                f"(0 deg): a symmetric range needs an odd n_steps. Raising n_steps to {n_steps + 1} so the "
-                f"steering grid includes boresight.",
-                stacklevel=2,
+        if not np.any(np.isclose(sweep, 0.0, atol=1e-9)):
+            raise ValueError(
+                f"{axis_name}_steering = [{start}, {end}, {n_steps}] skips boresight (0 deg). Use a step "
+                f"count that includes 0 -- for a symmetric range that is an odd count (e.g. {n_steps + 1})."
             )
-            return bumped
-
-        warnings.warn(
-            f"[ANTENNA PATTERN] {axis_name}_steering = [{start}, {end}, {n_steps}] does not include "
-            f"boresight (0 deg); inserting it. Use a range that lands on 0 (e.g. symmetric with odd "
-            f"n_steps) to avoid a non-uniform steering grid.",
-            stacklevel=2,
-        )
-        return np.unique(np.concatenate([sweep, [0.0]]))
+        return sweep
 
     # Bump this whenever the generator's output convention changes in a way that affects how the
     # consumer (Rx_antenna_def.py) must sample the patterns. Each bump invalidates every cached
@@ -204,7 +188,10 @@ class AntennaPatternGenerator:
     #   v7: azimuth/elevation axis association swapped. Elevation now steers the array x-axis
     #       (beta_x=-k dx sin el, peak along x = flight direction); azimuth steers the y-axis
     #       (beta_y=-k dy sin az). Beam direction (sin el, sin az, .). Invalidates cached patterns.
-    _GENERATOR_FORMAT_VERSION = 7
+    #   v8: steering renamed azimuth/elevation -> across-track/along-track (across = array y,
+    #       along = array x); pattern JSON keys, filenames (_<x>across_<y>along.json) and signature
+    #       keys changed accordingly. Invalidates cached patterns.
+    _GENERATOR_FORMAT_VERSION = 8
 
     def _signature(self):
         """
@@ -217,8 +204,8 @@ class AntennaPatternGenerator:
             "d_x": self.d_x,
             "d_y": self.d_y,
             "freqs": sorted(self.freqs),
-            "azimuth_steering": self.azimuth_steering,
-            "elevation_steering": self.elevation_steering,
+            "across_track_steering": self.across_track_steering,
+            "along_track_steering": self.along_track_steering,
             "theta_resolution": self.theta_resolution,
             "phi_resolution": self.phi_resolution,
         }
@@ -231,13 +218,13 @@ class AntennaPatternGenerator:
 
     def _expected_filenames(self):
         """
-        Yield the filename for every (frequency, steering-azimuth, steering-elevation) generate() will produce.
+        Yield the filename for every (frequency, steering-across-track, steering-along-track) generate() will produce.
         """
-        azimuth_sweep, elevation_sweep = self._steering_sweeps_deg()
+        across_track_sweep, along_track_sweep = self._steering_sweeps_deg()
         for freq in self.freqs:
-            for az_deg in azimuth_sweep:
-                for el_deg in elevation_sweep:
-                    yield f"array_factor_{freq}MHz_{az_deg:.2f}az_{el_deg:.2f}el.json"
+            for across_track_deg in across_track_sweep:
+                for along_track_deg in along_track_sweep:
+                    yield f"array_factor_{freq}MHz_{across_track_deg:.2f}across_{along_track_deg:.2f}along.json"
 
     def _all_files_exist(self):
         """
@@ -247,7 +234,7 @@ class AntennaPatternGenerator:
         if not filenames:
             raise ValueError(
                 "AntennaPatternGenerator: no output files expected — check that freqs, "
-                "azimuth_steering, and elevation_steering are set correctly."
+                "across_track_steering, and along_track_steering are set correctly."
             )
         existing = sum(1 for name in filenames if (self.output_folder / name).exists())
         print(f"[AntennaPatternGenerator] {existing}/{len(filenames)} pattern files found in '{self.output_folder.resolve()}'.")
@@ -313,7 +300,7 @@ class AntennaPatternGenerator:
 
     def generate(self):
         """
-        Generate (or reuse cached) per-(freq, steering-az, steering-el) JSON pattern files based on a metadata signature.
+        Generate (or reuse cached) per-(freq, steering-across, steering-along) JSON pattern files based on a metadata signature.
         """
         self.output_folder.mkdir(parents=True, exist_ok=True) # ensure the output folder exists before checking for cached files
 
@@ -340,12 +327,12 @@ class AntennaPatternGenerator:
         theta = np.linspace(0, 180, self.theta_resolution).reshape(-1, 1) * Constants.DEG2RAD
         phi = np.linspace(0, 360, self.phi_resolution, endpoint=False).reshape(1, -1) * Constants.DEG2RAD
 
-        # Steering sweep (two-plane): elevation tilts along array x; azimuth tilts along array y.
-        azimuth_sweep_deg, elevation_sweep_deg = self._steering_sweeps_deg()
-        azimuth_sweep = azimuth_sweep_deg * Constants.DEG2RAD
-        elevation_sweep = elevation_sweep_deg * Constants.DEG2RAD
+        # Steering sweep (two-plane): along-track tilts along array x; across-track tilts along array y.
+        across_track_sweep_deg, along_track_sweep_deg = self._steering_sweeps_deg()
+        across_track_sweep = across_track_sweep_deg * Constants.DEG2RAD
+        along_track_sweep = along_track_sweep_deg * Constants.DEG2RAD
 
-        # Write one steered pattern per (freq, steering-az, steering-el). The progressive phase shift
+        # Write one steered pattern per (freq, steering-across, steering-along). The progressive phase shift
         # beta steers the array peak to direction (sin el, sin az, .); RxAntenna bilinearly
         # interpolates gain between neighbouring grid steering directions.
         for freq in self.freqs:
@@ -353,25 +340,25 @@ class AntennaPatternGenerator:
             lambda_m = Constants.SPEED_OF_LIGHT / freq_hz # [m] wavelength
             k = 2 * np.pi / lambda_m # [rad/m] Angular wavenumber
 
-            for az_direction in azimuth_sweep:
-                for el_direction in elevation_sweep:
-                    beta_x = -k * self.d_x * np.sin(el_direction)  # elevation steers the x-axis (rotation about y)
-                    beta_y = -k * self.d_y * np.sin(az_direction)  # azimuth steers the y-axis (rotation about x)
+            for across_track_direction in across_track_sweep:
+                for along_track_direction in along_track_sweep:
+                    beta_x = -k * self.d_x * np.sin(along_track_direction)  # along-track steers the x-axis (rotation about y)
+                    beta_y = -k * self.d_y * np.sin(across_track_direction)  # across-track steers the y-axis (rotation about x)
 
-                    az_deg = az_direction * Constants.RAD2DEG
-                    el_deg = el_direction * Constants.RAD2DEG
+                    across_track_deg = across_track_direction * Constants.RAD2DEG
+                    along_track_deg = along_track_direction * Constants.RAD2DEG
 
                     af = ArrayFactor(self.elements_x, self.elements_y, freq_hz, self.d_x, self.d_y, beta_x, beta_y)
                     pattern_db = af.calculate_array_factor(theta, phi)
 
                     out_dict = {
                         "frequency": freq,
-                        "azimuth_pointing": az_deg,
-                        "elevation_pointing": el_deg,
+                        "across_track_pointing": across_track_deg,
+                        "along_track_pointing": along_track_deg,
                         "data": pattern_db.tolist(),
                     }
 
-                    filename = f"array_factor_{freq}MHz_{az_deg:.2f}az_{el_deg:.2f}el.json"
+                    filename = f"array_factor_{freq}MHz_{across_track_deg:.2f}across_{along_track_deg:.2f}along.json"
                     with open(self.output_folder / filename, "w") as f:
                         # Compact dump — the data array is large (~64k floats); pretty-printing is wasteful.
                         json.dump(out_dict, f)

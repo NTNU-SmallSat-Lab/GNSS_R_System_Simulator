@@ -2,12 +2,12 @@
 Deterministic in-memory RxAntenna fixture for golden-file regression tests.
 
 Bypasses RxAntenna.__init__ and populates the attributes that get_gain_dbi_for_direction
-depends on: a tuple-keyed (azimuth, elevation, frequency) lookup of steered patterns plus the
-steering grid. Steering is two-plane (sine-space): azimuth and elevation are signed bounded angles,
+depends on: a tuple-keyed (across_track, along_track, frequency) lookup of steered patterns plus the
+steering grid. Steering is two-plane (sine-space): across_track and along_track are signed bounded angles,
 and each synthetic steered pattern peaks at the sine-space direction set by its command, so the
 bilinear interpolation across the four bracketing steering patterns is genuinely exercised. The
 fixture's internal angle->axis mapping is arbitrary and self-consistent; it does not track the
-production azimuth/elevation axis convention, so this golden file is unaffected by changes to it.
+production across_track/along_track axis convention, so this golden file is unaffected by changes to it.
 """
 
 import numpy as np
@@ -19,14 +19,14 @@ N_THETA = 37   # 5 deg steps over 0..180
 N_PHI = 72     # 5 deg steps over 0..360 (endpoint-exclusive)
 
 # Two-plane steering grid (signed, includes boresight 0).
-STEERING_AZIMUTHS_DEG = [-40.0, -20.0, 0.0, 20.0, 40.0]
-STEERING_ELEVATIONS_DEG = [-40.0, -20.0, 0.0, 20.0, 40.0]
+STEERING_ACROSS_TRACKS_DEG = [-40.0, -20.0, 0.0, 20.0, 40.0]
+STEERING_ALONG_TRACKS_DEG = [-40.0, -20.0, 0.0, 20.0, 40.0]
 
 BORESIGHT_DIRECTIVITY_DB = 10.0
 PATTERN_FALLOFF_DB_PER_DEG = 0.2
 
 
-def _steered_pattern_db(az_steer_deg: float, el_steer_deg: float) -> np.ndarray:
+def _steered_pattern_db(across_track_steer_deg: float, along_track_steer_deg: float) -> np.ndarray:
     """
     Synthetic steered power pattern (dB), peak 0 dB at the steering direction.
 
@@ -42,8 +42,8 @@ def _steered_pattern_db(az_steer_deg: float, el_steer_deg: float) -> np.ndarray:
     d_y = np.sin(theta_mesh) * np.sin(phi_mesh)
     d_z = np.cos(theta_mesh)
 
-    u = np.sin(np.deg2rad(az_steer_deg))
-    v = np.sin(np.deg2rad(el_steer_deg))
+    u = np.sin(np.deg2rad(across_track_steer_deg))
+    v = np.sin(np.deg2rad(along_track_steer_deg))
     w = np.sqrt(max(1.0 - u**2 - v**2, 0.0))
     axis = np.array([u, v, w])
 
@@ -69,27 +69,27 @@ def make_test_antenna() -> RxAntenna:
     antenna.footprint_resolution = 64
 
     antenna.antenna_lookuptable = {}
-    for az in STEERING_AZIMUTHS_DEG:
-        for el in STEERING_ELEVATIONS_DEG:
+    for az in STEERING_ACROSS_TRACKS_DEG:
+        for el in STEERING_ALONG_TRACKS_DEG:
             antenna.antenna_lookuptable[(az, el, FREQUENCY_MHZ)] = {
                 "radiation_pattern_dB": _steered_pattern_db(az, el),
                 "directivity_dB": BORESIGHT_DIRECTIVITY_DB,
                 "directivity": 10.0 ** (BORESIGHT_DIRECTIVITY_DB / 10.0),
                 "vector_bundle": np.zeros((64, 3)),
                 "frequency": FREQUENCY_MHZ,
-                "elevation": el,
-                "azimuth": az,
+                "along_track": el,
+                "across_track": az,
             }
     # Per-axis max steering = grid extent (mirrors RxAntenna._initialize).
-    antenna.max_azimuth_steering_deg = max(abs(a) for a in STEERING_AZIMUTHS_DEG)
-    antenna.max_elevation_steering_deg = max(abs(e) for e in STEERING_ELEVATIONS_DEG)
+    antenna.max_across_track_steering_deg = max(abs(a) for a in STEERING_ACROSS_TRACKS_DEG)
+    antenna.max_along_track_steering_deg = max(abs(e) for e in STEERING_ALONG_TRACKS_DEG)
     antenna._build_steering_grid()
     return antenna
 
 
 def gain_sampling_grid() -> tuple:
     """
-    Deterministic input grid: look directions (theta, phi) x steering commands (az, el).
+    Deterministic input grid: look directions (theta, phi) x steering commands (across, along).
     """
     theta_deg = np.array([5.0, 15.0, 30.0, 60.0])
     phi_deg = np.array([0.0, 45.0, 90.0, 135.0, 180.0, 270.0, 359.0])
@@ -118,6 +118,6 @@ def compute_gain_grid(antenna: RxAntenna) -> np.ndarray:
             for k, az in enumerate(az_steer):
                 for m, el in enumerate(el_steer):
                     gains[i, j, k, m] = antenna.get_gain_dbi_for_direction(
-                        direction, FREQUENCY_MHZ, azimuth_deg=az, elevation_deg=el
+                        direction, FREQUENCY_MHZ, across_track_deg=az, along_track_deg=el
                     )
     return gains

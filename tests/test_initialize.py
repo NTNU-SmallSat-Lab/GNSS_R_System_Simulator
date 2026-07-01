@@ -19,7 +19,7 @@ import pytest
 
 # SRC is on sys.path via pyproject.toml's [tool.pytest.ini_options].pythonpath,
 # matching what the entry-point scripts do.
-from __init__ import initialize
+from __init__ import _antenna_pattern_settings_from_yaml, initialize, load_simulator_settings
 from object_definitions.Constants_def import Constants
 
 # --------------------------------------------------------------------------- #
@@ -30,7 +30,6 @@ MINIMAL_SIMULATION_SETTINGS = dedent(
     """\
     [SIMULATION SETTINGS]
     startTime = 02.04.2025 12:00:00
-    stepSize = 30
     """
 )
 
@@ -159,10 +158,14 @@ class TestInitializeHappyPath:
         _, settings = initialize(path)
         assert settings["start_time"] == dt.datetime(2025, 4, 2, 12, 0, 0, tzinfo=dt.UTC)
 
-    def test_step_size_parsed_as_int(self, tmp_path):
+    def test_step_size_parsed_from_yaml(self, tmp_path, monkeypatch):
+        yaml_path = os.path.join(tmp_path, "simulator_settings.yaml")
+        with open(yaml_path, "w") as handle:
+            handle.write("simulation:\n  step_size_s: 45\n")
+        monkeypatch.setattr(Constants, "simulator_settings_path", yaml_path)
         path = write_config(tmp_path, minimal_config_body())
         _, settings = initialize(path)
-        assert settings["step_size"] == 30
+        assert settings["step_size"] == 45
         assert isinstance(settings["step_size"], int)
 
     def test_sim_duration_parsed_when_present(self, tmp_path):
@@ -320,22 +323,19 @@ class TestMissingSectionsAndKeys:
         body = dedent(
             """\
             [SIMULATION SETTINGS]
-            stepSize = 30
             """
         ) + MINIMAL_ORBITS + MINIMAL_GNSS
         path = write_config(tmp_path, body)
         with pytest.raises(KeyError, match="startTime"):
             initialize(path)
 
-    def test_missing_step_size_key(self, tmp_path):
-        body = dedent(
-            """\
-            [SIMULATION SETTINGS]
-            startTime = 02.04.2025 12:00:00
-            """
-        ) + MINIMAL_ORBITS + MINIMAL_GNSS
-        path = write_config(tmp_path, body)
-        with pytest.raises(KeyError, match="stepSize"):
+    def test_missing_step_size_in_yaml_raises(self, tmp_path, monkeypatch):
+        yaml_path = os.path.join(tmp_path, "simulator_settings.yaml")
+        with open(yaml_path, "w") as handle:
+            handle.write("simulation: {}\n")  # step_size_s missing
+        monkeypatch.setattr(Constants, "simulator_settings_path", yaml_path)
+        path = write_config(tmp_path, minimal_config_body())
+        with pytest.raises(KeyError, match="step_size_s"):
             initialize(path)
 
     def test_missing_orbits_section(self, tmp_path):
@@ -759,3 +759,48 @@ class TestOptionalSections:
         path = write_config(tmp_path, minimal_config_body(extra_sections=plot))
         with pytest.raises(ValueError, match="detection_bbox_buffer_deg"):
             initialize(path)
+
+
+class TestSimulatorSettingsYaml:
+    """Engine settings live in the simulator YAML (separate from the mission INI) and load strictly."""
+
+    @staticmethod
+    def _write_yaml(tmp_path, body: str) -> str:
+        path = os.path.join(tmp_path, "simulator_settings.yaml")
+        with open(path, "w") as handle:
+            handle.write(body)
+        return path
+
+    def test_valid_yaml_returns_mapping(self, tmp_path):
+        path = self._write_yaml(tmp_path, "antenna_pattern:\n  theta_resolution: 120\n  phi_resolution: 240\n")
+        data = load_simulator_settings(path)
+        assert data["antenna_pattern"]["theta_resolution"] == 120
+
+    def test_missing_file_raises(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            load_simulator_settings(os.path.join(tmp_path, "does_not_exist.yaml"))
+
+    def test_non_mapping_top_level_raises(self, tmp_path):
+        path = self._write_yaml(tmp_path, "- just\n- a\n- list\n")
+        with pytest.raises(ValueError):
+            load_simulator_settings(path)
+
+    def test_settings_read_from_yaml(self, tmp_path, monkeypatch):
+        path = self._write_yaml(
+            tmp_path,
+            "antenna_pattern:\n  theta_resolution: 90\n  phi_resolution: 180\n"
+            "  along_track_steering_steps: 7\n  across_track_steering_steps: 9\n",
+        )
+        monkeypatch.setattr(Constants, "simulator_settings_path", path)
+        assert _antenna_pattern_settings_from_yaml() == {
+            "theta_resolution": 90,
+            "phi_resolution": 180,
+            "along_track_steering_steps": 7,
+            "across_track_steering_steps": 9,
+        }
+
+    def test_missing_setting_key_raises(self, tmp_path, monkeypatch):
+        path = self._write_yaml(tmp_path, "antenna_pattern:\n  theta_resolution: 90\n")  # other keys missing
+        monkeypatch.setattr(Constants, "simulator_settings_path", path)
+        with pytest.raises(KeyError):
+            _antenna_pattern_settings_from_yaml()

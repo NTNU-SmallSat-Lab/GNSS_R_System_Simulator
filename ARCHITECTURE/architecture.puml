@@ -143,7 +143,7 @@ package "Domain" <<Rectangle>> #F4F4FF {
 
     class GNSS_R_antenna {
         antenna_lookuptable
-        steering_azimuth / elevation
+        steering_across_track / along_track
         frequencies, bands
         polarizations
         footprint_dB_contour

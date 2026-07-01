@@ -167,7 +167,7 @@ CLASSES: list[UClass] = [
         id="RxAntenna", name="GNSS_R_antenna", x=80, y=420,
         attrs=[
             "antenna_lookuptable",
-            "steering_azimuth / elevation",
+            "steering_across_track / along_track",
             "frequencies, bands",
             "polarizations",
             "footprint_dB_contour",

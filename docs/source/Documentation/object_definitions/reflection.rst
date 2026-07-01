@@ -222,8 +222,9 @@ The outward ellipsoid normal at the solution is
 
 ``scipy.optimize.least_squares`` solves these two dimensionless residuals. The candidate is accepted only
 if it faces both satellites (:math:`\cos\theta_{in}>0` and :math:`\cos\theta_{out}>0`) and the independent
-vector reflection residual :eq:`refl-mirror` satisfies
-:math:`\lVert\mathbf{e}(S)\rVert \le 10^{-8}`. The spherical solution seeds the solve.
+vector reflection residual :eq:`refl-mirror` satisfies :math:`\lVert\mathbf{e}(S)\rVert \le 5\times10^{-2}`
+(a coarse acceptance gate; well-posed geometries converge far tighter, as the tests show). The spherical
+solution seeds the solve.
 
 Module Assumptions and Limitations
 ----------------------------------

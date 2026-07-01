@@ -9,6 +9,13 @@ sections are present is what distinguishes the two modes.
 This page lists the sections and keys. Per-section physics detail lives on the module pages, linked from
 each section.
 
+.. note::
+
+   Engine/numerical settings live in ``simulator_settings.yaml`` at the repo root, kept separate from the
+   per-mission INI: the simulation ``step_size_s``, and the antenna-pattern angular resolution
+   ``theta_resolution`` / ``phi_resolution`` plus the steering step counts ``along_track_steering_steps`` /
+   ``across_track_steering_steps``. It is loaded strictly -- a missing file or key raises.
+
 [SIMULATION SETTINGS]
 ---------------------
 
@@ -22,9 +29,6 @@ each section.
    * - ``starttime``
      - Simulation epoch (UTC), format ``dd.MM.YYYY HH:mm:ss``.
      - --
-   * - ``stepsize``
-     - Propagation / sampling step.
-     - s
    * - ``simulationDuration``
      - Window length (area-coverage mode).
      - h
@@ -70,13 +74,10 @@ See :doc:`object_definitions/antenna`.
    * - ``d_x`` / ``d_y``
      - Element spacing.
      - m
-   * - ``azimuth_steering`` / ``elevation_steering``
-     - ``[start, end, n_steps]`` two-plane sweeps: elevation moves the beam along antenna
-       :math:`x` (flight direction), azimuth along antenna :math:`y`.
+   * - ``along_track_steering`` / ``across_track_steering``
+     - Steering extent ``[min, max]`` (two-plane): along-track tilts the beam in the flight direction
+       (antenna :math:`x`), across-track perpendicular (antenna :math:`y`). Step counts are in the simulator YAML.
      - deg
-   * - ``polarizations``
-     - e.g. ``["RHCP", "LHCP"]``.
-     - --
    * - ``bands``
      - Constellation-specific signals, e.g. ``["L1", "E1", "B1C"]``.
      - --
@@ -97,7 +98,7 @@ See :doc:`object_definitions/satellites`.
      - Meaning
      - Unit
    * - ``orbit1``, ``orbit2``, ...
-     - ``[inclination, eccentricity, raan, argPerigee, meanAnomaly, semiMajorAxis]``, read in order.
+     - ``[inclination, eccentricity, raan, argPeriapsis, trueAnomaly, semiMajorAxis]``, read in order.
      - deg / -- / m
    * - ``gnss_tle_files``
      - TLE files (the constellation is matched from the filename).

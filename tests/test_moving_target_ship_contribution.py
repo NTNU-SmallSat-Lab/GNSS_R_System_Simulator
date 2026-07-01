@@ -119,7 +119,7 @@ def _constant_gain_antenna():
         def resolve_steering_angles_for_direction(self, direction):
             return (0.0, 0.0) if np.isfinite(direction).all() else None
 
-        def get_gain_dbi_for_direction(self, direction, frequency_mhz, azimuth_deg=None, elevation_deg=None):
+        def get_gain_dbi_for_direction(self, direction, frequency_mhz, across_track_deg=None, along_track_deg=None):
             return 10.0 if np.isfinite(direction).all() else np.nan
 
     return ConstantGainAntenna()
@@ -136,13 +136,13 @@ class _RecordingFixedSteerAntenna:
         self.resolved_direction = np.asarray(direction, dtype=float)
         return (11.0, -7.0)
 
-    def get_gain_dbi_for_direction(self, direction, frequency_mhz, azimuth_deg=None, elevation_deg=None):
+    def get_gain_dbi_for_direction(self, direction, frequency_mhz, across_track_deg=None, along_track_deg=None):
         self.gain_calls.append(
             {
                 "direction": np.asarray(direction, dtype=float),
                 "frequency_mhz": frequency_mhz,
-                "azimuth_deg": azimuth_deg,
-                "elevation_deg": elevation_deg,
+                "across_track_deg": across_track_deg,
+                "along_track_deg": along_track_deg,
             }
         )
         return 6.0
@@ -220,8 +220,8 @@ class TestComputeShipPrAtEvent:
         assert len(mtd.sat_antenna.gain_calls) == 1
         gain_call = mtd.sat_antenna.gain_calls[0]
         np.testing.assert_allclose(gain_call["direction"], ship_direction)
-        assert gain_call["azimuth_deg"] == 11.0
-        assert gain_call["elevation_deg"] == -7.0
+        assert gain_call["across_track_deg"] == 11.0
+        assert gain_call["along_track_deg"] == -7.0
 
 
 class TestForwardShadowDeltaPr:

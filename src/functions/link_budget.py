@@ -589,8 +589,8 @@ def _sample_antenna_footprint_patches(
         "patch_positions_eci": patch_positions_eci,
         "patch_normals_eci": patch_normals_eci,
         "patch_areas_m2": patch_areas_m2,
-        "steering_azimuth_deg": float(steering_angles[0]),
-        "steering_elevation_deg": float(steering_angles[1]),
+        "steering_across_track_deg": float(steering_angles[0]),
+        "steering_along_track_deg": float(steering_angles[1]),
         "footprint_area_m2": float(footprint_area_m2),
         "sampled_area_m2": float(patch_areas_m2.sum()),
     }
@@ -733,8 +733,8 @@ def _compute_patch_integrated_ocean_rcs(
             patch_gain_dbi[patch_idx] = antenna.get_gain_dbi_for_direction(
                 look_patch_a,
                 frequency_mhz,
-                azimuth_deg=samples["steering_azimuth_deg"],
-                elevation_deg=samples["steering_elevation_deg"],
+                across_track_deg=samples["steering_across_track_deg"],
+                along_track_deg=samples["steering_along_track_deg"],
             )
 
         patch_budget = compute_bistatic_link_budget(

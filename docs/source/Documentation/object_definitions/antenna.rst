@@ -140,7 +140,8 @@ Equivalently :math:`\hat{d} = \sin\alpha_\mathrm{el}\,\hat{x}^{\mathrm{a}} + \si
 components are the steering direction cosines; the boresight (:math:`z`) component is fixed by the
 unit-length condition :math:`|\hat{d}| = 1`. For that component to be real the steering angles must satisfy
 :math:`\sin^2\left(\alpha_\mathrm{az}\right) + \sin^2\left(\alpha_\mathrm{el}\right) \le 1` or the
-beam would point below the horizon (the constructor rejects sweeps that break this);
+beam would point below the horizon; each per-axis extent must additionally stay strictly inside
+:math:`(-90^\circ, 90^\circ)`. The loader rejects sweeps that break either bound.
 :numref:`Fig. %s <fig-ant-steering>` shows these two angles. Half-wavelength element
 spacing (:math:`d \le \lambda/2`) keeps grating lobes out of the visible region across the steering range.
 
@@ -168,9 +169,11 @@ recomputing it on every run. One file is written per *(steering azimuth, steerin
 frequency)* triple, named ``array_factor_<f>MHz_<az>az_<el>el.json``; it stores the normalised pattern
 :math:`20\log_{10}|\mathrm{AF}_n|` sampled on the :math:`\theta \in [0^\circ, 180^\circ]`,
 :math:`\phi \in [0^\circ, 360^\circ)` grid (``theta_resolution`` :math:`\times` ``phi_resolution`` samples)
-together with its steering and frequency metadata. The steering grid is swept per axis from
-``azimuth_steering`` / ``elevation_steering`` (``[start, end, n_steps]``) and always includes the boresight
-command :math:`(0^\circ, 0^\circ)`. A separate set is produced per band, since the electrical spacing
+together with its steering and frequency metadata. The steering grid is swept per axis from the
+``along_track_steering`` / ``across_track_steering`` extent (``[min, max]`` in the INI) and the per-axis step counts
+``along_track_steering_steps`` / ``across_track_steering_steps`` (in ``simulator_settings.yaml``). Each sweep must
+include boresight :math:`(0^\circ, 0^\circ)` -- for the symmetric extents that means an **odd** step count, and an
+even count is rejected at load time rather than silently adjusted. A separate set is produced per band, since the electrical spacing
 :math:`k d = 2\pi d / \lambda` -- and therefore the pattern -- depends on the carrier frequency.
 
 Regeneration is gated by a signature file (``antenna_pattern_metadata.json``) recording every
@@ -303,13 +306,16 @@ Validation and Tests
 User Guide
 ----------
 
-The array is configured in two INI sections:
+The array is configured in two INI sections plus the simulator YAML:
 
 - ``[ANTENNA PATTERN]`` -- the array geometry that drives the generator: ``elements_along_x`` /
-  ``elements_along_y``, ``d_x`` / ``d_y`` (element spacing; commonly about half a wavelength to avoid grating lobes), the
-  ``azimuth_steering`` / ``elevation_steering`` sweeps, and ``theta_resolution`` / ``phi_resolution``.
-- ``[ANTENNA]`` -- what the receiver uses: ``polarizations`` (``["RHCP", "LHCP"]``), ``bands``, and
-  ``footprint_db`` (the footprint contour level).
+  ``elements_along_y``, ``d_x`` / ``d_y`` (element spacing; commonly about half a wavelength to avoid grating lobes),
+  and the ``along_track_steering`` / ``across_track_steering`` extent (``[min, max]``; along-track = flight
+  direction / antenna elevation, across-track = antenna azimuth).
+- ``[ANTENNA]`` -- what the receiver uses: ``bands`` and ``footprint_db`` (the footprint contour level).
+- ``simulator_settings.yaml`` (``antenna_pattern`` block) -- the engine/numerical settings: the pattern
+  angular resolution ``theta_resolution`` / ``phi_resolution`` and the steering step counts
+  ``along_track_steering_steps`` / ``across_track_steering_steps``.
 
 When ``[ANTENNA PATTERN]`` is present the patterns are (re)generated before the run; otherwise the cached
 files are reused.

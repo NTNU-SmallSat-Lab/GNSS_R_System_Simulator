@@ -17,14 +17,14 @@ class RxAntenna:
     Parameters
     ----------
     settings : dict
-        Antenna configuration with keys: ``antenna_pattern_files`` (``{(azimuth, elevation,
+        Antenna configuration with keys: ``antenna_pattern_files`` (``{(across_track, along_track,
         frequency_mhz) -> json path}``), ``polarizations`` (e.g. ``["LHCP", "RHCP"]``), ``bands``
         (e.g. ``["L1", "L5"]``), and ``footprint_dB`` (the footprint contour level, below 0 dB).
 
     Notes
     -----
     The per-axis maximum steering angles are derived from the generated steering grid (the largest
-    ``|azimuth|`` and ``|elevation|``), not set directly.
+    ``|across_track|`` and ``|along_track|``), not set directly.
     """
 
     def __init__(self, settings: dict = None):
@@ -32,62 +32,62 @@ class RxAntenna:
         if settings is None:
             raise ValueError("Settings dictionary must be provided.")
         self.antenna_lookuptable = {}
-        self.steering_azimuth = []
-        self.steering_elevation = []
+        self.steering_across_track = []
+        self.steering_along_track = []
         self.frequencies_radi_pattern = []
         self.footprint_dB_contour = settings.get("footprint_dB")
         if self.footprint_dB_contour is None:
-            self.footprint_dB_contour = -3.0
+            raise ValueError("footprint_dB must be provided in the antenna settings (set 'footprint_db' in the [ANTENNA] section of the configuration file).")
         if self.footprint_dB_contour >= 0.0:
             raise ValueError("footprint_dB must be below 0 dB because antenna patterns are normalized to a 0 dB peak.")
         # Per-axis max steering angles are derived from the generated steering grid in _initialize.
-        self.max_azimuth_steering_deg = None
-        self.max_elevation_steering_deg = None
+        self.max_across_track_steering_deg = None
+        self.max_along_track_steering_deg = None
 
         antenna_patterns_temp = {}
         pattern_files = settings.get("antenna_pattern_files") or {}
-        for antenna_az_el_fr, filepath in pattern_files.items():
-            azimuth = antenna_az_el_fr[0]
-            elevation = antenna_az_el_fr[1]
-            frequency = antenna_az_el_fr[2]
+        for antenna_key, filepath in pattern_files.items():
+            across_track = antenna_key[0]
+            along_track = antenna_key[1]
+            frequency = antenna_key[2]
 
             with open(filepath) as f:
                 antenna_data = json.load(f)
 
             mesh = np.array(antenna_data['data'])
             freq = antenna_data['frequency']
-            beta_m = antenna_data['azimuth_pointing']
-            beta_n = antenna_data['elevation_pointing']
+            beta_m = antenna_data['across_track_pointing']
+            beta_n = antenna_data['along_track_pointing']
 
             checks = [
                 (mesh is None or mesh.size == 0, "Missing or empty mesh data"),
                 (freq is None, "Missing frequency data"),
-                (beta_m is None, "Missing azimuth pointing data"),
-                (beta_n is None, "Missing elevation pointing data"),
+                (beta_m is None, "Missing across_track pointing data"),
+                (beta_n is None, "Missing along_track pointing data"),
             ]
             for condition, message in checks:
                 if condition:
-                    raise ValueError(f"{message} for {antenna_az_el_fr}.")
+                    raise ValueError(f"{message} for {antenna_key}.")
 
             if not math.isclose(freq, frequency, abs_tol=1e-6):
-                raise ValueError(f"Frequency mismatch for {antenna_az_el_fr}: file content reports {freq} MHz.")
-            if not math.isclose(beta_n, elevation, abs_tol=0.01):
-                raise ValueError(f"Elevation pointing mismatch for {antenna_az_el_fr}: file content reports {beta_n} deg.")
-            if not math.isclose(beta_m, azimuth, abs_tol=0.01):
-                raise ValueError(f"Azimuth pointing mismatch for {antenna_az_el_fr}: file content reports {beta_m} deg.")
+                raise ValueError(f"Frequency mismatch for {antenna_key}: file content reports {freq} MHz.")
+            if not math.isclose(beta_n, along_track, abs_tol=0.01):
+                raise ValueError(f"Along-track pointing mismatch for {antenna_key}: file content reports {beta_n} deg.")
+            if not math.isclose(beta_m, across_track, abs_tol=0.01):
+                raise ValueError(f"Across-track pointing mismatch for {antenna_key}: file content reports {beta_m} deg.")
 
-            antenna_patterns_temp[antenna_az_el_fr] = {
-                "azimuth": azimuth,
-                "elevation": elevation,
+            antenna_patterns_temp[antenna_key] = {
+                "across_track": across_track,
+                "along_track": along_track,
                 "frequency": frequency,
                 "radiation_pattern_dB": mesh,
             }
             if frequency not in self.frequencies_radi_pattern:
                 self.frequencies_radi_pattern.append(frequency)
-            if elevation not in self.steering_elevation:
-                self.steering_elevation.append(elevation)
-            if azimuth not in self.steering_azimuth:
-                self.steering_azimuth.append(azimuth)
+            if along_track not in self.steering_along_track:
+                self.steering_along_track.append(along_track)
+            if across_track not in self.steering_across_track:
+                self.steering_across_track.append(across_track)
         self.polarizations = settings.get("polarizations")
         self.bands = settings.get("bands")
         self.footprint_resolution = 64
@@ -101,7 +101,7 @@ class RxAntenna:
         Initialize antenna properties (per-pattern directivity, footprint contour, frequency list, steering grid).
 
         INPUTS:
-            antenna_patterns_temp: [dict]   {(az, el, freq) -> {azimuth, elevation, frequency, radiation_pattern_dB}}
+            antenna_patterns_temp: [dict]   {(across, along, freq) -> {across_track, along_track, frequency, radiation_pattern_dB}}
         =========================================================================================================
         """
         for antenna_key, antenna_pattern in antenna_patterns_temp.items():
@@ -111,15 +111,15 @@ class RxAntenna:
                 'directivity_dB': directivity_dB,
                 'vector_bundle': contour_vectors,
                 'frequency': antenna_pattern["frequency"],
-                'elevation': antenna_pattern["elevation"],
-                'azimuth': antenna_pattern["azimuth"],
+                'along_track': antenna_pattern["along_track"],
+                'across_track': antenna_pattern["across_track"],
                 'radiation_pattern_dB': antenna_pattern["radiation_pattern_dB"],
             }
 
         self.frequencies = self._get_frequency_from_band()
         # The reachable steering range is exactly the generated grid extent, per axis.
-        self.max_azimuth_steering_deg = max(abs(key[0]) for key in self.antenna_lookuptable)
-        self.max_elevation_steering_deg = max(abs(key[1]) for key in self.antenna_lookuptable)
+        self.max_across_track_steering_deg = max(abs(key[0]) for key in self.antenna_lookuptable)
+        self.max_along_track_steering_deg = max(abs(key[1]) for key in self.antenna_lookuptable)
         self._build_steering_grid()
         self._validate_boresight_steering_patterns()
 
@@ -147,7 +147,7 @@ class RxAntenna:
     def _validate_boresight_steering_patterns(self) -> None:
         """
         =========================================================================================================
-        Validate that every configured antenna frequency has a boresight (azimuth=0, elevation=0) pattern.
+        Validate that every configured antenna frequency has a boresight (across_track=0, along_track=0) pattern.
 
         The generated steering grid must include the true zero-steering command so nadir gain and footprint
         interpolation have a physical reference point instead of being inferred only from tilted beams.
@@ -167,14 +167,14 @@ class RxAntenna:
         if missing:
             missing_str = ", ".join(f"{frequency:.2f} MHz" for frequency in missing)
             raise ValueError(
-                "Missing boresight antenna pattern (azimuth=0, elevation=0) for footprint calculation "
-                f"at {missing_str}. Include 0 in both azimuth_steering and elevation_steering."
+                "Missing boresight antenna pattern (across_track=0, along_track=0) for footprint calculation "
+                f"at {missing_str}. Include 0 in both across_track_steering and along_track_steering."
             )
 
     def _build_steering_grid(self) -> None:
         """
         =========================================================================================================
-        Pre-compute, per available frequency, sorted azimuth/elevation steering grids and a (az, el) -> key map.
+        Pre-compute, per available frequency, sorted across_track/along_track steering grids and a (across, along) -> key map.
         Consumed by _steering_bracket_keys_and_weights to bracket a target steering direction in O(log N).
 
         Stored on self._steering_grids: dict {freq_mhz: {"az_sorted", "el_sorted", "key_map"}}.
@@ -216,8 +216,8 @@ class RxAntenna:
         # Steering-command-centred contour ring; already at footprint_resolution, no further resampling needed.
         contur_vectors = self._find_contour_vectors(
             rad_pattern_spherical_dB,
-            antenna_pattern.get("azimuth", 0.0),
-            antenna_pattern.get("elevation", 0.0),
+            antenna_pattern.get("across_track", 0.0),
+            antenna_pattern.get("along_track", 0.0),
         )
 
         debug = False
@@ -256,8 +256,8 @@ class RxAntenna:
         if steering_angles is None:
             return np.empty((0, 3), dtype=float)
 
-        steering_azimuth_deg, steering_elevation_deg = steering_angles
-        corners = self._steering_bracket_keys_and_weights(frequency, steering_azimuth_deg, steering_elevation_deg)
+        steering_across_track_deg, steering_along_track_deg = steering_angles
+        corners = self._steering_bracket_keys_and_weights(frequency, steering_across_track_deg, steering_along_track_deg)
 
         interpolated_vectors = None
         expected_shape = None
@@ -312,8 +312,8 @@ class RxAntenna:
 
         INPUTS:
             frequency_mhz: [float]   Target frequency [MHz] (snapped to closest available)
-            az_target:     [float]   Target steering azimuth (y-axis tilt) [deg]
-            el_target:     [float]   Target steering elevation (x-axis tilt) [deg]
+            az_target:     [float]   Target steering across_track (y-axis tilt) [deg]
+            el_target:     [float]   Target steering along_track (x-axis tilt) [deg]
 
         OUTPUT:
             corners: [list[tuple]]   [(pattern_key, weight), ...] of length 4; weights sum to 1.
@@ -347,13 +347,13 @@ class RxAntenna:
         =========================================================================================================
         Convert a unit look direction in antenna coordinates to two-plane steering angles.
 
-        Sine-space: azimuth = asin(y-component), elevation = asin(x-component); boresight is +z.
+        Sine-space: across_track = asin(y-component), along_track = asin(x-component); boresight is +z.
 
         INPUTS:
             direction: [np.ndarray, shape (3,)]   Look direction in antenna frame
 
         OUTPUT:
-            angles: [tuple | None]   (azimuth_deg, elevation_deg) or None if invalid / behind the antenna
+            angles: [tuple | None]   (across_track_deg, along_track_deg) or None if invalid / behind the antenna
         =========================================================================================================
         """
         direction = np.asarray(direction, dtype=float)
@@ -368,9 +368,9 @@ class RxAntenna:
         if direction[2] <= 0.0:
             return None
 
-        azimuth_deg = float(np.degrees(np.arcsin(np.clip(direction[1], -1.0, 1.0))))    # azimuth steers the y-axis
-        elevation_deg = float(np.degrees(np.arcsin(np.clip(direction[0], -1.0, 1.0))))  # elevation steers the x-axis
-        return azimuth_deg, elevation_deg
+        across_track_deg = float(np.degrees(np.arcsin(np.clip(direction[1], -1.0, 1.0))))    # across_track steers the y-axis
+        along_track_deg = float(np.degrees(np.arcsin(np.clip(direction[0], -1.0, 1.0))))  # along_track steers the x-axis
+        return across_track_deg, along_track_deg
 
     def resolve_steering_angles_for_direction(self, direction_antenna_frame: np.ndarray) -> tuple[float, float] | None:
         """
@@ -384,7 +384,7 @@ class RxAntenna:
             direction_antenna_frame: [np.ndarray, shape (3,)]   Look direction in antenna frame
 
         OUTPUT:
-            angles: [tuple | None]   (azimuth_deg, elevation_deg) used to select / interpolate steered patterns,
+            angles: [tuple | None]   (across_track_deg, along_track_deg) used to select / interpolate steered patterns,
                                      or None if the direction is invalid or outside the steering limits
         =========================================================================================================
         """
@@ -392,14 +392,14 @@ class RxAntenna:
         if angles is None:
             return None
 
-        azimuth_deg, elevation_deg = angles
+        across_track_deg, along_track_deg = angles
         # 1e-9 deg tolerance so a direction exactly at the limit is not rejected by float round-off
         # (e.g. degrees(asin(sin(40 deg))) can come back as 40.0000000001).
-        if self.max_azimuth_steering_deg is not None and abs(azimuth_deg) > self.max_azimuth_steering_deg + 1e-9:
+        if self.max_across_track_steering_deg is not None and abs(across_track_deg) > self.max_across_track_steering_deg + 1e-9:
             return None
-        if self.max_elevation_steering_deg is not None and abs(elevation_deg) > self.max_elevation_steering_deg + 1e-9:
+        if self.max_along_track_steering_deg is not None and abs(along_track_deg) > self.max_along_track_steering_deg + 1e-9:
             return None
-        return azimuth_deg, elevation_deg
+        return across_track_deg, along_track_deg
 
     @staticmethod
     def _bilinear_pattern_sample_linear(pattern_db: np.ndarray, theta_deg: float, phi_deg: float) -> float:
@@ -415,7 +415,7 @@ class RxAntenna:
         INPUTS:
             pattern_db: [np.ndarray, shape (n_theta, n_phi)]   Radiation pattern [dB]
             theta_deg:  [float]                                Polar angle [deg], 0..180
-            phi_deg:    [float]                                Azimuth angle [deg], any (wraps mod 360)
+            phi_deg:    [float]                                Across-track angle [deg], any (wraps mod 360)
 
         OUTPUT:
             value: [float]   Bilinear-interpolated pattern value in linear units (peak == 1.0)
@@ -445,23 +445,23 @@ class RxAntenna:
         self,
         direction_antenna_frame: np.ndarray,
         frequency_mhz: float,
-        azimuth_deg: float | None = None,
-        elevation_deg: float | None = None,
+        across_track_deg: float | None = None,
+        along_track_deg: float | None = None,
     ) -> float:
         """
         =========================================================================================================
         Get absolute gain [dBi] for a given look direction in antenna coordinates.
 
-        The beam auto-steers to the look direction (two-plane, capped per axis by max_azimuth_steering_deg /
-        max_elevation_steering_deg). Gain is the bilinear interpolation, in linear power, of the four stored
+        The beam auto-steers to the look direction (two-plane, capped per axis by max_across_track_steering_deg /
+        max_along_track_steering_deg). Gain is the bilinear interpolation, in linear power, of the four stored
         steered patterns bracketing the steering command; each contributes its own directivity (so scan loss
         enters through the per-direction directivity).
 
         INPUTS:
             direction_antenna_frame: [np.ndarray, shape (3,)]   Look direction in antenna frame
             frequency_mhz:           [float]                    Carrier frequency [MHz]
-            azimuth_deg:             [float | None]             Steering azimuth override [deg] (optional)
-            elevation_deg:           [float | None]             Steering elevation override [deg] (optional)
+            across_track_deg:             [float | None]             Steering across_track override [deg] (optional)
+            along_track_deg:           [float | None]             Steering along_track override [deg] (optional)
 
         OUTPUT:
             gain_dbi: [float]   Absolute gain [dBi], or NaN if direction is invalid / behind the antenna
@@ -484,25 +484,25 @@ class RxAntenna:
         theta_deg = float(np.degrees(np.arccos(np.clip(direction[2], -1.0, 1.0))))
         phi_deg = float((np.degrees(np.arctan2(direction[1], direction[0])) + 360.0) % 360.0)
 
-        if azimuth_deg is None or elevation_deg is None:
+        if across_track_deg is None or along_track_deg is None:
             steering_angles = self.resolve_steering_angles_for_direction(direction)
             if steering_angles is None:
                 return np.nan
-            auto_azimuth_deg, auto_elevation_deg = steering_angles
-            steering_azimuth_deg = auto_azimuth_deg if azimuth_deg is None else float(azimuth_deg)
-            steering_elevation_deg = auto_elevation_deg if elevation_deg is None else float(elevation_deg)
+            auto_across_track_deg, auto_along_track_deg = steering_angles
+            steering_across_track_deg = auto_across_track_deg if across_track_deg is None else float(across_track_deg)
+            steering_along_track_deg = auto_along_track_deg if along_track_deg is None else float(along_track_deg)
         else:
-            steering_azimuth_deg = float(azimuth_deg)
-            steering_elevation_deg = float(elevation_deg)
+            steering_across_track_deg = float(across_track_deg)
+            steering_along_track_deg = float(along_track_deg)
 
-        if self.max_azimuth_steering_deg is not None and abs(steering_azimuth_deg) > self.max_azimuth_steering_deg + 1e-9:
+        if self.max_across_track_steering_deg is not None and abs(steering_across_track_deg) > self.max_across_track_steering_deg + 1e-9:
             return np.nan
-        if self.max_elevation_steering_deg is not None and abs(steering_elevation_deg) > self.max_elevation_steering_deg + 1e-9:
+        if self.max_along_track_steering_deg is not None and abs(steering_along_track_deg) > self.max_along_track_steering_deg + 1e-9:
             return np.nan
 
         # Bilinear interpolation of absolute gain across the 4 steering patterns bracketing
-        # (steering_azimuth_deg, steering_elevation_deg), evaluated in linear power.
-        corners = self._steering_bracket_keys_and_weights(frequency_mhz, steering_azimuth_deg, steering_elevation_deg)
+        # (steering_across_track_deg, steering_along_track_deg), evaluated in linear power.
+        corners = self._steering_bracket_keys_and_weights(frequency_mhz, steering_across_track_deg, steering_along_track_deg)
         total_linear = 0.0
         for key, weight in corners:
             if weight <= 0.0:
@@ -527,7 +527,7 @@ class RxAntenna:
         INPUTS:
             rad_pattern_lin_spherical: [np.ndarray]   Linear-scale spherical radiation pattern
             theta_rad:                 [np.ndarray]   Polar angle samples [rad]
-            phi_rad:                   [np.ndarray]   Azimuth angle samples [rad]
+            phi_rad:                   [np.ndarray]   Across-track angle samples [rad]
             theta_mesh:                [np.ndarray]   Meshgrid of theta values
 
         OUTPUT:
@@ -552,12 +552,12 @@ class RxAntenna:
 
         return directivity, directivity_dB
 
-    def _find_contour_vectors(self, rad_pattern_spherical_dB, steering_azimuth_deg, steering_elevation_deg):
+    def _find_contour_vectors(self, rad_pattern_spherical_dB, steering_across_track_deg, steering_along_track_deg):
         """
         =========================================================================================================
         Build the -|footprint_dB_contour| ring in a steering-command-centred local frame.
 
-        The commanded front-lobe direction defines the axis n_peak. We sweep an off-peak azimuth psi around
+        The commanded front-lobe direction defines the axis n_peak. We sweep an off-peak across_track psi around
         n_peak in a tangent basis whose psi=0 direction is the projection of antenna +x onto the
         tangent plane, and for each psi walk the off-peak angle gamma outward from 0 until the
         pattern (bilinearly sampled in antenna-frame theta/phi) drops below footprint_dB_contour.
@@ -569,8 +569,8 @@ class RxAntenna:
 
         INPUTS:
             rad_pattern_spherical_dB: [np.ndarray]   Radiation pattern [dB], shape (n_theta, n_phi)
-            steering_azimuth_deg:     [float]        Commanded y-axis steering angle [deg]
-            steering_elevation_deg:   [float]        Commanded x-axis steering angle [deg]
+            steering_across_track_deg:     [float]        Commanded y-axis steering angle [deg]
+            steering_along_track_deg:   [float]        Commanded x-axis steering angle [deg]
 
         OUTPUT:
             contour_vectors: [np.ndarray, shape (footprint_resolution, 3)]   Main-lobe-centred ring vectors
@@ -578,15 +578,15 @@ class RxAntenna:
         """
         n_theta_pat = rad_pattern_spherical_dB.shape[0]
 
-        sin_az = np.sin(np.radians(float(steering_azimuth_deg)))
-        sin_el = np.sin(np.radians(float(steering_elevation_deg)))
+        sin_az = np.sin(np.radians(float(steering_across_track_deg)))
+        sin_el = np.sin(np.radians(float(steering_along_track_deg)))
         z_squared = 1.0 - sin_az**2 - sin_el**2
         if z_squared <= 0.0:
             raise ValueError("Steering command points outside the antenna front hemisphere.")
 
         n_peak = np.array([
-            sin_el,   # elevation steers the x-axis
-            sin_az,   # azimuth steers the y-axis
+            sin_el,   # along_track steers the x-axis
+            sin_az,   # across_track steers the y-axis
             np.sqrt(z_squared),
         ])
 

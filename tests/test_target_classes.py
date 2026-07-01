@@ -96,8 +96,8 @@ class _ConePatchAntenna:
             for p in psi
         ])
 
-    def get_gain_dbi_for_direction(self, direction, frequency_mhz, azimuth_deg=None, elevation_deg=None):
-        self.gain_calls.append((np.asarray(direction, dtype=float), azimuth_deg, elevation_deg))
+    def get_gain_dbi_for_direction(self, direction, frequency_mhz, across_track_deg=None, along_track_deg=None):
+        self.gain_calls.append((np.asarray(direction, dtype=float), across_track_deg, along_track_deg))
         direction = np.asarray(direction, dtype=float)
         if direction.shape != (3,) or not np.isfinite(direction).all() or direction[2] <= 0.0:
             return np.nan

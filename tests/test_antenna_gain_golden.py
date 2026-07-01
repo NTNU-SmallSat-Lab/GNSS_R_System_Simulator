@@ -57,10 +57,10 @@ def test_steered_gain_depends_on_steering_command():
     # With steering-dependent patterns, different steering commands at a fixed look direction
     # must produce different gains (otherwise the bracket/interpolation is not being applied).
     antenna = make_test_antenna()
-    # Look direction 20 deg off boresight toward +x (steering azimuth ~20 deg, elevation 0).
+    # Look direction 20 deg off boresight toward +x (steering across_track ~20 deg, along_track 0).
     direction = np.array([np.sin(np.radians(20.0)), 0.0, np.cos(np.radians(20.0))])
-    gain_aligned = antenna.get_gain_dbi_for_direction(direction, FREQUENCY_MHZ, azimuth_deg=20.0, elevation_deg=0.0)
-    gain_off = antenna.get_gain_dbi_for_direction(direction, FREQUENCY_MHZ, azimuth_deg=-40.0, elevation_deg=0.0)
+    gain_aligned = antenna.get_gain_dbi_for_direction(direction, FREQUENCY_MHZ, across_track_deg=20.0, along_track_deg=0.0)
+    gain_off = antenna.get_gain_dbi_for_direction(direction, FREQUENCY_MHZ, across_track_deg=-40.0, along_track_deg=0.0)
     assert np.isfinite(gain_aligned) and np.isfinite(gain_off)
     # Steering toward the look direction yields higher gain than steering away from it.
     assert gain_aligned > gain_off
@@ -70,7 +70,7 @@ def test_auto_steer_rejects_directions_beyond_max_steering():
     antenna = make_test_antenna()  # per-axis max steering = 40 deg
     off_boresight_deg = 60.0
     direction = np.array([np.sin(np.radians(off_boresight_deg)), 0.0, np.cos(np.radians(off_boresight_deg))])
-    # Auto-steer (no explicit steering) must reject a 60 deg azimuth-plane reflection (> 40 deg limit).
+    # Auto-steer (no explicit steering) must reject a 60 deg across_track-plane reflection (> 40 deg limit).
     assert np.isnan(antenna.get_gain_dbi_for_direction(direction, FREQUENCY_MHZ))
 
 
@@ -157,7 +157,7 @@ def test_antenna_footprint_directivity_uses_endpoint_exclusive_phi_grid():
     assert directivity == pytest.approx(expected_directivity)
 
 
-def test_array_factor_elevation_steers_x_and_azimuth_steers_y():
+def test_array_factor_along_track_steers_x_and_across_track_steers_y():
     frequency_hz = FREQUENCY_MHZ * 1e6
     wavelength_m = 299_792_458.0 / frequency_hz
     k = 2.0 * np.pi / wavelength_m
@@ -166,15 +166,15 @@ def test_array_factor_elevation_steers_x_and_azimuth_steers_y():
     theta_samples = np.array([[command], [command]])
     phi_x_y = np.array([[0.0], [np.pi / 2.0]])
 
-    elevation_pattern = ArrayFactor(4, 4, frequency_hz, spacing, spacing, -k * spacing * np.sin(command), 0.0)
-    elevation_cuts = elevation_pattern.calculate_array_factor(theta_samples, phi_x_y)
-    gain_el_x, gain_el_y = elevation_cuts[:, 0]
+    along_track_pattern = ArrayFactor(4, 4, frequency_hz, spacing, spacing, -k * spacing * np.sin(command), 0.0)
+    along_track_cuts = along_track_pattern.calculate_array_factor(theta_samples, phi_x_y)
+    gain_el_x, gain_el_y = along_track_cuts[:, 0]
     assert gain_el_x == pytest.approx(0.0, abs=1e-12)
     assert gain_el_x > gain_el_y
 
-    azimuth_pattern = ArrayFactor(4, 4, frequency_hz, spacing, spacing, 0.0, -k * spacing * np.sin(command))
-    azimuth_cuts = azimuth_pattern.calculate_array_factor(theta_samples, phi_x_y)
-    gain_az_x, gain_az_y = azimuth_cuts[:, 0]
+    across_track_pattern = ArrayFactor(4, 4, frequency_hz, spacing, spacing, 0.0, -k * spacing * np.sin(command))
+    across_track_cuts = across_track_pattern.calculate_array_factor(theta_samples, phi_x_y)
+    gain_az_x, gain_az_y = across_track_cuts[:, 0]
     assert gain_az_y == pytest.approx(0.0, abs=1e-12)
     assert gain_az_y > gain_az_x
 
@@ -188,8 +188,8 @@ def test_array_factor_elevation_steers_x_and_azimuth_steers_y():
         {"freqs": []},
         {"theta_resolution": 1},
         {"phi_resolution": 10.5},
-        {"azimuth_steering": [-40.0, 40.0, 4.5]},
-        {"azimuth_steering": [-90.0, 0.0, 2]},
+        {"across_track_steering": [-40.0, 40.0, 4.5]},
+        {"across_track_steering": [-90.0, 0.0, 2]},
     ],
 )
 def test_pattern_generator_rejects_nonphysical_grid_inputs(tmp_path, overrides):
@@ -199,8 +199,8 @@ def test_pattern_generator_rejects_nonphysical_grid_inputs(tmp_path, overrides):
         "d_x": 0.095,
         "d_y": 0.095,
         "freqs": [FREQUENCY_MHZ],
-        "azimuth_steering": [-40.0, 40.0, 5],
-        "elevation_steering": [-40.0, 40.0, 5],
+        "across_track_steering": [-40.0, 40.0, 5],
+        "along_track_steering": [-40.0, 40.0, 5],
         "output_folder": tmp_path,
         "theta_resolution": 180,
         "phi_resolution": 360,

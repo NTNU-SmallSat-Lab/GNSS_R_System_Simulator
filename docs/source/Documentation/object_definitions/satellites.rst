@@ -63,11 +63,11 @@ epoch is stored in the TLE ``YYDDD.DDDDDDDD`` format, ready for
      - deg
    * - ``p``
      - float
-     - Argument of perigee.
+     - Argument of periapsis.
      - deg
-   * - ``M``
+   * - ``nu``
      - float
-     - Mean anomaly.
+     - True anomaly.
      - deg
    * - ``a``
      - float
@@ -207,6 +207,68 @@ code consumes.
 .. autoclass:: object_definitions.SatConstellation_def.SatelliteConstellation
    :no-members:
 
+Classical elements to a TLE
+---------------------------
+
+The receiver orbits in ``[ORBITS]`` are **osculating** classical elements -- an instantaneous two-body
+state. A TLE instead stores **SGP4 mean** elements: quantities defined *through* SGP4's averaged theory,
+not a snapshot of the Keplerian state. The two differ by the short- and long-period terms SGP4 folds in,
+so the osculating elements cannot simply be copied into the TLE fields.
+:meth:`~object_definitions.ReadWriteSatData.ReadWriteSatData.generate_tle_data_string` therefore *fits* the
+mean elements, in three steps.
+
+**1. Osculating state at the epoch.** The classical elements are turned into an inertial Cartesian state
+:math:`(\mathbf{r}, \mathbf{v})`. In the perifocal frame, with semi-latus rectum :math:`p = a(1-e^2)` and
+true anomaly :math:`\nu`,
+
+.. math::
+   :label: sat-perifocal
+
+   r = \frac{p}{1 + e\cos\nu}, \qquad
+   \mathbf{r}_\mathrm{pf} = r\begin{pmatrix}\cos\nu\\ \sin\nu\\ 0\end{pmatrix}, \qquad
+   \mathbf{v}_\mathrm{pf} = \sqrt{\tfrac{\mu_\oplus}{p}}\begin{pmatrix}-\sin\nu\\ e+\cos\nu\\ 0\end{pmatrix},
+
+rotated into the inertial frame by the 3-1-3 sequence of RAAN, inclination and argument of periapsis,
+:math:`\mathbf{r} = R_3(\Omega)\,R_1(i)\,R_3(\omega)\,\mathbf{r}_\mathrm{pf}` (and likewise for
+:math:`\mathbf{v}`). This is the **target** state the TLE must reproduce.
+
+**2. Fit the mean elements.** SGP4 mean elements :math:`(a, e, i, \Omega, \omega, M)` are chosen so that
+propagating them with SGP4 *back to the same epoch* returns the target state. A least-squares solver
+(:func:`scipy.optimize.least_squares`) minimises the scaled position/velocity residual
+
+.. math::
+   :label: sat-residual
+
+   \mathbf{R}(\mathbf{x}) =
+   \left[\frac{\mathbf{r}_\mathrm{SGP4}(\mathbf{x}) - \mathbf{r}_\mathrm{target}}{100\ \mathrm{m}},\;
+   \frac{\mathbf{v}_\mathrm{SGP4}(\mathbf{x}) - \mathbf{v}_\mathrm{target}}{0.1\ \mathrm{m/s}}\right],
+
+where :math:`\mathbf{r}_\mathrm{SGP4}(\mathbf{x})` is the Skyfield/SGP4 epoch state built from the trial
+mean elements. The solver variables :math:`\mathbf{x}` are equinoctial-style
+(:math:`a,\ i,\ \Omega,\ e\cos\omega,\ e\sin\omega,\ \omega + M`) to stay well-conditioned as
+:math:`e \to 0` (where :math:`\omega` becomes undefined); the osculating elements seed the initial guess,
+with :math:`M` obtained from :math:`\nu` via the eccentric anomaly. Non-convergence emits a warning rather
+than raising.
+
+**3. Write the TLE.** The fitted mean elements are formatted onto the two 69-character lines: inclination,
+RAAN, eccentricity (:math:`\times 10^7`), argument of periapsis and mean anomaly in degrees, and the mean
+motion :math:`n = \sqrt{\mu_\oplus/a^3}` in revolutions per day, alongside the epoch, drag terms and
+checksums. For a near-circular LEO the result reproduces the requested position to a few metres; the floor
+comes from TLE field quantisation (angles stored to :math:`10^{-4}` deg), not the solver.
+
+.. note::
+
+   **Reading** a TLE runs the inverse anomaly step. A file stores the *mean* anomaly, so
+   :meth:`~object_definitions.ReadWriteSatData.ReadWriteSatData.read_tle_data` and
+   :class:`~object_definitions.Satellite_def.Satellite` convert it to the *true* anomaly
+   (:meth:`~object_definitions.ReadWriteSatData.ReadWriteSatData.mean_to_true_anomaly_deg`) before storing
+   it in an ``Orbit_specification`` -- so that container always holds a true anomaly regardless of source.
+   A read TLE's mean elements are then held as if osculating; this is an accepted approximation because
+   GNSS transmitters are propagated straight from their own TLE, never re-generated.
+
+The ``ReadWriteSatData`` API (``generate_tle_data_string``, ``read_tle_data``,
+``mean_to_true_anomaly_deg``) is documented on the :doc:`support` page.
+
 Module Assumptions and Limitations
 ----------------------------------
 
@@ -247,7 +309,7 @@ User Guide
 ----------
 
 Orbits come from the ``[ORBITS]`` INI section, one key per satellite
-(``orbit1 = [inclination_deg, eccentricity, raan_deg, argPerigee_deg, meanAnomaly_deg, semiMajorAxis_m]``),
+(``orbit1 = [inclination_deg, eccentricity, raan_deg, argPeriapsis_deg, trueAnomaly_deg, semiMajorAxis_m]``),
 read in order until the next is missing. The GNSS transmitter constellations are loaded from the TLE files
 listed in ``[GNSS CONSTELLATIONS].gnss_tle_files``.
 
