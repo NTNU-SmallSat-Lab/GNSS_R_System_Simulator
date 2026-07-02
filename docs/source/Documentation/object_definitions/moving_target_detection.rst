@@ -216,4 +216,5 @@ References
 
 - Ruf, C. *et al.*, "A new paradigm in earth environmental monitoring with the CYGNSS small satellite
   constellation", *Scientific Reports* 8, 2018.
-- Clarizia, M. P. *et al.*, "Target detection using GNSS reflectometry", various, 2010s.
+- Clarizia, M. P., Braca, P., Ruf, C. S. & Willett, P., "Target detection using GPS signals of
+  opportunity", *Proc. 18th Int. Conf. on Information Fusion (FUSION)*, Washington, DC, 2015.

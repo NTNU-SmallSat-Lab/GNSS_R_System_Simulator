@@ -41,11 +41,13 @@ angle, and the geometry gates are in
 The sea return
 --------------
 
-Looking straight back at the sea, the bright quasi-specular scatter is gone -- no part of the surface is
-tilted the right way to bounce the signal straight back. What is left is **Bragg** scatter: a weak,
-resonant return from small wind-driven ripples whose wavelength matches the radar. The simulator computes
-this with the two-scale model in :doc:`../Documentation/functions/ocean_physics`, and the resulting
-cross-section per unit area (the NRCS) is multiplied by a clutter area to get the sea power.
+Looking straight back at the sea at oblique incidence, the bright quasi-specular scatter is gone --
+almost no facet is tilted steeply enough to bounce the signal straight back. What is left is **Bragg**
+scatter: a weak, resonant return from small wind-driven ripples whose wavelength matches the radar. The
+simulator carries both mechanisms: the quasi-specular geometric-optics term, which owns the steep
+(near-nadir) geometry, and the two-scale Bragg term of
+:doc:`../Documentation/functions/ocean_physics`, gated on at incidence >= 20 deg where it dominates. The
+resulting cross-section per unit area (the NRCS) is multiplied by a clutter area to get the sea power.
 
 That clutter area matters. The simulator can use the whole antenna footprint, patch-integrate over that
 footprint, or use a first-order **delay-Doppler resolution cell**
@@ -152,4 +154,5 @@ References
 - Valenzuela, G., "Theories for the interaction of electromagnetic and oceanic waves -- a review",
   *Boundary-Layer Meteorology* 13, 1978 (Bragg scatter).
 - Gleason, S. & Gebre-Egziabher, D. (eds.), *GNSS Applications and Methods*, Artech House, 2009.
-- Clarizia, M. P. *et al.*, "Target detection using GNSS reflectometry", 2010s.
+- Clarizia, M. P., Braca, P., Ruf, C. S. & Willett, P., "Target detection using GPS signals of
+  opportunity", *Proc. 18th Int. Conf. on Information Fusion (FUSION)*, Washington, DC, 2015.

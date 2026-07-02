@@ -524,6 +524,11 @@ class RxAntenna:
         =========================================================================================================
         Calculate the directivity of the antenna from its radiation pattern (antenna-gain).
 
+        The power integral covers the front hemisphere (theta <= 90 deg) only: the array is mounted on
+        the Earth-facing spacecraft panel over a ground plane, so the rear half-space is shielded and the
+        isotropic-element array factor's mirror back lobe (|AF| depends on theta only via sin(theta))
+        carries no physical power.
+
         INPUTS:
             rad_pattern_lin_spherical: [np.ndarray]   Linear-scale spherical radiation pattern
             theta_rad:                 [np.ndarray]   Polar angle samples [rad]
@@ -539,14 +544,15 @@ class RxAntenna:
         dphi = np.gradient(phi_rad)
         dtheta_mesh, dphi_mesh = np.meshgrid(dtheta, dphi, indexing='ij')
 
-        # Integrate: ∫∫ F(θ,φ) sin(θ) dθ dφ
+        # Integrate: int int F(theta, phi) sin(theta) dtheta dphi over the shielded-panel front hemisphere
+        front_hemisphere = theta_mesh <= np.pi / 2.0                # boresight half-space, theta <= 90 deg
         integrand = rad_pattern_lin_spherical * np.sin(theta_mesh) * dtheta_mesh * dphi_mesh
-        total_power = np.sum(integrand)
+        total_power = np.sum(integrand[front_hemisphere])
 
         if total_power <= 0:
             raise ValueError("Antenna pattern integrates to non-positive total power; cannot compute directivity.")
 
-        # Directivity = 4π / integral
+        # Directivity = 4*pi / integral
         directivity = 4 * np.pi / total_power
         directivity_dB = 10 * np.log10(directivity)
 

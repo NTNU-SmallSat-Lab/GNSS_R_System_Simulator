@@ -17,7 +17,9 @@ Corrections made by the audit
    * - Metre-scale constrained ellipsoid solve accepted a loose vector residual.
      - Some accepted specular points violated equal-angle reflection by nearly a degree.
      - Parameterised the WGS-84 surface by two angles, solved tangent stationarity, and independently
-       require a reflection-vector residual no larger than :math:`10^{-8}`.
+       verify the reflection-vector residual. The acceptance gate is :math:`5\times 10^{-2}` (kept
+       deliberately coarse -- see ``TODO.md``); well-posed geometries converge far tighter, and the
+       tests pin the angle mismatch below :math:`10^{-7}` deg for converged solutions.
    * - Spherical line of sight sampled only 100 chord points.
      - A sufficiently narrow grazing intersection could be missed.
      - Replaced sampling with the exact closest point on the finite chord.
@@ -75,6 +77,31 @@ Corrections made by the audit
    * - Future/offline coordinate transforms failed solely on Astropy's IERS age limit.
      - Reproducible future-date runs could abort despite installed Earth-orientation data.
      - Permit the installed table as an offline fallback and document the resulting accuracy limitation.
+   * - Directivity integrated the isotropic-element mirror back lobe over the full sphere.
+     - Every gain, :math:`C/N_0`, SNR and SINR was 3.0 dB pessimistic; footprint areas doubled.
+     - Integrate the pattern power over the front (shielded-panel) hemisphere only; anchored by
+       closed-form directivity tests (uniform pattern :math:`D=2`, :math:`\cos^2\theta` pattern
+       :math:`D=6`).
+   * - The geometric-optics facet-slope PDF used the total optical Cox-Munk variance.
+     - Sub-wavelength ripples were counted as L-band mirrors: the glint-peak NRCS was ~2.8 dB low and
+       the off-specular GO backscatter skirt ~13 dB high at 20 deg incidence.
+     - Use the large-scale (:math:`k < k_\mathrm{radar}/3`) slope variances from the Elfouhaily
+       spectrum with the Cox-Munk anisotropy split -- the same two-scale division the Bragg tilt
+       average already used.
+   * - The coherent specular term used flat-Earth image theory.
+     - Calm-sea coherent power was ~1.2--1.8 dB optimistic (no convex-surface defocus).
+     - Apply the spherical-Earth divergence :math:`D^2` (Coddington astigmatic mirror radii), exposed
+       as a diagnostic and anchored to closed form.
+   * - The Elfouhaily long-wave equilibrium parameter used exponent 0.55.
+     - Silent deviation from the cited Eq. 34 (up to ~8% in :math:`\alpha_p` at :math:`\Omega_c = 5`).
+     - Use :math:`\alpha_p = 6\times10^{-3}\sqrt{\Omega_c}`; the deliberate :math:`L_\mathrm{PM}`
+       regularisation of :math:`B_\mathrm{high}` is now documented in-code.
+   * - Two-scale Bragg below ~20 deg incidence is dominated by the near-nadir
+       :math:`1/\sin^4\theta` divergence leaking through tilted facets (diagnosed, not yet re-modelled).
+     - Lowering the empirical 20 deg gate would inject tens of dB of spurious clutter.
+     - Documented the gate as divergence protection; the facet-local
+       :math:`k_B(\theta_\mathrm{local}) \ge k_\mathrm{radar}/3` gate is recorded in ``TODO.md`` as the
+       principled refinement.
 
 Model maturity and suitable use
 -------------------------------

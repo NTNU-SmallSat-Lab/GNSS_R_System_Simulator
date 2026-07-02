@@ -1,84 +1,68 @@
 @startuml
-!pragma layout smetana
-title GNSS-R System Simulator -- Software Architecture
+title GNSS-R System Simulator -- system architecture (UML)
 
 skinparam shadowing false
-skinparam ArrowColor #333333
+skinparam dpi 150
+skinparam ArrowColor #222222
 skinparam packageStyle rectangle
+skinparam PackageBorderColor #444444
+skinparam PackageFontStyle bold
 skinparam class {
     BackgroundColor #ffffff
-    BorderColor #000000
-    FontStyle Italic
-    AttributeFontStyle Plain
+    BorderColor #222222
     AttributeIconSize 0
     StereotypeFontColor #555555
 }
 hide empty members
 
-package "Analysis" <<Rectangle>> #F4FFF4 {
+package "Analysis modes" #F7F7F7 {
     class Coverage {
-        sat_constellation
-        gnss_constellation
-        shp_input_file_path
-        gridded_shapefile_path
+        sat_constellation, gnss_constellation
         grid_size_deg / grid_size_m
-        bounding_box
-        reflection_dict
-        coverage_dict
-        earth_model
+        coverage_dict, selected_signals
+        earth_model, max_central_angle_deg
         --
-        calculate_reflection_points_and_coverage()
+        initialize_coverage()
+        compute_coverage_for_constellation()
         calculate_statistics()
-        plot_coverage_shapefile()
         plot_coverage_gridded_shapefile()
     }
 
     class MovingTargetDetection {
-        moving_target_object
-        sat_constellation
-        gnss_constellation
-        sat_antenna
-        reflection_dict_timeSorted
-        target_detect_dict
-        earth_model
-        reflection_mode
-        deltaT_sec
+        moving_target_object, sat_antenna
+        sat_constellation, gnss_constellation
+        reflection_mode <i>specular | backscatter</i>
+        signals_per_constellation
+        link_budget_settings, ship_dimensions
+        target_detect_dict, deltaT_sec
         --
         calculate_moving_target_reflection_intersection()
+        show_link_budget_contributions()
         show_track_and_detection_points()
         create_reflection_animation()
     }
 
     class ShipTrajectory {
-        ship_id
-        ship_speed
-        start_position / time
-        end_position / time
-        waypoints
-        trajectory_points
+        ship_id, ship_speed
+        start / end position and time
+        waypoints, trajectory_points
         shapefile_path
-        ocean_polygons
         --
         plan_route()
         generate_trajectory_equal_time()
         get_position_at_time(t)
-        get_travel_duration_hours()
     }
 }
 
-package "Geometry" <<Rectangle>> #FFF4F4 {
+package "Reflection geometry" #F7F7F7 {
     class Reflection {
         tx_satID, rx_satID
-        earth_model
-        max_central_angle_deg
-        gnss_const
-        time_vec
-        refl_ECI_vec / refl_LL_vec
-        refl_ang_vec
-        link_budget
+        earth_model, max_central_angle_deg
+        time_vec, refl_ECI_vec / refl_LL_vec
+        refl_ang_vec, link_budget
         --
         compute_reflection_coordinates()
-        get_reflection_point_ff() <i>spherical, initial guess</i>
+        get_reflection_point_ff()
     }
 
     class BRP <<backscatter>> {
@@ -86,24 +70,17 @@ package "Geometry" <<Rectangle>> #FFF4F4 {
         earth_model
         max_central_angle_deg
         max_incidence_angle_deg
-        gnss_const
-        time_vec
-        refl_ECI_vec / refl_LL_vec
-        refl_ang_vec
-        link_budget
+        time_vec, refl_ECI_vec / refl_LL_vec
+        refl_ang_vec, link_budget
         --
         compute_brp_coordinates()
     }
 }
 
-package "Domain" <<Rectangle>> #F4F4FF {
+package "Satellites and antenna" #F7F7F7 {
     class SatelliteConstellation {
-        satConfigName
-        satellites
-        no_satellites
-        orbits_array
-        times_skyfield
-        duration_sec
+        satConfigName, satellites
+        times_skyfield, duration_sec
         propagation_step_size
         --
         set_simulation_duration()
@@ -113,118 +90,111 @@ package "Domain" <<Rectangle>> #F4F4FF {
 
     class Satellite {
         satID, satName
-        classification
-        orbit_n
-        skf
-        tle_file_path
-        gnss_r_antenna
-        battery, solarArray
+        orbit_n, skf, tle_file_path
         positions_eci, velocities_eci
-        times_skyfield, time_prop_vec
-        sunlit_count, sunlit_fraction
         --
         propagate_orbit()
         propagate_orbit_for_times()
-        calculate_sunlight_time()
-        set_orbit() / set_epoch()
         write_tle_file()
+        calculate_sunlight_time()
     }
 
-    class Orbit {
-        i, e, a
-        RAAN, p, M
-        n  <i>(mean motion)</i>
-        epoch_str
-        dt_start
+    class Orbit_specification {
+        i, e, RAAN, p, nu <i>(true anomaly)</i>
+        a, n <i>(mean motion)</i>
+        epoch_str, dt_start
         --
         set_start_time(dt)
-        conv_DateTime_to_Epoch()
     }
 
-    class GNSS_R_antenna {
+    class RxAntenna {
         antenna_lookuptable
-        steering_across_track / along_track
-        frequencies, bands
-        polarizations
-        footprint_dB_contour
-        R_antenna_to_body
+        max_across/along_track_steering_deg
+        frequencies, bands, polarizations
+        footprint_dB_contour, R_antenna_to_body
         --
         get_gain_dbi_for_direction()
+        resolve_steering_angles_for_direction()
     }
 
-    class "Skyfield satellite" as Skyfield <<external>> {
-        TLE-derived state propagator
+    class AntennaPatternGenerator {
+        elements_along_x/y, d_x, d_y
+        freqs, steering sweeps
+        --
+        generate() <i>array-factor JSONs</i>
+    }
+
+    class "Skyfield EarthSatellite" as Skyfield <<external>> {
+        SGP4 propagation from a TLE
         --
         at(time)
-        is_sunlit(planets)
     }
 }
 
-package "Foundation" <<Rectangle>> #F5F5F5 {
+package "Foundation" #F7F7F7 {
     class Constants <<static>> {
-        Physical constants
-        GNSS band frequencies
-        File paths
-        Coordinate-system tools
+        physical constants, WGS-84
+        BANDS_CENTER_FREQUENCIES_Hz
+        GNSS_EIRP_DBW, GNSS_CHIP_RATE_HZ
+        data / output paths
     }
 
-    class BistaticLinkBudgetSettings <<dataclass>> {
-        tx_eirp_dbw
-        system_losses_db
-        polarization_losses_db
-        ocean_sigma0_db
-        ocean_sigma_slope_db_per_deg
-        ocean_sigma_floor_db
-        fresnel_rcs_scale
-    }
-
-    class ReadWriteData <<utility>> {
+    class ReadWriteSatData <<utility>> {
         --
-        generate_tle_data_string(sat)
-        read_tle_data(path)
-        download_and_read_tle(path)
-    }
-
-    class Plotting <<static>> {
-        --
-        plot_reflection_traces_gnss_const()
-        plot_reflection_traces_total()
-        plot_orbits()
+        generate_tle_data_string() <i>SGP4 mean-element fit</i>
+        read_tle_data()
+        mean_to_true_anomaly_deg()
     }
 }
+
+class "functions.link_budget" as link_budget <<module>>
+note right of link_budget
+  Scattering and link-budget
+  model: see companion diagram.
+end note
 
 ' ---- Composition / aggregation -----------------------------------
 SatelliteConstellation "1" *-- "1..*" Satellite : contains
-
-Satellite "1" o-- "0..1" Orbit
-Satellite "1" o-- "0..1" Skyfield : wraps
-Satellite "1" o-- "0..1" GNSS_R_antenna : may carry
+Satellite "1" o-- "0..1" Orbit_specification
+Satellite "1" o-- "1" Skyfield : wraps
+Satellite "1" o-- "0..1" RxAntenna : may carry
 
 ' ---- Reflection / BRP need a (Tx, Rx) Satellite pair -------------
 Reflection "*" -- "2" Satellite : Tx + Rx
 BRP        "*" -- "2" Satellite : Tx + Rx
 
-' ---- Coverage and MovingTargetDetection orchestrate the model ----
-Coverage "1" o-- "1..*" SatelliteConstellation : Rx + Tx
-Coverage "1" o-- "*"    Reflection             : stores
+' ---- The two analysis modes orchestrate the model -----------------
+Coverage "1" o-- "1..*" SatelliteConstellation : Rx + GNSS
+Coverage "1" o-- "*"    Reflection             : per (Tx, Rx) pair
 
-MovingTargetDetection "1" o-- "1..*" SatelliteConstellation : Rx + Tx
+MovingTargetDetection "1" o-- "1..*" SatelliteConstellation : Rx + GNSS
 MovingTargetDetection "1" o-- "1"    ShipTrajectory          : target
-MovingTargetDetection "1" o-- "1"    GNSS_R_antenna          : Rx antenna
+MovingTargetDetection "1" o-- "1"    RxAntenna
 MovingTargetDetection "1" o-- "*"    Reflection              : specular mode
 MovingTargetDetection "1" o-- "*"    BRP                     : backscatter mode
 
-' ---- Dependencies (uses) -----------------------------------------
-Reflection ..> GNSS_R_antenna : uses
-BRP        ..> GNSS_R_antenna : uses
-Reflection ..> BistaticLinkBudgetSettings : uses
-BRP        ..> BistaticLinkBudgetSettings : uses
+' ---- Hand-off to the scattering / link-budget model ---------------
+Reflection ..> link_budget : evaluates
+BRP        ..> link_budget : evaluates
+MovingTargetDetection ..> link_budget : per-band budgets
 
-Satellite             ..> ReadWriteData : TLE I/O
-SatelliteConstellation ..> ReadWriteData : uses
-Coverage              ..> Plotting      : uses
+RxAntenna ..> AntennaPatternGenerator : loads pattern JSONs
+Satellite ..> ReadWriteSatData : TLE fit + I/O
 
-' Constants is imported almost everywhere - kept implicit so the
-' diagram stays readable.
+note bottom of Constants
+  Imported nearly everywhere
+  (kept implicit for readability);
+  transmit EIRP and chip rates
+  live here, not in the settings.
+end note
+
+legend right
+  **Notation**
+  *--   composition (owns)
+  o--   aggregation (holds)
+  ..>   dependency (uses)
+  --|>  inheritance
+  italic = abstract
+endlegend
 
 @enduml

@@ -109,16 +109,16 @@ Steering
 ^^^^^^^^
 
 The beam is pointed by the progressive inter-element phases :math:`\beta_x, \beta_y`: a linear phase ramp
-across the aperture tilts the in-phase direction off boresight. **Elevation** :math:`\alpha_\mathrm{el}`
-tilts the beam about the :math:`y`-axis (the peak moves along :math:`x^{\mathrm{a}}`, the flight direction)
-and **azimuth** :math:`\alpha_\mathrm{az}` about the :math:`x`-axis (peak along :math:`y^{\mathrm{a}}`), so
-the phases are set to
+across the aperture tilts the in-phase direction off boresight. The steering angles are named after their
+**rotation axis**: the elevation tilt :math:`\alpha_y` rotates the beam about the :math:`y`-axis (the peak
+moves along :math:`x^{\mathrm{a}}`, the flight direction) and the azimuth tilt :math:`\alpha_x` about the
+:math:`x`-axis (peak along :math:`y^{\mathrm{a}}`), so the phases are set to
 
 .. math::
    :label: ant-beta
 
-   \beta_x = -k\,d_x\,\sin\left(\alpha_\mathrm{el}\right), \qquad
-   \beta_y = -k\,d_y\,\sin\left(\alpha_\mathrm{az}\right),
+   \beta_x = -k\,d_x\,\sin\left(\alpha_y\right), \qquad
+   \beta_y = -k\,d_y\,\sin\left(\alpha_x\right),
 
 which cancels the spatial phase term in :eq:`ant-psi` along the commanded direction so every element adds in
 phase there. Using this two-plane (sine-space) steering, the beam points along the **unit vector** :math:`\hat{d}`, whose
@@ -130,16 +130,17 @@ Cartesian components in the antenna frame :math:`(x^{\mathrm{a}}, y^{\mathrm{a}}
    \hat{d}
    = \begin{pmatrix} d_{x^{\mathrm{a}}} \\ d_{y^{\mathrm{a}}} \\ d_{z^{\mathrm{a}}} \end{pmatrix}
    = \begin{pmatrix}
-       \sin\alpha_\mathrm{el} \\[2pt]
-       \sin\alpha_\mathrm{az} \\[2pt]
-       \sqrt{1 - \sin^2\alpha_\mathrm{az} - \sin^2\alpha_\mathrm{el}}
+       \sin\alpha_y \\[2pt]
+       \sin\alpha_x \\[2pt]
+       \sqrt{1 - \sin^2\alpha_x - \sin^2\alpha_y}
      \end{pmatrix}.
 
-Equivalently :math:`\hat{d} = \sin\alpha_\mathrm{el}\,\hat{x}^{\mathrm{a}} + \sin\alpha_\mathrm{az}\,\hat{y}^{\mathrm{a}}
-+ \sqrt{1-\sin^2\alpha_\mathrm{az}-\sin^2\alpha_\mathrm{el}}\;\hat{z}^{\mathrm{a}}`. The :math:`x` and :math:`y`
-components are the steering direction cosines; the boresight (:math:`z`) component is fixed by the
+Equivalently :math:`\hat{d} = \sin\alpha_y\,\hat{x}^{\mathrm{a}} + \sin\alpha_x\,\hat{y}^{\mathrm{a}}
++ \sqrt{1-\sin^2\alpha_x-\sin^2\alpha_y}\;\hat{z}^{\mathrm{a}}`. The :math:`x` and :math:`y`
+components are the steering direction cosines (a rotation about :math:`y` moves the beam along
+:math:`x^{\mathrm{a}}` and vice versa); the boresight (:math:`z`) component is fixed by the
 unit-length condition :math:`|\hat{d}| = 1`. For that component to be real the steering angles must satisfy
-:math:`\sin^2\left(\alpha_\mathrm{az}\right) + \sin^2\left(\alpha_\mathrm{el}\right) \le 1` or the
+:math:`\sin^2\left(\alpha_x\right) + \sin^2\left(\alpha_y\right) \le 1` or the
 beam would point below the horizon; each per-axis extent must additionally stay strictly inside
 :math:`(-90^\circ, 90^\circ)`. The loader rejects sweeps that break either bound.
 :numref:`Fig. %s <fig-ant-steering>` shows these two angles. Half-wavelength element
@@ -151,22 +152,23 @@ spacing (:math:`d \le \lambda/2`) keeps grating lobes out of the visible region 
    :width: 600px
    :align: center
 
-   Two-plane steering angles. In each principal plane the steering angle is measured directly from boresight
-   :math:`z^{\mathrm{a}}` -- *(a)* **elevation** :math:`\alpha_\mathrm{el}` in the :math:`x`-:math:`z` plane
+   Two-plane steering angles, subscript-named after the rotation axis. In each principal plane the
+   steering angle is measured directly from boresight
+   :math:`z^{\mathrm{a}}` -- *(a)* the **elevation** tilt :math:`\alpha_y` in the :math:`x`-:math:`z` plane
    (rotation about :math:`y`; the peak moves along :math:`x^{\mathrm{a}}`, the flight direction) and *(b)*
-   **azimuth** :math:`\alpha_\mathrm{az}` in the :math:`y`-:math:`z` plane (rotation about :math:`x`) -- so
-   that :math:`\sin\alpha_\mathrm{el}` and :math:`\sin\alpha_\mathrm{az}` are the :math:`x` and :math:`y`
+   the **azimuth** tilt :math:`\alpha_x` in the :math:`y`-:math:`z` plane (rotation about :math:`x`) -- so
+   that :math:`\sin\alpha_y` and :math:`\sin\alpha_x` are the :math:`x` and :math:`y`
    direction cosines of the beam (:eq:`ant-steer`). A general command applies both at once; the combined
    angle off boresight is the polar angle :math:`\theta` of :numref:`Fig. %s <fig-ant-geometry>`, with
-   :math:`\sin\alpha_\mathrm{el} = \sin\theta\cos\phi` and :math:`\sin\alpha_\mathrm{az} = \sin\theta\sin\phi`.
+   :math:`\sin\alpha_y = \sin\theta\cos\phi` and :math:`\sin\alpha_x = \sin\theta\sin\phi`.
 
 Pattern storage and caching
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Evaluating the AF over the full :math:`(\theta, \phi)` grid for every steering command and carrier frequency
 is the costly step, so the generator computes each pattern **once** and serialises it to JSON rather than
-recomputing it on every run. One file is written per *(steering azimuth, steering elevation, carrier
-frequency)* triple, named ``array_factor_<f>MHz_<az>az_<el>el.json``; it stores the normalised pattern
+recomputing it on every run. One file is written per *(steering across-track, steering along-track, carrier
+frequency)* triple, named ``array_factor_<f>MHz_<across>across_<along>along.json``; it stores the normalised pattern
 :math:`20\log_{10}|\mathrm{AF}_n|` sampled on the :math:`\theta \in [0^\circ, 180^\circ]`,
 :math:`\phi \in [0^\circ, 360^\circ)` grid (``theta_resolution`` :math:`\times` ``phi_resolution`` samples)
 together with its steering and frequency metadata. The steering grid is swept per axis from the
@@ -220,24 +222,28 @@ Absolute gain and scan loss
 
 The link budget needs an absolute gain in dBi, not the 0 dB-normalised pattern. ``RxAntenna`` recovers it
 from the **directivity** of the steered beam, obtained by integrating the normalised power pattern over the
-sphere,
+**front hemisphere** (:math:`\theta \le 90^\circ`),
 
 .. math::
    :label: ant-directivity
 
-   D = \frac{4\pi}{\displaystyle\oint \left|\mathrm{AF}_n(\theta,\phi)\right|^2\, d\Omega},
-   \qquad d\Omega = \sin\theta\;d\theta\,d\phi,
+   D = \frac{4\pi}{\displaystyle\int_0^{2\pi}\!\!\int_0^{\pi/2}
+   \left|\mathrm{AF}_n(\theta,\phi)\right|^2\, \sin\theta\;d\theta\,d\phi},
 
-with :math:`\mathrm{AF}_n = \mathrm{AF}/|\mathrm{AF}|_{\max}` the array factor normalised to unit peak. For the
+with :math:`\mathrm{AF}_n = \mathrm{AF}/|\mathrm{AF}|_{\max}` the array factor normalised to unit peak. The
+front-hemisphere domain is the shielded-panel assumption: the array is mounted on the Earth-facing
+spacecraft face over a ground plane, so the rear half-space is shielded and the isotropic-element array
+factor's mirror back lobe (:math:`|\mathrm{AF}|` depends on :math:`\theta` only through
+:math:`\sin\theta`) carries no physical power. For the
 uniform excitation used here :math:`|\mathrm{AF}|_{\max} = N_x N_y` (:eq:`ant-af`), so
 :math:`\mathrm{AF}_n = \mathrm{AF}/(N_x N_y)` and equivalently
-:math:`D = 4\pi\,(N_x N_y)^2 / \oint |\mathrm{AF}|^2\, d\Omega`. The gain along a look direction
+:math:`D = 4\pi\,(N_x N_y)^2 / \int_\mathrm{front} |\mathrm{AF}|^2\, d\Omega`. The gain along a look direction
 :math:`\hat{r}` is then the directivity of the commanded beam plus the relative pattern there,
 
 .. math::
    :label: ant-gain-eq
 
-   G(\hat{r})\;[\mathrm{dBi}] = D(\alpha_\mathrm{az}, \alpha_\mathrm{el})\;[\mathrm{dBi}]
+   G(\hat{r})\;[\mathrm{dBi}] = D(\alpha_x, \alpha_y)\;[\mathrm{dBi}]
    + 20\log_{10}\left|\mathrm{AF}_n(\hat{r})\right|.
 
 Because :math:`D` is evaluated from the *steered array factor*, its idealised scan dependence is captured:
@@ -261,11 +267,13 @@ bracketing the commanded direction.
       D \approx \frac{4\pi}{\Omega_A} \approx \frac{4\pi\,A_\mathrm{ap}}{\lambda^2},
       \qquad A_\mathrm{ap} = (N_x d_x)(N_y d_y),
 
-   so broadside directivity tracks aperture area until grating lobes appear. The implemented isotropic
-   planar array is **two-sided**: its array factor has equal front and rear lobes and the full-sphere
-   integral includes both. Thus the one-sided aperture formula is a scale reference, not an exact
-   prediction for this model. Runtime geometry rejects rear-hemisphere looks, but that does not remove
-   rear-lobe power from the directivity normalization.
+   so broadside directivity tracks aperture area until grating lobes appear. The isotropic-element
+   array factor is mirror-symmetric in :math:`\sin\theta`, so over the full sphere it would radiate an
+   equal rear lobe; the front-hemisphere normalisation of :eq:`ant-directivity` is the shielded-panel
+   (ground-plane) assumption that removes that fictitious lobe from the power budget. With it, the
+   computed broadside directivity sits just below the aperture bound -- e.g. 14.9 dBi against the
+   15.8 dBi bound for the configured :math:`3 \times 4` half-wavelength array, the residual being the
+   discrete array-factor taper -- and runtime geometry additionally rejects rear-hemisphere looks.
 
 .. autoclass:: object_definitions.Rx_antenna_def.RxAntenna
    :no-members:
@@ -273,11 +281,11 @@ bracketing the commanded direction.
 Module Assumptions and Limitations
 ----------------------------------
 
-- **Ideal isotropic elements and equal backlobe.** The pattern is the array factor only, so a planar array
-  radiates equal lobes into the front and rear hemispheres. Runtime look-direction gating rejects the
-  rear hemisphere, while directivity still includes its radiated power. A real element pattern,
-  ground plane, radiation efficiency, mismatch, mutual coupling and radome are absent; absolute gain
-  therefore remains an idealised value.
+- **Ideal isotropic elements over an ideal ground plane.** The pattern is the array factor only. The rear
+  hemisphere is treated as shielded by the Earth-facing spacecraft panel: rear-lobe power is excluded
+  from the directivity normalisation and rear look directions are rejected at runtime. A real element
+  pattern (with its own off-axis roll-off), radiation efficiency, mismatch, mutual coupling, finite
+  ground plane and radome are absent; absolute gain therefore remains an idealised value.
 - **Sine-space steering limit.** Steering is bounded by ``sin^2(az) + sin^2(el) <= 1``; sweeps beyond that
   are rejected.
 - **Patterns are generated, then cached.** ``RxAntenna`` consumes whatever files the generator wrote; a
@@ -299,7 +307,10 @@ Validation and Tests
    * - ``tests/test_antenna_gain_golden.py``
      - Golden-file regression of the gain pipeline (reference in ``tests/golden/reference_gains.npz``;
        regenerate via ``tests/golden/regenerate_gains.py``), plus steering-axis convention and invalid
-       generator-input checks. A golden file detects code changes; it is not chamber calibration.
+       generator-input checks, and closed-form front-hemisphere directivity anchors (a uniform pattern
+       gives :math:`D = 2`, a :math:`\cos^2\theta` pattern :math:`D = 6`;
+       ``test_directivity_integrates_front_hemisphere_only``). A golden file detects code changes; it is
+       not chamber calibration.
    * - ``tests/antenna_fixture.py``
      - Shared lightweight antenna fixture used across the suite.
 

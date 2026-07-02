@@ -1,13 +1,14 @@
-"""Generate a UML class diagram with PlantUML.
+"""Generate the UML class diagrams with PlantUML.
 
-Outputs:
-  architecture.puml  - PlantUML source (editable)
-  architecture.svg   - rendered vector image
-  architecture.png   - rendered raster image
+Two publication-sized figures share one style; stub classes mark the seam between them:
+  architecture.puml / .svg / .png  - system architecture (modes, geometry, satellites, foundation)
+  scattering.puml   / .svg / .png  - scattering and link-budget model (Target hierarchy, physics modules)
 
-Source can also be pasted into:
-  https://www.plantuml.com/plantuml
-  https://kroki.io
+The SVGs are also copied to docs/source/images/ as uml_system.svg and uml_scattering.svg
+(embedded by architecture.rst). Rendering uses the public PlantUML server; the sources can also be
+pasted into https://www.plantuml.com/plantuml or https://kroki.io, or rendered locally with
+plantuml.jar. For a publication, export PDF from the same source:
+https://www.plantuml.com/plantuml/pdf/<encoded>.
 """
 from __future__ import annotations
 
@@ -15,87 +16,73 @@ from pathlib import Path
 import urllib.request
 import zlib
 
-PUML = r"""@startuml
-!pragma layout smetana
-title GNSS-R System Simulator -- Software Architecture
-
+STYLE = r"""
 skinparam shadowing false
-skinparam ArrowColor #333333
+skinparam dpi 150
+skinparam ArrowColor #222222
 skinparam packageStyle rectangle
+skinparam PackageBorderColor #444444
+skinparam PackageFontStyle bold
 skinparam class {
     BackgroundColor #ffffff
-    BorderColor #000000
-    FontStyle Italic
-    AttributeFontStyle Plain
+    BorderColor #222222
     AttributeIconSize 0
     StereotypeFontColor #555555
 }
 hide empty members
+"""
 
-package "Analysis" <<Rectangle>> #F4FFF4 {
+PUML_SYSTEM = r"""@startuml
+title GNSS-R System Simulator -- system architecture (UML)
+""" + STYLE + r"""
+package "Analysis modes" #F7F7F7 {
     class Coverage {
-        sat_constellation
-        gnss_constellation
-        shp_input_file_path
-        gridded_shapefile_path
+        sat_constellation, gnss_constellation
         grid_size_deg / grid_size_m
-        bounding_box
-        reflection_dict
-        coverage_dict
-        earth_model
+        coverage_dict, selected_signals
+        earth_model, max_central_angle_deg
         --
-        calculate_reflection_points_and_coverage()
+        initialize_coverage()
+        compute_coverage_for_constellation()
         calculate_statistics()
-        plot_coverage_shapefile()
         plot_coverage_gridded_shapefile()
     }
 
     class MovingTargetDetection {
-        moving_target_object
-        sat_constellation
-        gnss_constellation
-        sat_antenna
-        reflection_dict_timeSorted
-        target_detect_dict
-        earth_model
-        reflection_mode
-        deltaT_sec
+        moving_target_object, sat_antenna
+        sat_constellation, gnss_constellation
+        reflection_mode <i>specular | backscatter</i>
+        signals_per_constellation
+        link_budget_settings, ship_dimensions
+        target_detect_dict, deltaT_sec
         --
         calculate_moving_target_reflection_intersection()
+        show_link_budget_contributions()
         show_track_and_detection_points()
         create_reflection_animation()
     }
 
     class ShipTrajectory {
-        ship_id
-        ship_speed
-        start_position / time
-        end_position / time
-        waypoints
-        trajectory_points
+        ship_id, ship_speed
+        start / end position and time
+        waypoints, trajectory_points
         shapefile_path
-        ocean_polygons
         --
         plan_route()
         generate_trajectory_equal_time()
         get_position_at_time(t)
-        get_travel_duration_hours()
     }
 }
 
-package "Geometry" <<Rectangle>> #FFF4F4 {
+package "Reflection geometry" #F7F7F7 {
     class Reflection {
         tx_satID, rx_satID
-        earth_model
-        max_central_angle_deg
-        gnss_const
-        time_vec
-        refl_ECI_vec / refl_LL_vec
-        refl_ang_vec
-        link_budget
+        earth_model, max_central_angle_deg
+        time_vec, refl_ECI_vec / refl_LL_vec
+        refl_ang_vec, link_budget
         --
         compute_reflection_coordinates()
-        get_reflection_point_ff() <i>spherical, initial guess</i>
+        get_reflection_point_ff()
     }
 
     class BRP <<backscatter>> {
@@ -103,24 +90,17 @@ package "Geometry" <<Rectangle>> #FFF4F4 {
         earth_model
         max_central_angle_deg
         max_incidence_angle_deg
-        gnss_const
-        time_vec
-        refl_ECI_vec / refl_LL_vec
-        refl_ang_vec
-        link_budget
+        time_vec, refl_ECI_vec / refl_LL_vec
+        refl_ang_vec, link_budget
         --
         compute_brp_coordinates()
     }
 }
 
-package "Domain" <<Rectangle>> #F4F4FF {
+package "Satellites and antenna" #F7F7F7 {
     class SatelliteConstellation {
-        satConfigName
-        satellites
-        no_satellites
-        orbits_array
-        times_skyfield
-        duration_sec
+        satConfigName, satellites
+        times_skyfield, duration_sec
         propagation_step_size
         --
         set_simulation_duration()
@@ -130,119 +110,226 @@ package "Domain" <<Rectangle>> #F4F4FF {
 
     class Satellite {
         satID, satName
-        classification
-        orbit_n
-        skf
-        tle_file_path
-        gnss_r_antenna
-        battery, solarArray
+        orbit_n, skf, tle_file_path
         positions_eci, velocities_eci
-        times_skyfield, time_prop_vec
-        sunlit_count, sunlit_fraction
         --
         propagate_orbit()
         propagate_orbit_for_times()
-        calculate_sunlight_time()
-        set_orbit() / set_epoch()
         write_tle_file()
+        calculate_sunlight_time()
     }
 
-    class Orbit {
-        i, e, a
-        RAAN, p, M
-        n  <i>(mean motion)</i>
-        epoch_str
-        dt_start
+    class Orbit_specification {
+        i, e, RAAN, p, nu <i>(true anomaly)</i>
+        a, n <i>(mean motion)</i>
+        epoch_str, dt_start
         --
         set_start_time(dt)
-        conv_DateTime_to_Epoch()
     }
 
-    class GNSS_R_antenna {
+    class RxAntenna {
         antenna_lookuptable
-        steering_across_track / along_track
-        frequencies, bands
-        polarizations
-        footprint_dB_contour
-        R_antenna_to_body
+        max_across/along_track_steering_deg
+        frequencies, bands, polarizations
+        footprint_dB_contour, R_antenna_to_body
         --
         get_gain_dbi_for_direction()
+        resolve_steering_angles_for_direction()
     }
 
-    class "Skyfield satellite" as Skyfield <<external>> {
-        TLE-derived state propagator
+    class AntennaPatternGenerator {
+        elements_along_x/y, d_x, d_y
+        freqs, steering sweeps
+        --
+        generate() <i>array-factor JSONs</i>
+    }
+
+    class "Skyfield EarthSatellite" as Skyfield <<external>> {
+        SGP4 propagation from a TLE
         --
         at(time)
-        is_sunlit(planets)
     }
 }
 
-package "Foundation" <<Rectangle>> #F5F5F5 {
+package "Foundation" #F7F7F7 {
     class Constants <<static>> {
-        Physical constants
-        GNSS band frequencies
-        File paths
-        Coordinate-system tools
+        physical constants, WGS-84
+        BANDS_CENTER_FREQUENCIES_Hz
+        GNSS_EIRP_DBW, GNSS_CHIP_RATE_HZ
+        data / output paths
     }
 
-    class BistaticLinkBudgetSettings <<dataclass>> {
-        tx_eirp_dbw
-        system_losses_db
-        polarization_losses_db
-        ocean_sigma0_db
-        ocean_sigma_slope_db_per_deg
-        ocean_sigma_floor_db
-        fresnel_rcs_scale
-    }
-
-    class ReadWriteData <<utility>> {
+    class ReadWriteSatData <<utility>> {
         --
-        generate_tle_data_string(sat)
-        read_tle_data(path)
-        download_and_read_tle(path)
-    }
-
-    class Plotting <<static>> {
-        --
-        plot_reflection_traces_gnss_const()
-        plot_reflection_traces_total()
-        plot_orbits()
+        generate_tle_data_string() <i>SGP4 mean-element fit</i>
+        read_tle_data()
+        mean_to_true_anomaly_deg()
     }
 }
+
+class "functions.link_budget" as link_budget <<module>>
+note right of link_budget
+  Scattering and link-budget
+  model: see companion diagram.
+end note
 
 ' ---- Composition / aggregation -----------------------------------
 SatelliteConstellation "1" *-- "1..*" Satellite : contains
-
-Satellite "1" o-- "0..1" Orbit
-Satellite "1" o-- "0..1" Skyfield : wraps
-Satellite "1" o-- "0..1" GNSS_R_antenna : may carry
+Satellite "1" o-- "0..1" Orbit_specification
+Satellite "1" o-- "1" Skyfield : wraps
+Satellite "1" o-- "0..1" RxAntenna : may carry
 
 ' ---- Reflection / BRP need a (Tx, Rx) Satellite pair -------------
 Reflection "*" -- "2" Satellite : Tx + Rx
 BRP        "*" -- "2" Satellite : Tx + Rx
 
-' ---- Coverage and MovingTargetDetection orchestrate the model ----
-Coverage "1" o-- "1..*" SatelliteConstellation : Rx + Tx
-Coverage "1" o-- "*"    Reflection             : stores
+' ---- The two analysis modes orchestrate the model -----------------
+Coverage "1" o-- "1..*" SatelliteConstellation : Rx + GNSS
+Coverage "1" o-- "*"    Reflection             : per (Tx, Rx) pair
 
-MovingTargetDetection "1" o-- "1..*" SatelliteConstellation : Rx + Tx
+MovingTargetDetection "1" o-- "1..*" SatelliteConstellation : Rx + GNSS
 MovingTargetDetection "1" o-- "1"    ShipTrajectory          : target
-MovingTargetDetection "1" o-- "1"    GNSS_R_antenna          : Rx antenna
+MovingTargetDetection "1" o-- "1"    RxAntenna
 MovingTargetDetection "1" o-- "*"    Reflection              : specular mode
 MovingTargetDetection "1" o-- "*"    BRP                     : backscatter mode
 
-' ---- Dependencies (uses) -----------------------------------------
-Reflection ..> GNSS_R_antenna : uses
-BRP        ..> GNSS_R_antenna : uses
-Reflection ..> BistaticLinkBudgetSettings : uses
-BRP        ..> BistaticLinkBudgetSettings : uses
+' ---- Hand-off to the scattering / link-budget model ---------------
+Reflection ..> link_budget : evaluates
+BRP        ..> link_budget : evaluates
+MovingTargetDetection ..> link_budget : per-band budgets
 
-Satellite             ..> ReadWriteData : TLE I/O
-SatelliteConstellation ..> ReadWriteData : uses
-Coverage              ..> Plotting      : uses
+RxAntenna ..> AntennaPatternGenerator : loads pattern JSONs
+Satellite ..> ReadWriteSatData : TLE fit + I/O
 
-' Constants is imported almost everywhere - kept implicit so the
-' diagram stays readable.
+note bottom of Constants
+  Imported nearly everywhere
+  (kept implicit for readability);
+  transmit EIRP and chip rates
+  live here, not in the settings.
+end note
+
+legend right
+  **Notation**
+  *--   composition (owns)
+  o--   aggregation (holds)
+  ..>   dependency (uses)
+  --|>  inheritance
+  italic = abstract
+endlegend
+
+@enduml
+"""
+
+PUML_SCATTERING = r"""@startuml
+title GNSS-R System Simulator -- scattering and link-budget model (UML)
+""" + STYLE + r"""
+package "Consumers (system diagram)" #F7F7F7 {
+    class Reflection
+    class BRP <<backscatter>>
+    class MovingTargetDetection
+    class RxAntenna
+}
+
+package "Link budget" #F7F7F7 {
+    class "functions.link_budget" as link_budget <<module>> {
+        --
+        build_bistatic_geometry()
+        compute_reflection_link_budget()
+        compute_bistatic_link_budget()
+        coherent_processing_gain_linear()
+    }
+
+    class BistaticGeometry <<dataclass>> {
+        n_surface, n_tx2s, n_s2rx
+        range_tx_m, range_rx_m
+        incidence / scattering / bistatic angles
+    }
+
+    class BistaticLinkBudgetSettings <<dataclass>> {
+        system_losses_db, polarization_losses_db
+        noise_bandwidth_hz, system_noise_temperature_k
+        detection_sinr_threshold_db
+        {field} ocean sea state (H_s, U10, dir, T, S, Omega_c)
+        delay_doppler_cell_enabled, coherent_integration_time_s
+        ocean_patch_integration_enabled, num_incoherent_looks
+    }
+
+    class "functions.delay_doppler" as delay_doppler <<module>> {
+        --
+        delay_doppler_cell_area()
+    }
+}
+
+package "Targets (RCS models)" #F7F7F7 {
+    abstract class Target {
+        --
+        {abstract} compute_rcs(geometry, wavelength, area)
+    }
+
+    class TargetRcs <<dataclass>> {
+        rcs_m2, info
+    }
+
+    class OceanTarget {
+        wave_height_m, wind_speed_m_s
+        wind_direction_deg, inverse_wave_age
+        sea_temperature_c, salinity_psu
+        --
+        compute_rcs() <i>coherent + GO + Bragg</i>
+        from_settings(settings)
+    }
+
+    class ShipTarget {
+        length_m, beam_m, freeboard_m
+        heading_eci
+        --
+        compute_rcs() <i>5 plates + 2 dihedrals</i>
+    }
+}
+
+package "Physics helpers" #F7F7F7 {
+    class "functions.ocean_physics" as ocean_physics <<module>> {
+        --
+        seawater_permittivity() <i>Klein-Swift</i>
+        circular_pol_reflectivities() <i>Fresnel</i>
+        large_scale_slope_variances() <i>Elfouhaily</i>
+        two_scale_backscatter_nrcs() <i>Bragg</i>
+    }
+
+    class "functions.ship_physics" as ship_physics <<module>> {
+        --
+        flat_plate_rcs()
+        dihedral_rcs()
+    }
+}
+
+' ---- Consumers hand the geometry to the link budget ---------------
+Reflection ..> link_budget : evaluates
+BRP        ..> link_budget : evaluates
+MovingTargetDetection ..> link_budget : per-band budgets
+MovingTargetDetection ..> ShipTarget  : per-event ship RCS
+
+' ---- The link budget builds geometry and asks a Target for RCS ----
+link_budget ..> BistaticGeometry : builds
+link_budget ..> BistaticLinkBudgetSettings : settings
+link_budget ..> Target : compute_rcs()
+link_budget ..> RxAntenna : steered gain
+link_budget ..> delay_doppler : DDM cell area
+
+' ---- Target hierarchy ---------------------------------------------
+Target <|-- OceanTarget
+Target <|-- ShipTarget
+Target ..> TargetRcs : returns
+
+OceanTarget ..> ocean_physics : uses
+OceanTarget ..> BistaticLinkBudgetSettings : from_settings
+ShipTarget  ..> ship_physics : uses
+
+note bottom of link_budget
+  Pr = EIRP G Rx lambda^2 sigma / ((4 pi)^3 Rt^2 Rr^2 L);
+  transmit EIRP and chip rates come from Constants
+  per (constellation, band).
+end note
 
 @enduml
 """
@@ -300,27 +387,33 @@ def _fetch(url: str, timeout: int = 60) -> bytes:
 #  Main
 # --------------------------------------------------------------------------
 def main() -> None:
-    Path("architecture.puml").write_text(PUML, encoding="utf-8")
-    print("Wrote architecture.puml")
-
-    encoded = encode_plantuml(PUML)
-    print(f"Encoded source ({len(encoded)} chars)")
-
+    here = Path(__file__).resolve().parent
+    images = here.parent / "docs" / "source" / "images"
     base = "https://www.plantuml.com/plantuml"
-    targets = [
-        ("architecture.svg", f"{base}/svg/{encoded}"),
-        ("architecture.png", f"{base}/png/{encoded}"),
+
+    diagrams = [
+        ("architecture", PUML_SYSTEM, images / "uml_system.svg"),
+        ("scattering", PUML_SCATTERING, images / "uml_scattering.svg"),
     ]
-    for fname, url in targets:
-        try:
-            data = _fetch(url)
-        except Exception as e:                                  # noqa: BLE001
-            print(f"FAILED to fetch {fname}: {e}")
-            print("  Render manually by pasting architecture.puml into")
-            print("  https://www.plantuml.com/plantuml or https://kroki.io")
-            continue
-        Path(fname).write_bytes(data)
-        print(f"Wrote {fname} ({len(data):,} bytes)")
+    for stem, source, docs_svg in diagrams:
+        (here / f"{stem}.puml").write_text(source, encoding="utf-8")
+        print(f"Wrote {stem}.puml")
+
+        encoded = encode_plantuml(source)
+        for suffix in ("svg", "png"):
+            url = f"{base}/{suffix}/{encoded}"
+            try:
+                data = _fetch(url)
+            except Exception as e:                              # noqa: BLE001
+                print(f"FAILED to fetch {stem}.{suffix}: {e}")
+                print(f"  Render manually by pasting {stem}.puml into")
+                print("  https://www.plantuml.com/plantuml or https://kroki.io")
+                continue
+            (here / f"{stem}.{suffix}").write_bytes(data)
+            print(f"Wrote {stem}.{suffix} ({len(data):,} bytes)")
+            if suffix == "svg":
+                docs_svg.write_bytes(data)
+                print(f"Wrote {docs_svg} (docs embed)")
 
 
 if __name__ == "__main__":

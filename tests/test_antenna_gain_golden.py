@@ -157,6 +157,23 @@ def test_antenna_footprint_directivity_uses_endpoint_exclusive_phi_grid():
     assert directivity == pytest.approx(expected_directivity)
 
 
+def test_directivity_integrates_front_hemisphere_only():
+    # The array sits over a ground plane (shielded Earth-facing spacecraft panel), so the
+    # isotropic-element mirror back lobe carries no power: a uniform pattern is a hemispheric
+    # radiator with D = 2 (3.01 dB), and cos^2(theta) (mirror-symmetric in theta exactly like
+    # the array factor) has D = 4*pi / (2*pi/3) = 6. Full-sphere normalization would halve both.
+    n_theta, n_phi = 181, 72
+    theta_rad = np.linspace(0, np.pi, n_theta)
+    phi_rad = np.linspace(0, 2.0 * np.pi, n_phi, endpoint=False)
+    theta_mesh, _phi_mesh = np.meshgrid(theta_rad, phi_rad, indexing="ij")
+
+    directivity, _ = RxAntenna._calculate_directivity(np.ones_like(theta_mesh), theta_rad, phi_rad, theta_mesh)
+    assert directivity == pytest.approx(2.0, rel=1e-2)
+
+    directivity, _ = RxAntenna._calculate_directivity(np.cos(theta_mesh) ** 2, theta_rad, phi_rad, theta_mesh)
+    assert directivity == pytest.approx(6.0, rel=1e-2)
+
+
 def test_array_factor_along_track_steers_x_and_across_track_steers_y():
     frequency_hz = FREQUENCY_MHZ * 1e6
     wavelength_m = 299_792_458.0 / frequency_hz

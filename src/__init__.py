@@ -225,7 +225,7 @@ def initialize(config_file_name="Configuration_area.ini"):
         bands                  = ["L1", "L2", "L2", "L5"]                                        (only needed for moving target analysis)
 
         [ORBITS]
-        orbit1 = (inclination, eccentricity, raan, arg_periapsis, true_anomaly, apogee)
+        orbit1 = (inclination, eccentricity, raan, arg_periapsis, true_anomaly, semi_major_axis)
         orbit2 = ...
 
         [GNSS CONSTELLATIONS]

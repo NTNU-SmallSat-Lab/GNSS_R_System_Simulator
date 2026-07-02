@@ -1,12 +1,12 @@
 """Generate the two-plane steering-angle schematic for antenna.html.
 
-Two panels:
-  (a) elevation principal plane (x-z): beam tilted from boresight z^a by alpha_el (rotation about y; the
+Two panels (angle subscript = rotation axis):
+  (a) elevation principal plane (x-z): beam tilted from boresight z^a by alpha_y (rotation about y; the
       peak moves along x^a, the flight direction).
-  (b) azimuth principal plane (y-z): beam tilted from boresight z^a by alpha_az (rotation about x).
+  (b) azimuth principal plane (y-z): beam tilted from boresight z^a by alpha_x (rotation about x).
 
 In each principal-plane cut the steering angle is measured directly from boresight z^a; a general command
-applies both at once, giving beam direction (sin alpha_el, sin alpha_az, sqrt(1 - sin^2 - sin^2)). Boresight
+applies both at once, giving beam direction (sin alpha_y, sin alpha_x, sqrt(1 - sin^2 - sin^2)). Boresight
 points down to match the nadir-pointing orientation of the array-geometry figure. Output PNG ->
 docs/source/images/.
 """
@@ -30,8 +30,8 @@ BEAM = "#214f7b"         # steered beam
 ANG = "#16212c"          # angle arcs / labels
 TEXT = "#16212c"
 
-ALPHA_AZ = 35.0    # example azimuth steering angle [deg]
-ALPHA_EL = 22.0    # example elevation steering angle [deg]
+ALPHA_X = 35.0    # example azimuth steering angle (rotation about x) [deg]
+ALPHA_Y = 22.0    # example elevation steering angle (rotation about y) [deg]
 
 
 def panel_cut(ax, axis_label, alpha_deg, angle_label, title):
@@ -70,8 +70,8 @@ def panel_cut(ax, axis_label, alpha_deg, angle_label, title):
 
 def main():
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(9.0, 4.6))
-    panel_cut(ax1, r"$x^{\mathrm{a}}$", ALPHA_EL, r"$\alpha_{\mathrm{el}}$", r"(a) elevation plane ($x$-$z$)")
-    panel_cut(ax2, r"$y^{\mathrm{a}}$", ALPHA_AZ, r"$\alpha_{\mathrm{az}}$", r"(b) azimuth plane ($y$-$z$)")
+    panel_cut(ax1, r"$x^{\mathrm{a}}$", ALPHA_Y, r"$\alpha_{y}$", r"(a) elevation plane ($x$-$z$)")
+    panel_cut(ax2, r"$y^{\mathrm{a}}$", ALPHA_X, r"$\alpha_{x}$", r"(b) azimuth plane ($y$-$z$)")
     fig.tight_layout(pad=0.6)
 
     out = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),

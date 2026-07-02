@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 from _link_budget_settings import link_budget_settings
 import numpy as np
+import pymap3d
 import pytest
 
 import functions.link_budget as lb
@@ -90,12 +91,23 @@ class TestComputeShipHeadingEci:
 
 def _build_refl_obj_mock():
     """One-sample refl_obj with the fields the helper reads from."""
-    # Tx and Rx both directly above the surface point, near-zenith geometry.
-    surf = np.array([[6.371e6, 0.0, 0.0]])
-    tx_pos = np.array([[6.371e6 + 2.0e7], [0.0], [0.0]])   # ~ GPS altitude
-    rx_pos = np.array([[6.371e6 + 7.0e5], [0.0], [0.0]])   # ~ LEO altitude
-    rx_vel = np.array([[0.0], [7_500.0], [0.0]])
-    tx_vel = np.array([[0.0], [3_900.0], [0.0]])
+    # The helpers rotate the ship's geodetic position (lat 0, lon 0) into ECI at the detection time,
+    # so the mock applies the same rotation and stacks Tx and Rx radially above the ship for a
+    # genuinely near-zenith forward geometry. The stored reflection point (the steering center) is
+    # offset ~20 km east so tests can tell the center and ship look directions apart.
+    detection_time = BASE_TIME + dt.timedelta(minutes=25)
+    x_ecef, y_ecef, z_ecef = pymap3d.geodetic2ecef(0.0, 0.0, 0.0)
+    ship_eci = np.column_stack(pymap3d.ecef2eci(np.array([x_ecef]), np.array([y_ecef]), np.array([z_ecef]), [detection_time]))[0]
+    radius = np.linalg.norm(ship_eci)
+    radial = ship_eci / radius                                 # local zenith at the ship, in ECI
+    east = np.cross(np.array([0.0, 0.0, 1.0]), radial)
+    east /= np.linalg.norm(east)
+    refl_point = ship_eci + 2.0e4 * east                       # steering center ~20 km from the ship
+    surf = (radius * refl_point / np.linalg.norm(refl_point)).reshape(1, 3)
+    tx_pos = (ship_eci + 2.0e7 * radial).reshape(3, 1)         # ~ GPS altitude, at zenith
+    rx_pos = (ship_eci + 7.0e5 * radial).reshape(3, 1)         # ~ LEO altitude, at zenith
+    rx_vel = (7_500.0 * east).reshape(3, 1)
+    tx_vel = (3_900.0 * east).reshape(3, 1)
     return SimpleNamespace(
         gnss_pos_vec=tx_pos,
         gnss_vel_vec=tx_vel,

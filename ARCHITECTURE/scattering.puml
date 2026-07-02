@@ -1,0 +1,126 @@
+@startuml
+title GNSS-R System Simulator -- scattering and link-budget model (UML)
+
+skinparam shadowing false
+skinparam dpi 150
+skinparam ArrowColor #222222
+skinparam packageStyle rectangle
+skinparam PackageBorderColor #444444
+skinparam PackageFontStyle bold
+skinparam class {
+    BackgroundColor #ffffff
+    BorderColor #222222
+    AttributeIconSize 0
+    StereotypeFontColor #555555
+}
+hide empty members
+
+package "Consumers (system diagram)" #F7F7F7 {
+    class Reflection
+    class BRP <<backscatter>>
+    class MovingTargetDetection
+    class RxAntenna
+}
+
+package "Link budget" #F7F7F7 {
+    class "functions.link_budget" as link_budget <<module>> {
+        --
+        build_bistatic_geometry()
+        compute_reflection_link_budget()
+        compute_bistatic_link_budget()
+        coherent_processing_gain_linear()
+    }
+
+    class BistaticGeometry <<dataclass>> {
+        n_surface, n_tx2s, n_s2rx
+        range_tx_m, range_rx_m
+        incidence / scattering / bistatic angles
+    }
+
+    class BistaticLinkBudgetSettings <<dataclass>> {
+        system_losses_db, polarization_losses_db
+        noise_bandwidth_hz, system_noise_temperature_k
+        detection_sinr_threshold_db
+        {field} ocean sea state (H_s, U10, dir, T, S, Omega_c)
+        delay_doppler_cell_enabled, coherent_integration_time_s
+        ocean_patch_integration_enabled, num_incoherent_looks
+    }
+
+    class "functions.delay_doppler" as delay_doppler <<module>> {
+        --
+        delay_doppler_cell_area()
+    }
+}
+
+package "Targets (RCS models)" #F7F7F7 {
+    abstract class Target {
+        --
+        {abstract} compute_rcs(geometry, wavelength, area)
+    }
+
+    class TargetRcs <<dataclass>> {
+        rcs_m2, info
+    }
+
+    class OceanTarget {
+        wave_height_m, wind_speed_m_s
+        wind_direction_deg, inverse_wave_age
+        sea_temperature_c, salinity_psu
+        --
+        compute_rcs() <i>coherent + GO + Bragg</i>
+        from_settings(settings)
+    }
+
+    class ShipTarget {
+        length_m, beam_m, freeboard_m
+        heading_eci
+        --
+        compute_rcs() <i>5 plates + 2 dihedrals</i>
+    }
+}
+
+package "Physics helpers" #F7F7F7 {
+    class "functions.ocean_physics" as ocean_physics <<module>> {
+        --
+        seawater_permittivity() <i>Klein-Swift</i>
+        circular_pol_reflectivities() <i>Fresnel</i>
+        large_scale_slope_variances() <i>Elfouhaily</i>
+        two_scale_backscatter_nrcs() <i>Bragg</i>
+    }
+
+    class "functions.ship_physics" as ship_physics <<module>> {
+        --
+        flat_plate_rcs()
+        dihedral_rcs()
+    }
+}
+
+' ---- Consumers hand the geometry to the link budget ---------------
+Reflection ..> link_budget : evaluates
+BRP        ..> link_budget : evaluates
+MovingTargetDetection ..> link_budget : per-band budgets
+MovingTargetDetection ..> ShipTarget  : per-event ship RCS
+
+' ---- The link budget builds geometry and asks a Target for RCS ----
+link_budget ..> BistaticGeometry : builds
+link_budget ..> BistaticLinkBudgetSettings : settings
+link_budget ..> Target : compute_rcs()
+link_budget ..> RxAntenna : steered gain
+link_budget ..> delay_doppler : DDM cell area
+
+' ---- Target hierarchy ---------------------------------------------
+Target <|-- OceanTarget
+Target <|-- ShipTarget
+Target ..> TargetRcs : returns
+
+OceanTarget ..> ocean_physics : uses
+OceanTarget ..> BistaticLinkBudgetSettings : from_settings
+ShipTarget  ..> ship_physics : uses
+
+note bottom of link_budget
+  Pr = EIRP G Rx lambda^2 sigma / ((4 pi)^3 Rt^2 Rr^2 L);
+  transmit EIRP and chip rates come from Constants
+  per (constellation, band).
+end note
+
+@enduml

@@ -42,38 +42,47 @@ epoch is stored in the TLE ``YYDDD.DDDDDDDD`` format, ready for
 
 .. list-table:: Parameters
    :name: tab-orbit-params
-   :widths: 16 16 56 12
+   :widths: 14 10 14 50 12
    :header-rows: 1
 
    * - Parameter
+     - Symbol
      - Type
      - Description
      - Unit
    * - ``i``
+     - :math:`i`
      - float
      - Inclination.
      - deg
    * - ``e``
+     - :math:`e`
      - float
      - Eccentricity.
      - --
    * - ``raan``
+     - :math:`\Omega`
      - float
      - Right ascension of the ascending node.
      - deg
    * - ``p``
+     - :math:`\omega`
      - float
-     - Argument of periapsis.
+     - Argument of periapsis (the code name ``p`` is historical -- it is **not** the semi-latus
+       rectum :math:`p` of :eq:`sat-perifocal`).
      - deg
    * - ``nu``
+     - :math:`f`
      - float
      - True anomaly.
      - deg
    * - ``a``
+     - :math:`a`
      - float
      - Semi-major axis (from Earth's centre).
      - m
    * - ``epochTime``
+     - --
      - datetime, optional
      - Orbit epoch (UTC); sets the TLE epoch string.
      - --
@@ -219,16 +228,17 @@ mean elements, in three steps.
 
 **1. Osculating state at the epoch.** The classical elements are turned into an inertial Cartesian state
 :math:`(\mathbf{r}, \mathbf{v})`. In the perifocal frame, with semi-latus rectum :math:`p = a(1-e^2)` and
-true anomaly :math:`\nu`,
+true anomaly :math:`f`,
 
 .. math::
    :label: sat-perifocal
 
-   r = \frac{p}{1 + e\cos\nu}, \qquad
-   \mathbf{r}_\mathrm{pf} = r\begin{pmatrix}\cos\nu\\ \sin\nu\\ 0\end{pmatrix}, \qquad
-   \mathbf{v}_\mathrm{pf} = \sqrt{\tfrac{\mu_\oplus}{p}}\begin{pmatrix}-\sin\nu\\ e+\cos\nu\\ 0\end{pmatrix},
+   r = \frac{p}{1 + e\cos f}, \qquad
+   \mathbf{r}_\mathrm{pf} = r\begin{pmatrix}\cos f\\ \sin f\\ 0\end{pmatrix}, \qquad
+   \mathbf{v}_\mathrm{pf} = \sqrt{\tfrac{\mu_\oplus}{p}}\begin{pmatrix}-\sin f\\ e+\cos f\\ 0\end{pmatrix},
 
-rotated into the inertial frame by the 3-1-3 sequence of RAAN, inclination and argument of periapsis,
+rotated into the inertial frame by the 3-1-3 sequence of the right ascension of the ascending node
+:math:`\Omega`, the inclination :math:`i`, and the argument of periapsis :math:`\omega`,
 :math:`\mathbf{r} = R_3(\Omega)\,R_1(i)\,R_3(\omega)\,\mathbf{r}_\mathrm{pf}` (and likewise for
 :math:`\mathbf{v}`). This is the **target** state the TLE must reproduce.
 

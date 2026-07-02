@@ -272,6 +272,25 @@ class TestOceanTargetComputeRcs:
         inc = result.info["rcs_incoherent_m2"][0]
         assert coh < 1e-6 * inc, f"coherent {coh:.3e} not negligible vs incoherent {inc:.3e}"
 
+    def test_coherent_includes_spherical_earth_divergence(self):
+        # sigma_coh = 4 pi |R_RL|^2 R_red^2 D^2 exp(-kappa) with the convex-mirror defocus
+        # D^2 = 1 / [(1 + 2 R_red/(a cos th)) (1 + 2 R_red cos th / a)]; flat Earth (a -> inf) gives D = 1.
+        theta_deg = 10.0
+        wavelength_m = 0.19
+        geom = _mirror_geometry(theta_deg=theta_deg)
+        result = OceanTarget(1e-3, 1.0, 0.0, 15.0, 35.0).compute_rcs(geom, wavelength_m)   # calm sea: coherent survives
+
+        reduced_range = geom.range_tx_m[0] * geom.range_rx_m[0] / (geom.range_tx_m[0] + geom.range_rx_m[0])
+        cos_th = np.cos(np.radians(theta_deg))
+        ratio = 2.0 * reduced_range / Constants.R_EARTH_MEAN
+        d_sq = 1.0 / ((1.0 + ratio / cos_th) * (1.0 + ratio * cos_th))
+        kappa = (4.0 * np.pi * (1e-3 / 4.0) * cos_th / wavelength_m) ** 2
+        expected = 4.0 * np.pi * result.info["fresnel_reflectivity_RL_sq"][0] * reduced_range**2 * d_sq * np.exp(-kappa)
+
+        assert 0.0 < d_sq < 1.0                                # convex Earth strictly defocuses
+        np.testing.assert_allclose(result.info["divergence_factor_sq"][0], d_sq, rtol=1e-12)
+        np.testing.assert_allclose(result.info["rcs_coherent_m2"][0], expected, rtol=1e-12)
+
     def test_glistening_area_grows_with_wind(self):
         # Wider Cox-Munk slope variance -> bigger glistening zone.
         geom = _mirror_geometry(theta_deg=20.0)

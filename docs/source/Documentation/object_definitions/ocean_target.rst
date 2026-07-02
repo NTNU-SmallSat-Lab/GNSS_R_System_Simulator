@@ -92,7 +92,7 @@ reproduces that two-ray reflected power through the radar equation is
    :label: ot-coherent
 
    \sigma_\mathrm{coherent} = 4\pi\,|R_\mathrm{RL}|^2
-   \left(\frac{R_t R_r}{R_t + R_r}\right)^2 e^{-\kappa},
+   \left(\frac{R_t R_r}{R_t + R_r}\right)^2 D^2\, e^{-\kappa},
 
 reduced by the **Rayleigh roughness loss**
 
@@ -108,10 +108,26 @@ height :math:`H_s`; the implementation uses the Gaussian-sea approximation
 almost nothing; it matters mainly for a very smooth surface. It is applied only where the mean surface is
 the specular reflector.
 
+The **spherical-Earth divergence** :math:`D^2` accounts for the convex sea surface defocusing the
+specular bundle relative to a flat mirror:
+
+.. math::
+   :label: ot-divergence
+
+   D^2 = \left[\left(1 + \frac{2R_\mathrm{red}}{a_e\cos\left(\beta/2\right)}\right)
+   \left(1 + \frac{2R_\mathrm{red}\cos\left(\beta/2\right)}{a_e}\right)\right]^{-1},
+   \qquad R_\mathrm{red} = \frac{R_t R_r}{R_t + R_r},
+
+with mean Earth radius :math:`a_e`. The two factors are the Coddington astigmatic mirror radii
+:math:`a_e\cos\theta` in the plane of incidence and :math:`a_e/\cos\theta` across it; a flat Earth
+(:math:`a_e \to \infty`) recovers :math:`D = 1`, and grazing incidence drives :math:`D \to 0`. For a
+700 km receiver orbit this costs about 1.7 dB of coherent power. It is exposed in the diagnostics as
+``divergence_factor_sq``.
+
 Incoherent (rough surface)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The rough surface scatters diffusely. Using geometric optics over the Cox-Munk slope statistics, the
+The rough surface scatters diffusely. Using geometric optics over the wave-slope statistics, the
 cross-section per unit area (the NRCS) is
 
 .. math::
@@ -121,9 +137,15 @@ cross-section per unit area (the NRCS) is
    \left(\frac{|\mathbf{q}|}{q_z}\right)^4 P(s_u, s_c),
 
 where :math:`\mathbf{q}` is the scattering vector (the change in propagation direction), :math:`q_z` its
-part along the surface normal, and :math:`P(s_u, s_c)` is the Cox-Munk probability of the exact surface
-slope that would reflect the transmitter into the receiver. Multiplying by the illuminated area gives the
-glistening-zone return.
+part along the surface normal, and :math:`P(s_u, s_c)` is the probability of the exact surface
+slope that would reflect the transmitter into the receiver. Only waves longer than about three radar
+wavelengths act as specular facets at L band, so :math:`P` is a 2-D Gaussian over the **large-scale**
+slope variances: the Elfouhaily spectrum integrated up to the two-scale division wavenumber
+:math:`k_\mathrm{radar}/3` (Brown 1978; the same division the two-scale Bragg term uses), split by the
+Cox-Munk upwind/crosswind anisotropy ratio. Using the full optical Cox-Munk variance would count
+sub-wavelength ripples as mirrors; at L1 and 7 m/s that understates the glint-peak NRCS by about 3 dB
+and overstates the off-specular GO skirt. Multiplying by the illuminated area gives the glistening-zone
+return.
 
 When patch integration is disabled and the footprint contains the complete glint, the implementation uses
 a peak-equivalent area derived from the local slope-to-surface Jacobian. With reduced range
@@ -143,16 +165,24 @@ integration is preferable because it evaluates range, gain and NRCS over the act
 Bragg backscatter
 ^^^^^^^^^^^^^^^^^
 
-In the backscatter direction the geometric-optics term collapses (no facet is tilted enough to bounce the
-signal straight back). There the return comes from **Bragg** resonance with small wind ripples, computed by
-the two-scale model in :doc:`../functions/ocean_physics`. It is switched on only near backscatter
-(bistatic angle below ~5 deg) and at oblique incidence (above ~20 deg), so the forward/specular path is
-left exactly unchanged:
+In the backscatter direction at oblique incidence the geometric-optics term collapses (almost no facet is
+tilted steeply enough to bounce the signal straight back). There the return comes from **Bragg** resonance
+with small wind ripples, computed by the two-scale model in :doc:`../functions/ocean_physics`. It is
+switched on only near backscatter (bistatic angle below ~5 deg) and at oblique incidence (at or above
+20 deg), so the forward/specular path is left exactly unchanged:
 
 .. math::
    :label: ot-bragg-gate
 
    \text{Bragg active} \iff \beta < 5^\circ \;\text{and}\; \theta_i \ge 20^\circ.
+
+The incidence floor is **divergence protection**, not calibration: first-order Bragg grows without bound
+toward nadir (:math:`\sigma^0 \sim B/(4\sin^4\theta)` as the resonant wavenumber slides into the
+energetic long-wave spectrum), and the tilt average leaks that growth through mirror-ward-tilted facets
+well above nadir. Below the gate the quasi-specular geometric-optics term owns the return. Lowering the
+gate requires first restricting the facet-local Bragg wavenumber inside the tilt average
+(:math:`k_B(\theta_\mathrm{local}) \ge k_\mathrm{radar}/3`, the same two-scale division) -- a recorded
+refinement, see ``TODO.md``.
 
 The clutter area
 ^^^^^^^^^^^^^^^^
@@ -173,10 +203,12 @@ Module Assumptions and Limitations
 ----------------------------------
 
 - **Coherent term gated to specular.** The specular reflection is only added where the surface itself is the
-  specular reflector; it is zero off-specular, and collapses for any realistic wave height.
+  specular reflector; it is zero off-specular, and collapses for any realistic wave height. Its
+  spherical-Earth divergence uses the mean Earth radius, not the local curvature of the ellipsoid.
 - **Hard Bragg gating.** Bragg is added only for bistatic angle below 5 deg and incidence at least 20 deg.
-  There is no smooth transition/blending at those empirical boundaries, so parameter sweeps can show a
-  discontinuity. Out-of-plane polarisation rotation is not included.
+  The incidence floor is divergence protection for the near-nadir blow-up of first-order Bragg (see
+  above), so parameter sweeps show a step at the gate; the smooth facet-local gate that would replace it
+  is a recorded refinement. Out-of-plane polarisation rotation is not included.
 - **Sea-state ranges.** Wind speed > 0; wave age between 0.84 and 5.0; temperature and salinity in the
   Klein-Swift range. Out-of-range inputs raise.
 - **Area comes from the link budget.** The absolute diffuse power depends on the illuminated area supplied
@@ -197,10 +229,11 @@ Validation and Tests
    * - ``TestOceanTargetConstruction``
      - Inputs validated; ``from_settings`` round-trips the ``[OCEAN]`` fields.
    * - ``TestOceanTargetComputeRcs``
-     - Coherent term dominates for calm/smooth water and collapses for a rough sea; the glistening area
-       grows with wind and is capped by a supplied illuminated area; the roughness loss grows with wave
-       height, using :math:`\sigma_h=H_s/4`; the uncapped peak-equivalent area preserves the analytic
-       geometric-optics integral.
+     - Coherent term dominates for calm/smooth water and collapses for a rough sea; the coherent term
+       carries the spherical-Earth divergence :math:`D^2` (closed-form anchor at rtol :math:`10^{-12}`);
+       the glistening area grows with wind and is capped by a supplied illuminated area; the roughness
+       loss grows with wave height, using :math:`\sigma_h=H_s/4`; the uncapped peak-equivalent area
+       preserves the analytic geometric-optics integral.
    * - ``TestOceanTargetComputeRcs`` (Bragg)
      - Bragg is zero at forward specular and near nadir, dominates at oblique backscatter, and uses the
        supplied illuminated area.
@@ -253,3 +286,7 @@ References
   frequencies", *IEEE Trans. Antennas Propag.* 25(1), 1977.
 - Cox, C. & Munk, W., "Measurement of the roughness of the sea surface from photographs of the sun's
   glitter", *J. Opt. Soc. Am.* 44(11), 1954.
+- Brown, G., "Backscattering from a Gaussian-distributed perfectly conducting rough surface", *IEEE
+  Trans. Antennas Propag.* 26(3), 1978 (two-scale division wavenumber).
+- Beckmann, P. & Spizzichino, A., *The Scattering of Electromagnetic Waves from Rough Surfaces*,
+  Pergamon, 1963 (spherical-Earth divergence factor).

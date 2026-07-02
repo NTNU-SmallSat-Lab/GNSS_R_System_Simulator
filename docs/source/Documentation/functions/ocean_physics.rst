@@ -183,6 +183,11 @@ Module Assumptions and Limitations
 
 - **Valid sea-state range.** Klein-Swift is fit for roughly -2 to 30 degC and 0 to 40 PSU; Cox-Munk is for
   clean (slick-free) seas; Bragg holds for moderate incidence (about 10 to 70 deg).
+- **Near-nadir Bragg divergence.** First-order Bragg grows without bound toward nadir
+  (:math:`\sigma^0 \sim B/(4\sin^4\theta)` as the resonant wavenumber slides into the energetic long-wave
+  spectrum), and the two-scale tilt average leaks that growth through mirror-ward-tilted facets well above
+  nadir. The consuming ocean target therefore gates the Bragg term to incidence at or above 20 deg
+  (divergence protection); below that the quasi-specular geometric-optics term owns the return.
 - **First-order Bragg.** The small-ripple theory is first order; the two-scale model adds the tilt average
   but still leaves out the out-of-plane polarisation rotation (a smaller correction, noted as future work).
 - **Numerical two-scale quadrature.** The large-scale slope average uses a fixed 15 by 15 grid over

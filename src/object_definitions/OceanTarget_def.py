@@ -3,13 +3,17 @@
     Per sample the model returns sigma = sigma_coherent + sigma_incoherent, each an effective
     cross-section for the simulator's bistatic radar equation.
 
-    Incoherent (rough-surface, geometric-optics over a Cox-Munk slope PDF):
+    Incoherent (rough-surface, geometric-optics over a large-scale facet-slope PDF):
     sigma_incoherent = pi * |R_pol(theta_local)|^2 * (|q| / q_z)^4 * P_slope(s_u, s_c) * A_glistening
     where:
     - q = k_hat_out - k_hat_in (scattering vector in surface frame)
     - theta_local = bistatic_angle / 2 (local incidence on the facet that mirrors Tx -> Rx)
     - (s_u, s_c) is the required facet slope in the wind-aligned frame
-    - P_slope is the Cox-Munk 2-D Gaussian slope PDF
+    - P_slope is a 2-D Gaussian over the large-scale (k < k_radar / 3) slope variances from the
+      Elfouhaily spectrum with the Cox-Munk upwind/crosswind anisotropy split: only facets longer
+      than ~3 radar wavelengths act as GO specular mirrors (ZV-2000 / Brown 1978); the shorter
+      ripples are the Bragg scatterers, so the all-scale optical Cox-Munk mss would overstate
+      the facet slopes at L band
     - |R_pol|^2 is the RHCP -> LHCP power reflectivity at the carrier frequency, from a
       Klein-Swift seawater permittivity at the configured temperature and salinity
     - A_glistening is the effective glistening-zone area at the specular peak. In scalar fallback
@@ -23,9 +27,13 @@
     forward-specular path stays unchanged. See functions.ocean_physics.bragg_backscatter_nrcs.
 
     Coherent (smooth-surface specular reflection from the mean surface):
-    sigma_coherent = 4 * pi * |R_pol|^2 * (R_t R_r / (R_t + R_r))^2 * exp(-kappa)
+    sigma_coherent = 4 * pi * |R_pol|^2 * (R_t R_r / (R_t + R_r))^2 * D^2 * exp(-kappa)
     - the flat-mirror cross-section that reproduces the two-ray coherent power
       Pr = Pt Gt Gr (lambda / (4 pi (R_t + R_r)))^2 |R|^2 through the bistatic radar equation
+    - D^2 = 1 / [(1 + 2 R_red / (a_e cos theta)) * (1 + 2 R_red cos theta / a_e)] is the
+      spherical-Earth divergence: the convex surface defocuses the specular bundle (Coddington
+      astigmatic mirror radii a_e cos(theta) in-plane, a_e / cos(theta) cross-plane;
+      flat Earth a_e -> inf gives D = 1)
     - kappa = (4 pi sigma_h cos(theta_local) / lambda)^2 is the Rayleigh roughness attenuation,
       with RMS surface height sigma_h approximated as significant wave height / 4
     - gated to specular geometry (required facet slope ~ 0); zero off-specular
@@ -49,7 +57,7 @@ import numpy as np
 from functions.ocean_physics import (
     circular_pol_reflectivities,
     cox_munk_slope_pdf,
-    cox_munk_slope_variances,
+    large_scale_slope_variances,
     seawater_permittivity,
     two_scale_backscatter_nrcs,
 )
@@ -64,8 +72,12 @@ if TYPE_CHECKING:
 # (bistatic ~ 0 deg), while any forward-specular reflection sits at bistatic = 2 * incidence (>= ~10 deg).
 # Gating below this keeps the specular path -- and its golden reference -- exactly unchanged.
 _BRAGG_MAX_BISTATIC_DEG = 5.0
-# First-order Bragg (SPM) is valid at oblique incidence; below this the quasi-specular geometric-optics
-# term owns the geometry and the SPM formula overshoots, so the Bragg contribution is suppressed.
+# Divergence protection, not calibration: first-order Bragg diverges toward nadir
+# (sigma0 ~ B / (4 sin^4 theta) as k_Bragg slides into the energetic long-wave spectrum), and the
+# two-scale tilt average leaks that divergence through mirror-ward-tilted facets (unphysical
+# +16..+29 dB at 10..17.5 deg incidence for 7 m/s at L1). Below this gate the quasi-specular GO
+# term owns the return. Do not lower the gate without first restricting the facet-local Bragg
+# wavenumber inside the tilt average (k_B(theta_local) >= k_radar / 3); see TODO.md.
 _BRAGG_MIN_INCIDENCE_DEG = 20.0
 
 
@@ -100,6 +112,7 @@ class OceanTarget(Target):
         self.sea_temperature_c = float(sea_temperature_c)
         self.salinity_psu = float(salinity_psu)
         self.inverse_wave_age = float(inverse_wave_age)
+        self._go_slope_variances_cache: dict[float, tuple[float, float]] = {}  # wavelength -> large-scale (sigma_u_sq, sigma_c_sq)
 
     @classmethod
     def from_settings(cls, settings: BistaticLinkBudgetSettings) -> OceanTarget:
@@ -112,6 +125,13 @@ class OceanTarget(Target):
             salinity_psu=settings.ocean_salinity_psu,
             inverse_wave_age=settings.ocean_inverse_wave_age,
         )
+
+    def _go_slope_variances(self, wavelength_m: float) -> tuple[float, float]:
+        """Memoized large-scale (k < k_radar / 3) slope variances for the GO facet-slope PDF."""
+        key = float(wavelength_m)
+        if key not in self._go_slope_variances_cache:
+            self._go_slope_variances_cache[key] = large_scale_slope_variances(key, self.wind_speed_m_s, self.inverse_wave_age)
+        return self._go_slope_variances_cache[key]
 
     def compute_rcs(self, geometry: BistaticGeometry, wavelength_m: float, illuminated_area_m2: np.ndarray | None = None) -> TargetRcs:
         """Per-sample ocean RCS = coherent (specular) + incoherent (diffuse) cross-sections.
@@ -184,8 +204,10 @@ class OceanTarget(Target):
         s_u = s_east * sin_w + s_north * cos_w            # slope along upwind axis
         s_c = s_east * cos_w - s_north * sin_w            # slope along crosswind axis
 
-        # Cox-Munk slope PDF
-        sigma_u_sq, sigma_c_sq = cox_munk_slope_variances(self.wind_speed_m_s)
+        # Large-scale facet-slope PDF: GO mirrors are the waves longer than ~3 radar wavelengths
+        # (two-scale division at k_radar / 3, ZV-2000 / Brown 1978), not the all-scale optical
+        # Cox-Munk mss. The 2-D Gaussian form and anisotropy split are retained.
+        sigma_u_sq, sigma_c_sq = self._go_slope_variances(wavelength_m)
         pdf = cox_munk_slope_pdf(s_u, s_c, sigma_u_sq, sigma_c_sq)
 
         # Fresnel reflectivity at the local facet incidence angle = bistatic / 2
@@ -262,7 +284,10 @@ class OceanTarget(Target):
         # by Rayleigh roughness exp(-kappa) and gated to geometries where the required facet slope is
         # zero (the macroscopic surface IS the mirror). Off-specular geometries get sigma_coh = 0.
         # sigma_coh is the flat-mirror cross-section that reproduces the two-ray coherent power
-        # Pr = Pt Gt Gr (lambda / (4 pi (R_t + R_r)))^2 |R|^2 through the bistatic radar equation.
+        # Pr = Pt Gt Gr (lambda / (4 pi (R_t + R_r)))^2 |R|^2 through the bistatic radar equation,
+        # reduced by the spherical-Earth divergence D^2: the convex surface defocuses the specular
+        # bundle (Coddington astigmatic mirror radii a_e cos(theta) in-plane, a_e / cos(theta)
+        # cross-plane; flat Earth a_e -> inf recovers D = 1).
         # The public sea-state input is significant wave height H_s. For a Gaussian sea,
         # H_s ~= 4 sigma_h, where sigma_h is the RMS height required by the Rayleigh factor.
         rms_surface_height_m = self.wave_height_m / 4.0
@@ -270,11 +295,15 @@ class OceanTarget(Target):
             4.0 * np.pi * rms_surface_height_m * np.cos(theta_local_rad) / wavelength_m
         ) ** 2                                                            # kappa = (4 pi sigma_h cos theta_local / lambda)^2
         coherent_mirror_rcs = 4.0 * np.pi * reduced_range ** 2           # 4 pi (R_t R_r / (R_t + R_r))^2
+        cos_local = np.cos(theta_local_rad)
+        curvature_ratio = 2.0 * reduced_range / Constants.R_EARTH_MEAN    # 2 R_red / a_e
+        with np.errstate(divide="ignore", invalid="ignore"):              # cos -> 0 at grazing gives D^2 -> 0 cleanly
+            divergence_factor_sq = 1.0 / ((1.0 + curvature_ratio / cos_local) * (1.0 + curvature_ratio * cos_local))  # D^2
         slope_mag_sq = s_u ** 2 + s_c ** 2
         at_specular = np.isfinite(slope_mag_sq) & (slope_mag_sq < 1.0e-6) # required facet slope ~ 0
         sigma_coherent = np.where(
             at_specular,
-            R_RL_sq * coherent_mirror_rcs * np.exp(-rayleigh_kappa),
+            R_RL_sq * coherent_mirror_rcs * divergence_factor_sq * np.exp(-rayleigh_kappa),
             0.0,
         )
 
@@ -309,6 +338,7 @@ class OceanTarget(Target):
                 ),
                 "rayleigh_roughness_kappa": np.where(valid, rayleigh_kappa, np.nan),
                 "rms_surface_height_m": np.where(valid, rms_surface_height_m, np.nan),
+                "divergence_factor_sq": np.where(valid, divergence_factor_sq, np.nan),
                 "nrcs": np.where(valid, nrcs, np.nan),
                 "nrcs_bragg_RL": np.where(valid, nrcs_bragg, np.nan),
                 "nrcs_bragg_RR": np.where(valid, nrcs_bragg_co, np.nan),

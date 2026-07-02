@@ -215,7 +215,7 @@ def elfouhaily_omnidirectional_spectrum(wavenumber_rad_m, wind_speed_m_s, invers
     Jp = gamma**Gamma                                          # JONSWAP peak enhancement Jp = gamma^Gamma
 
     # Long-wave (gravity) curvature B_low
-    alpha_p = 0.006 * omega_c**0.55                            # long-wave equilibrium parameter (Phillips-Kitaigorodskii)
+    alpha_p = 0.006 * np.sqrt(omega_c)                         # long-wave equilibrium parameter alpha_p = 6e-3 sqrt(Omega_c) (Elfouhaily eq. 34)
     Fp = np.exp(-(omega_c / np.sqrt(10.0)) * (np.sqrt(k / kp) - 1.0))  # long-wave side effect
     B_low = 0.5 * alpha_p * (cp / c_k) * Lpm * Jp * Fp         # B_l = 0.5 alpha_p (cp/c) LPM Jp Fp
 
@@ -225,7 +225,9 @@ def elfouhaily_omnidirectional_spectrum(wavenumber_rad_m, wind_speed_m_s, invers
     else:
         alpha_m = 0.01 * (1.0 + 3.0 * np.log(u_star / cm))     # strong-wind branch
     alpha_m = max(alpha_m, 0.0)                                # Elfouhaily alpha_m underflows < 0 below ~2.6 m/s; clamp (no negative spectrum)
-    Fm = np.exp(-0.25 * (k / km - 1.0) ** 2)                   # capillary side effect
+    Fm = np.exp(-0.25 * (k / km - 1.0) ** 2)                   # capillary side effect (Elfouhaily eq. 41)
+    # Deliberate deviation from eq. 40: the paper's B_h has no low-k cutoff, so the capillary branch
+    # would leak spectral density below the long-wave peak; Lpm suppresses that unphysical tail.
     B_high = 0.5 * alpha_m * (cm / c_k) * Lpm * Fm             # B_h = 0.5 alpha_m (cm/c) LPM Fm
 
     return (B_low + B_high) / k**3                             # S(k) = B(k) / k^3 [m^3]

@@ -66,3 +66,20 @@ Both modes share the same core. The processing flow is:
    allowed to use the installed table even when its predictive portion is stale, which favors
    reproducibility over a hard failure. Update ``astropy-iers-data`` (or provide current IERS data) before
    precision geolocation studies, especially for future dates.
+
+Utility scripts
+---------------
+
+``SRC/`` also carries a few standalone developer utilities that are not part of either analysis mode and
+are not covered by the module pages:
+
+- ``sanity_check.py`` -- manual smoke check that the elliptical specular solver agrees with the spherical
+  closed form to a few km at low latitude (catches regressions in the stationary-path solve or frame
+  conversions).
+- ``test_footprint_calculation.py`` -- manual footprint-debugging script (not part of the pytest suite).
+- ``compress_gif.py`` -- shrinks the animation GIFs written to ``OUTPUT/`` (resolution, palette, frame
+  skipping).
+- ``run_simulator_parallel.py`` -- a parameter-sweep harness, currently disabled (raises
+  ``NotImplementedError`` on import; its migration plan is documented at the top of the file).
+- ``constellation_gen.py`` -- dormant Walker-style orbit-set generator, only consumed by the disabled
+  sweep harness (its known defects are listed in the module header).
