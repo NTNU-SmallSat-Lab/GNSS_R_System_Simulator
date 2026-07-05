@@ -169,6 +169,30 @@ def _simulation_step_size_from_yaml() -> int:
         raise ValueError(f"Invalid simulation.step_size_s in {Constants.simulator_settings_path}: {exc}") from None
 
 
+_TLE_FIT_YAML_KEYS = ("position_weight_m", "velocity_weight_m_s")
+
+
+def tle_fit_weights_from_yaml() -> tuple[float, float]:
+    """Read the osculating->SGP4 mean-element fit residual weights (position [m], velocity [m/s]) strictly from the simulator YAML."""
+    tle_fit = load_simulator_settings().get("tle_fit")
+    if not isinstance(tle_fit, dict):
+        raise KeyError(f"Missing 'tle_fit' mapping in {Constants.simulator_settings_path}.")
+    missing = [key for key in _TLE_FIT_YAML_KEYS if key not in tle_fit]
+    if missing:
+        raise KeyError(f"Missing key(s) {missing} under 'tle_fit' in {Constants.simulator_settings_path}.")
+    try:
+        position_weight_m = float(tle_fit["position_weight_m"])
+        velocity_weight_m_s = float(tle_fit["velocity_weight_m_s"])
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid tle_fit setting in {Constants.simulator_settings_path}: {exc}") from None
+    if not (math.isfinite(position_weight_m) and position_weight_m > 0.0 and math.isfinite(velocity_weight_m_s) and velocity_weight_m_s > 0.0):
+        raise ValueError(
+            f"tle_fit weights in {Constants.simulator_settings_path} must be finite and > 0; "
+            f"got position_weight_m={position_weight_m}, velocity_weight_m_s={velocity_weight_m_s}."
+        )
+    return position_weight_m, velocity_weight_m_s
+
+
 def _validate_antenna_steering(along_extent, across_extent, yaml_ap) -> None:
     """
     User-facing steering guards named for the config keys (the generator keeps antenna-frame backstops).
@@ -281,6 +305,16 @@ def initialize(config_file_name="Configuration_area.ini"):
         )  # Path to the coverage shapefile
     except KeyError:
         raise KeyError("The 'grid_size_meters' or 'shapefile_path' key is missing in the 'COVERAGE' section of the configuration file.")  # noqa: B904
+    max_bistatic_bksc_angle_deg = None
+    if "COVERAGE" in config and "max_bistatic_bksc_angle_deg" in config["COVERAGE"]:
+        try:
+            max_bistatic_bksc_angle_deg = float(config["COVERAGE"]["max_bistatic_bksc_angle_deg"])
+        except ValueError:
+            raise ValueError(
+                f"Invalid value for 'max_bistatic_bksc_angle_deg' in [COVERAGE]: {config['COVERAGE']['max_bistatic_bksc_angle_deg']}"
+            ) from None
+        if not math.isfinite(max_bistatic_bksc_angle_deg) or not (0.0 < max_bistatic_bksc_angle_deg < 90.0):
+            raise ValueError("[COVERAGE].max_bistatic_bksc_angle_deg must be finite and in (0, 90) deg.")
 
     # The antenna-pattern folder is a fixed data path (Constants.antenna_pattern_folder), not an INI
     # knob. It is "active" (non-None) only when an antenna is configured, so configs without an antenna
@@ -493,6 +527,11 @@ def initialize(config_file_name="Configuration_area.ini"):
     reflection_type = section.get("reflection_type", "specular").strip('"').strip("'")
     if reflection_type not in {"specular", "backscatter"}:
         raise ValueError("[REFLECTION].reflection_type must be either 'specular' or 'backscatter'.")
+    if "earth_model" not in section:
+        raise ValueError("[REFLECTION].earth_model is required in the configuration file.")
+    earth_model = section["earth_model"].strip('"').strip("'")
+    if earth_model not in {"spherical", "elliptical"}:
+        raise ValueError("[REFLECTION].earth_model must be either 'spherical' or 'elliptical'.")
     if "max_central_angle_deg" not in section:
         raise ValueError("[REFLECTION].max_central_angle_deg is required in the configuration file.")
     try:
@@ -517,6 +556,14 @@ def initialize(config_file_name="Configuration_area.ini"):
             ) from None
         if not math.isfinite(max_incidence_angle_deg) or not (0.0 < max_incidence_angle_deg <= 90.0):
             raise ValueError("[REFLECTION].max_incidence_angle_deg must be finite and in (0, 90] deg.")
+
+    # Backscatter AREA COVERAGE (grid_size_meters marks an area-coverage config) additionally needs the
+    # near-backscatter acceptance half-angle that sets the swath width around the BRP track.
+    if reflection_type == "backscatter" and grid_size_m is not None and max_bistatic_bksc_angle_deg is None:
+        raise ValueError(
+            "[COVERAGE].max_bistatic_bksc_angle_deg is required for backscatter area coverage "
+            "(reflection_type = backscatter with a gridded [COVERAGE] region)."
+        )
 
     #[LINK BUDGET] (REQUIRED SECTION)
     # Receiver-system parameters. No fallback defaults; missing keys raise.
@@ -707,6 +754,7 @@ def initialize(config_file_name="Configuration_area.ini"):
         "step_size": step_size,
         "sim_duration": sim_duration,
         "reflection_type": reflection_type,
+        "earth_model": earth_model,
         "max_central_angle_deg": max_central_angle_deg,
         "max_incidence_angle_deg": max_incidence_angle_deg,
         #[ORBITS]
@@ -718,6 +766,7 @@ def initialize(config_file_name="Configuration_area.ini"):
         #[COVERAGE]
         "shapefile_path": coverage_file_path,
         "grid_size_m": grid_size_m,
+        "max_bistatic_bksc_angle_deg": max_bistatic_bksc_angle_deg,
         #[MOVING TARGET]
         "moving_target_speed": moving_tgt_speed,
         "start_coord_ll": start_coord_ll,

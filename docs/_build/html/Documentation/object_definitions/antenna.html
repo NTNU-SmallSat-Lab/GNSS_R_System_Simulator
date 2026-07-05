@@ -1,0 +1,743 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="../../">
+  <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Specular reflection" href="reflection.html"><link rel="prev" title="Satellites, constellations and orbits" href="satellites.html">
+
+    <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
+        <title>Receiver antenna and pattern generator - GNSS-R System Simulator</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d111a655" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/furo-extensions.css?v=8dab3a3b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=3b3c258e" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f2f2f2;
+  --color-code-foreground: #1e1e1e;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle site navigation sidebar">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc" aria-label="Toggle table of contents sidebar">
+<label class="overlay sidebar-overlay" for="__navigation"></label>
+<label class="overlay toc-overlay" for="__toc"></label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <span class="icon"><svg><use href="#svg-menu"></use></svg></span>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="../../index.html"><div class="brand">GNSS-R System Simulator</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="../../index.html">
+  
+  <span class="sidebar-brand-text">GNSS-R System Simulator</span>
+  
+</a><form class="sidebar-search-container" method="get" action="../../search.html" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../../running.html">Running the simulator</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../modes/index.html">The two reflection modes</a><input aria-label="Toggle navigation of The two reflection modes" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../modes/specular.html">Specular (forward-scatter) mode</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../modes/backscatter.html">Backscatter mode</a></li>
+</ul>
+</li>
+<li class="toctree-l1 current has-children"><a class="reference internal" href="../index.html">Module Documentation</a><input aria-label="Toggle navigation of Module Documentation" checked="" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
+<li class="toctree-l2 has-children"><a class="reference internal" href="../functions/index.html">Cross-cutting functions</a><input aria-label="Toggle navigation of Cross-cutting functions" class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../functions/ocean_physics.html">Ocean physics</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../functions/link_budget.html">Link budget</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../functions/delay_doppler.html">Delay-Doppler cell</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../functions/helpers.html">Cross-cutting helpers (rotations, functions, ship_physics)</a></li>
+</ul>
+</li>
+<li class="toctree-l2 current has-children"><a class="reference internal" href="index.html">Simulation objects</a><input aria-label="Toggle navigation of Simulation objects" checked="" class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="satellites.html">Satellites, constellations and orbits</a></li>
+<li class="toctree-l3 current current-page"><a class="current reference internal" href="#">Receiver antenna and pattern generator</a></li>
+<li class="toctree-l3"><a class="reference internal" href="reflection.html">Specular reflection</a></li>
+<li class="toctree-l3"><a class="reference internal" href="backscatter_point.html">Backscatter point / BRP</a></li>
+<li class="toctree-l3"><a class="reference internal" href="ocean_target.html">Ocean target</a></li>
+<li class="toctree-l3"><a class="reference internal" href="ship_target.html">Targets: base class and ship</a></li>
+<li class="toctree-l3"><a class="reference internal" href="moving_target_detection.html">Moving-target detection</a></li>
+<li class="toctree-l3"><a class="reference internal" href="coverage.html">Coverage</a></li>
+<li class="toctree-l3"><a class="reference internal" href="ship_trajectory.html">Ship trajectory</a></li>
+<li class="toctree-l3"><a class="reference internal" href="support.html">Support modules (constants, satellite data I/O, plotting)</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../configuration.html">INI configuration reference</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../../scientific_assessment.html">Scientific assessment</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../validation.html">Verification and validation status</a></li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="../../_sources/Documentation/object_definitions/antenna.rst.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="receiver-antenna-and-pattern-generator">
+<h1>Receiver antenna and pattern generator<a class="headerlink" href="#receiver-antenna-and-pattern-generator" title="Link to this heading">¶</a></h1>
+<p>Two modules model the receiver’s phased-array antenna.
+<a class="reference internal" href="#object_definitions.AntennaPatternGenerator_def.AntennaPatternGenerator" title="object_definitions.AntennaPatternGenerator_def.AntennaPatternGenerator"><code class="xref py py-class docutils literal notranslate"><span class="pre">AntennaPatternGenerator</span></code></a> computes the radiation
+pattern once and writes it to a file; <a class="reference internal" href="#object_definitions.Rx_antenna_def.RxAntenna" title="object_definitions.Rx_antenna_def.RxAntenna"><code class="xref py py-class docutils literal notranslate"><span class="pre">RxAntenna</span></code></a> loads that
+pattern and, during a run, returns the antenna gain along whatever direction the receiver is looking.</p>
+<section id="module-object_definitions.AntennaPatternGenerator_def">
+<span id="pattern-generator"></span><h2>Pattern generator<a class="headerlink" href="#module-object_definitions.AntennaPatternGenerator_def" title="Link to this heading">¶</a></h2>
+<section id="summary">
+<h3>Summary<a class="headerlink" href="#summary" title="Link to this heading">¶</a></h3>
+<p>A planar phased array forms a directive beam by the coherent superposition of the fields radiated by its
+<span class="math notranslate nohighlight">\(N_x \times N_y\)</span> elements; the geometric part of that superposition – the interference set by the
+element positions and excitation phases – is the <strong>array factor (AF)</strong>. <code class="docutils literal notranslate"><span class="pre">AntennaPatternGenerator</span></code>
+evaluates the AF over a <span class="math notranslate nohighlight">\((\theta, \phi)\)</span> grid for each carrier frequency and each commanded steering
+direction and serialises it for reuse.</p>
+<figure class="align-center" id="id2">
+<span id="fig-ant-geometry"></span><a class="reference internal image-reference" href="../../_images/antenna_geometry.png"><img alt="../../_images/antenna_geometry.png" src="../../_images/antenna_geometry.png" style="width: 620px;" />
+</a>
+<figcaption>
+<p><span class="caption-number">Fig. 7: </span><span class="caption-text">Geometry of the planar receiver array. The <span class="math notranslate nohighlight">\(N_x \times N_y\)</span> elements are spaced <span class="math notranslate nohighlight">\(d_x\)</span>
+and <span class="math notranslate nohighlight">\(d_y\)</span> in the antenna frame <span class="math notranslate nohighlight">\((x^{\mathrm{a}}, y^{\mathrm{a}})\)</span>; the beam is steered to
+a polar angle <span class="math notranslate nohighlight">\(\theta\)</span> off boresight <span class="math notranslate nohighlight">\(z^{\mathrm{a}}\)</span> and an azimuth <span class="math notranslate nohighlight">\(\phi\)</span>. Elements
+are indexed <span class="math notranslate nohighlight">\(m = 0 \ldots N_x-1\)</span> along <span class="math notranslate nohighlight">\(x^{\mathrm{a}}\)</span> and <span class="math notranslate nohighlight">\(n = 0 \ldots N_y-1\)</span> along
+<span class="math notranslate nohighlight">\(y^{\mathrm{a}}\)</span>, with the reference element <span class="math notranslate nohighlight">\((0,0)\)</span> (highlighted) at the near corner.</span><a class="headerlink" href="#id2" title="Link to this image">¶</a></p>
+</figcaption>
+</figure>
+</section>
+<section id="the-array-factor">
+<h3>The array factor<a class="headerlink" href="#the-array-factor" title="Link to this heading">¶</a></h3>
+<p>For a planar array with element spacings <span class="math notranslate nohighlight">\(d_x, d_y\)</span>, define the per-element phase steps – the phase
+increment between adjacent elements along each axis:</p>
+<div class="math-wrapper docutils container" id="equation-ant-psi">
+<div class="math notranslate nohighlight" id="equation-ant-psi">
+<span class="eqno">(38)<a class="headerlink" href="#equation-ant-psi" title="Link to this equation">¶</a></span>\[\psi_x = \underbrace{k\,d_x\,\sin\theta\,\cos\phi}_{\text{spatial phase}} + \underbrace{\beta_x}_{\text{steering phase}}, \qquad
+\psi_y = \underbrace{k\,d_y\,\sin\theta\,\sin\phi}_{\text{spatial phase}} + \underbrace{\beta_y}_{\text{steering phase}}.\]</div>
+</div>
+<p>Here <span class="math notranslate nohighlight">\(k = 2\pi/\lambda\)</span> is the wavenumber (<span class="math notranslate nohighlight">\(\lambda\)</span> the wavelength), <span class="math notranslate nohighlight">\(\theta\)</span> the polar
+angle off boresight <span class="math notranslate nohighlight">\(z^{\mathrm{a}}\)</span>, and <span class="math notranslate nohighlight">\(\phi\)</span> the azimuth around it. Each step is the sum of
+two contributions:</p>
+<ul class="simple">
+<li><p>the <strong>spatial (geometric) phase</strong> <span class="math notranslate nohighlight">\(k\,d\,\sin\theta\,\cos\phi\)</span> (and <span class="math notranslate nohighlight">\(\sin\phi\)</span> for the
+<span class="math notranslate nohighlight">\(y\)</span> axis) – the path-length phase difference between adjacent elements for a plane wave in direction
+<span class="math notranslate nohighlight">\((\theta, \phi)\)</span>, fixed by the array geometry; and</p></li>
+<li><p>the <strong>steering phase</strong> <span class="math notranslate nohighlight">\(\beta_x, \beta_y\)</span> – the progressive phase applied electronically to point
+the beam, set in the <a class="reference internal" href="#ant-steering"><span class="std std-ref">Steering</span></a> section (<a class="reference internal" href="#equation-ant-beta">(40)</a>).</p></li>
+</ul>
+<p>The array factor is the product of the two per-axis sums over all elements, where <span class="math notranslate nohighlight">\(m = 0 \ldots N_x-1\)</span>
+and <span class="math notranslate nohighlight">\(n = 0 \ldots N_y-1\)</span> index the elements along <span class="math notranslate nohighlight">\(x^{\mathrm{a}}\)</span> and <span class="math notranslate nohighlight">\(y^{\mathrm{a}}\)</span> and
+<span class="math notranslate nohighlight">\(N_x, N_y\)</span> are the number of elements per axis,</p>
+<div class="math-wrapper docutils container" id="equation-ant-af">
+<div class="math notranslate nohighlight" id="equation-ant-af">
+<span class="eqno">(39)<a class="headerlink" href="#equation-ant-af" title="Link to this equation">¶</a></span>\[\mathrm{AF}(\theta,\phi) = \left(\sum_{m=0}^{N_x-1} e^{j m \psi_x}\right)
+\left(\sum_{n=0}^{N_y-1} e^{j n \psi_y}\right),\]</div>
+</div>
+<p>In the beam direction the element contributions are co-phased and the AF attains its maximum
+<span class="math notranslate nohighlight">\(|\mathrm{AF}|_{\max} = N_x N_y\)</span>, the <strong>coherent array-combining factor</strong> (the broadside field
+relative to a single element). This maximum is governed by the element count alone: the spacing
+<span class="math notranslate nohighlight">\(d_x, d_y\)</span> sets the beamwidth and the grating-lobe geometry, not the peak amplitude. It is a <em>relative</em>
+field maximum, not a directivity – the absolute scale enters only through the radiated-power normalisation
+of <a class="reference internal" href="#ant-gain"><span class="std std-ref">Absolute gain and scan loss</span></a>.</p>
+<p>The elements are <strong>uniformly excited</strong> (unit amplitude, no aperture taper), which gives the narrowest main
+beam for a given aperture but bounds the side-lobe suppression. With uniform excitation the first side-lobe
+level depends on the array size – higher (less suppressed) for small arrays – and decreases toward an
+asymptotic floor of <span class="math notranslate nohighlight">\(\approx -13.3\)</span> dB as the array grows large (the limit of a uniformly illuminated
+continuous aperture).
+Adding elements narrows the beam but cannot drive the first side lobe below this floor;
+lowering it requires an amplitude taper, which is not modelled in this antenna model. <a class="reference internal" href="#fig-ant-pattern"><span class="std std-numref">Fig. 8</span></a>
+shows a representative principal-plane cut for one array configuration. The stored quantity is the <em>relative</em>
+power pattern <span class="math notranslate nohighlight">\(20\log_{10}|\mathrm{AF}|\)</span>, normalised so its peak is 0 dB; the absolute gain in dBi is
+recovered later from the directivity (<a class="reference internal" href="#ant-gain"><span class="std std-ref">Absolute gain and scan loss</span></a>).</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The sums in <a class="reference internal" href="#equation-ant-af">(39)</a> are <strong>0-based</strong> (<span class="math notranslate nohighlight">\(m = 0 \ldots N_x-1\)</span>, <span class="math notranslate nohighlight">\(n = 0 \ldots N_y-1\)</span>), matching
+the implementation where <code class="docutils literal notranslate"><span class="pre">numpy.arange</span></code> enumerates the elements (<a class="reference internal" href="#fig-ant-geometry"><span class="std std-numref">Fig. 7</span></a>).
+This is identical to the <strong>1-based</strong> convention with exponent <span class="math notranslate nohighlight">\(e^{j(m-1)\psi_x}\)</span> used in much of the
+antenna literature (e.g. Balanis): both place the corner element at the phase reference, so the element
+phases <span class="math notranslate nohighlight">\(\{0, \psi, 2\psi, \ldots, (N_x-1)\psi\}\)</span> – and hence the array factor – are the same. Only
+the index label shifts; substituting <span class="math notranslate nohighlight">\(m' = m-1\)</span> maps one form onto the other.</p>
+</div>
+<figure class="align-center" id="id3">
+<span id="fig-ant-pattern"></span><a class="reference internal image-reference" href="../../_images/antenna_pattern.png"><img alt="../../_images/antenna_pattern.png" src="../../_images/antenna_pattern.png" style="width: 760px;" />
+</a>
+<figcaption>
+<p><span class="caption-number">Fig. 8: </span><span class="caption-text">Example principal-plane (<span class="math notranslate nohighlight">\(\phi = 0\)</span>) array-factor cut, normalised to a 0 dB peak, for a boresight
+beam and a beam steered to <span class="math notranslate nohighlight">\(30^\circ\)</span>; steering the progressive phase only slides the main lobe
+along the axis. Generated by <code class="docutils literal notranslate"><span class="pre">ARCHITECTURE/make_antenna_pattern.py</span></code> from the simulator’s own
+<code class="docutils literal notranslate"><span class="pre">ArrayFactor</span></code> for an illustrative <span class="math notranslate nohighlight">\(8 \times 8\)</span> half-wavelength array at the L1 carrier (the
+side-lobe level shown is specific to this array size).</span><a class="headerlink" href="#id3" title="Link to this image">¶</a></p>
+</figcaption>
+</figure>
+</section>
+<section id="steering">
+<span id="ant-steering"></span><h3>Steering<a class="headerlink" href="#steering" title="Link to this heading">¶</a></h3>
+<p>The beam is pointed by the progressive inter-element phases <span class="math notranslate nohighlight">\(\beta_x, \beta_y\)</span>: a linear phase ramp
+across the aperture tilts the in-phase direction off boresight. The steering angles are named after their
+<strong>rotation axis</strong>: the elevation tilt <span class="math notranslate nohighlight">\(\alpha_y\)</span> rotates the beam about the <span class="math notranslate nohighlight">\(y\)</span>-axis (the peak
+moves along <span class="math notranslate nohighlight">\(x^{\mathrm{a}}\)</span>, the flight direction) and the azimuth tilt <span class="math notranslate nohighlight">\(\alpha_x\)</span> about the
+<span class="math notranslate nohighlight">\(x\)</span>-axis (peak along <span class="math notranslate nohighlight">\(y^{\mathrm{a}}\)</span>), so the phases are set to</p>
+<div class="math-wrapper docutils container" id="equation-ant-beta">
+<div class="math notranslate nohighlight" id="equation-ant-beta">
+<span class="eqno">(40)<a class="headerlink" href="#equation-ant-beta" title="Link to this equation">¶</a></span>\[\beta_x = -k\,d_x\,\sin\left(\alpha_y\right), \qquad
+\beta_y = -k\,d_y\,\sin\left(\alpha_x\right),\]</div>
+</div>
+<p>which cancels the spatial phase term in <a class="reference internal" href="#equation-ant-psi">(38)</a> along the commanded direction so every element adds in
+phase there. Using this two-plane (sine-space) steering, the beam points along the <strong>unit vector</strong> <span class="math notranslate nohighlight">\(\hat{d}\)</span>, whose
+Cartesian components in the antenna frame <span class="math notranslate nohighlight">\((x^{\mathrm{a}}, y^{\mathrm{a}}, z^{\mathrm{a}})\)</span> are</p>
+<div class="math-wrapper docutils container" id="equation-ant-steer">
+<div class="math notranslate nohighlight" id="equation-ant-steer">
+<span class="eqno">(41)<a class="headerlink" href="#equation-ant-steer" title="Link to this equation">¶</a></span>\[\begin{split}\hat{d}
+= \begin{pmatrix} d_{x^{\mathrm{a}}} \\ d_{y^{\mathrm{a}}} \\ d_{z^{\mathrm{a}}} \end{pmatrix}
+= \begin{pmatrix}
+    \sin\alpha_y \\[2pt]
+    \sin\alpha_x \\[2pt]
+    \sqrt{1 - \sin^2\alpha_x - \sin^2\alpha_y}
+  \end{pmatrix}.\end{split}\]</div>
+</div>
+<p>Equivalently <span class="math notranslate nohighlight">\(\hat{d} = \sin\alpha_y\,\hat{x}^{\mathrm{a}} + \sin\alpha_x\,\hat{y}^{\mathrm{a}}
++ \sqrt{1-\sin^2\alpha_x-\sin^2\alpha_y}\;\hat{z}^{\mathrm{a}}\)</span>. The <span class="math notranslate nohighlight">\(x\)</span> and <span class="math notranslate nohighlight">\(y\)</span>
+components are the steering direction cosines (a rotation about <span class="math notranslate nohighlight">\(y\)</span> moves the beam along
+<span class="math notranslate nohighlight">\(x^{\mathrm{a}}\)</span> and vice versa); the boresight (<span class="math notranslate nohighlight">\(z\)</span>) component is fixed by the
+unit-length condition <span class="math notranslate nohighlight">\(|\hat{d}| = 1\)</span>. For that component to be real the steering angles must satisfy
+<span class="math notranslate nohighlight">\(\sin^2\left(\alpha_x\right) + \sin^2\left(\alpha_y\right) \le 1\)</span> or the
+beam would point below the horizon; each per-axis extent must additionally stay strictly inside
+<span class="math notranslate nohighlight">\((-90^\circ, 90^\circ)\)</span>. The loader rejects sweeps that break either bound.
+<a class="reference internal" href="#fig-ant-steering"><span class="std std-numref">Fig. 9</span></a> shows these two angles. Half-wavelength element
+spacing (<span class="math notranslate nohighlight">\(d \le \lambda/2\)</span>) keeps grating lobes out of the visible region across the steering range.</p>
+<figure class="align-center" id="id4">
+<span id="fig-ant-steering"></span><a class="reference internal image-reference" href="../../_images/steering_geometry.png"><img alt="../../_images/steering_geometry.png" src="../../_images/steering_geometry.png" style="width: 600px;" />
+</a>
+<figcaption>
+<p><span class="caption-number">Fig. 9: </span><span class="caption-text">Two-plane steering angles, subscript-named after the rotation axis. In each principal plane the
+steering angle is measured directly from boresight
+<span class="math notranslate nohighlight">\(z^{\mathrm{a}}\)</span> – <em>(a)</em> the <strong>elevation</strong> tilt <span class="math notranslate nohighlight">\(\alpha_y\)</span> in the <span class="math notranslate nohighlight">\(x\)</span>-<span class="math notranslate nohighlight">\(z\)</span> plane
+(rotation about <span class="math notranslate nohighlight">\(y\)</span>; the peak moves along <span class="math notranslate nohighlight">\(x^{\mathrm{a}}\)</span>, the flight direction) and <em>(b)</em>
+the <strong>azimuth</strong> tilt <span class="math notranslate nohighlight">\(\alpha_x\)</span> in the <span class="math notranslate nohighlight">\(y\)</span>-<span class="math notranslate nohighlight">\(z\)</span> plane (rotation about <span class="math notranslate nohighlight">\(x\)</span>) – so
+that <span class="math notranslate nohighlight">\(\sin\alpha_y\)</span> and <span class="math notranslate nohighlight">\(\sin\alpha_x\)</span> are the <span class="math notranslate nohighlight">\(x\)</span> and <span class="math notranslate nohighlight">\(y\)</span>
+direction cosines of the beam (<a class="reference internal" href="#equation-ant-steer">(41)</a>). A general command applies both at once; the combined
+angle off boresight is the polar angle <span class="math notranslate nohighlight">\(\theta\)</span> of <a class="reference internal" href="#fig-ant-geometry"><span class="std std-numref">Fig. 7</span></a>, with
+<span class="math notranslate nohighlight">\(\sin\alpha_y = \sin\theta\cos\phi\)</span> and <span class="math notranslate nohighlight">\(\sin\alpha_x = \sin\theta\sin\phi\)</span>.</span><a class="headerlink" href="#id4" title="Link to this image">¶</a></p>
+</figcaption>
+</figure>
+</section>
+<section id="pattern-storage-and-caching">
+<h3>Pattern storage and caching<a class="headerlink" href="#pattern-storage-and-caching" title="Link to this heading">¶</a></h3>
+<p>Evaluating the AF over the full <span class="math notranslate nohighlight">\((\theta, \phi)\)</span> grid for every steering command and carrier frequency
+is the costly step, so the generator computes each pattern <strong>once</strong> and serialises it to JSON rather than
+recomputing it on every run. One file is written per <em>(steering across-track, steering along-track, carrier
+frequency)</em> triple, named <code class="docutils literal notranslate"><span class="pre">array_factor_&lt;f&gt;MHz_&lt;across&gt;across_&lt;along&gt;along.json</span></code>; it stores the normalised pattern
+<span class="math notranslate nohighlight">\(20\log_{10}|\mathrm{AF}_n|\)</span> sampled on the <span class="math notranslate nohighlight">\(\theta \in [0^\circ, 180^\circ]\)</span>,
+<span class="math notranslate nohighlight">\(\phi \in [0^\circ, 360^\circ)\)</span> grid (<code class="docutils literal notranslate"><span class="pre">theta_resolution</span></code> <span class="math notranslate nohighlight">\(\times\)</span> <code class="docutils literal notranslate"><span class="pre">phi_resolution</span></code> samples)
+together with its steering and frequency metadata. The steering grid is swept per axis from the
+<code class="docutils literal notranslate"><span class="pre">along_track_steering</span></code> / <code class="docutils literal notranslate"><span class="pre">across_track_steering</span></code> extent (<code class="docutils literal notranslate"><span class="pre">[min,</span> <span class="pre">max]</span></code> in the INI) and the per-axis step counts
+<code class="docutils literal notranslate"><span class="pre">along_track_steering_steps</span></code> / <code class="docutils literal notranslate"><span class="pre">across_track_steering_steps</span></code> (in <code class="docutils literal notranslate"><span class="pre">simulator_settings.yaml</span></code>). Each sweep must
+include boresight <span class="math notranslate nohighlight">\((0^\circ, 0^\circ)\)</span> – for the symmetric extents that means an <strong>odd</strong> step count, and an
+even count is rejected at load time rather than silently adjusted. A separate set is produced per band, since the electrical spacing
+<span class="math notranslate nohighlight">\(k d = 2\pi d / \lambda\)</span> – and therefore the pattern – depends on the carrier frequency.</p>
+<p>Regeneration is gated by a signature file (<code class="docutils literal notranslate"><span class="pre">antenna_pattern_metadata.json</span></code>) recording every
+pattern-affecting parameter: element counts, spacings, frequency list, steering sweeps, angular resolutions,
+and a generator format version. On start-up the patterns are regenerated only if the signature has changed
+or files are missing; otherwise the cached JSONs are reused unchanged. <code class="docutils literal notranslate"><span class="pre">RxAntenna</span></code> loads this set and
+interpolates over it at run time (<a class="reference internal" href="#ant-gain"><span class="std std-ref">Absolute gain and scan loss</span></a>).</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="object_definitions.AntennaPatternGenerator_def.AntennaPatternGenerator">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">object_definitions.AntennaPatternGenerator_def.</span></span><span class="sig-name descname"><span class="pre">AntennaPatternGenerator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">elements_along_x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">elements_along_y</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">d_x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">d_y</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">freqs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">across_track_steering</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">along_track_steering</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">output_folder</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">theta_resolution</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">180</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">phi_resolution</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">360</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/object_definitions/AntennaPatternGenerator_def.html#AntennaPatternGenerator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#object_definitions.AntennaPatternGenerator_def.AntennaPatternGenerator" title="Link to this definition">¶</a></dt>
+<dd><p>Generate (or reuse cached) phased-array radiation-pattern files for the receiver antenna.</p>
+<p>Uses two-plane (sine-space) steering: along-track tilts the beam about the array y-axis (peak moves along
+x^a, the flight direction) and across-track about the x-axis (peak moves along y^a), so the beam direction is
+<code class="docutils literal notranslate"><span class="pre">(sin</span> <span class="pre">along,</span> <span class="pre">sin</span> <span class="pre">across,</span> <span class="pre">sqrt(1</span> <span class="pre">-</span> <span class="pre">sin^2</span> <span class="pre">across</span> <span class="pre">-</span> <span class="pre">sin^2</span> <span class="pre">along))</span></code> and the steering rectangle must stay inside the
+unit disk (<code class="docutils literal notranslate"><span class="pre">sin^2</span> <span class="pre">across</span> <span class="pre">+</span> <span class="pre">sin^2</span> <span class="pre">along</span> <span class="pre">&lt;=</span> <span class="pre">1</span></code>).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>elements_along_x</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of array elements per axis.</p></li>
+<li><p><strong>elements_along_y</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of array elements per axis.</p></li>
+<li><p><strong>d_x</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Element spacing per axis [m].</p></li>
+<li><p><strong>d_y</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Element spacing per axis [m].</p></li>
+<li><p><strong>freqs</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a><em> of </em><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Frequencies to simulate [MHz].</p></li>
+<li><p><strong>across_track_steering</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a>) – <code class="docutils literal notranslate"><span class="pre">[start_deg,</span> <span class="pre">end_deg,</span> <span class="pre">n_steps]</span></code> beam-tilt sweep: across-track tilts the peak along y^a (rotation about
+the x-axis), along-track along x^a (rotation about the y-axis).</p></li>
+<li><p><strong>along_track_steering</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a>) – <code class="docutils literal notranslate"><span class="pre">[start_deg,</span> <span class="pre">end_deg,</span> <span class="pre">n_steps]</span></code> beam-tilt sweep: across-track tilts the peak along y^a (rotation about
+the x-axis), along-track along x^a (rotation about the y-axis).</p></li>
+<li><p><strong>output_folder</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Where to write the generated pattern files.</p></li>
+<li><p><strong>theta_resolution</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em>, </em><em>optional</em>) – Polar-angle samples over 0..180 deg off boresight (default 180).</p></li>
+<li><p><strong>phi_resolution</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em>, </em><em>optional</em>) – Azimuth samples over 0..360 deg around boresight (default 360).</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="object_definitions.AntennaPatternGenerator_def.ArrayFactor">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">object_definitions.AntennaPatternGenerator_def.</span></span><span class="sig-name descname"><span class="pre">ArrayFactor</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">elements_along_x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">elements_along_y</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">freq_hz</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">d_x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">d_y</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_y</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/object_definitions/AntennaPatternGenerator_def.html#ArrayFactor"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#object_definitions.AntennaPatternGenerator_def.ArrayFactor" title="Link to this definition">¶</a></dt>
+<dd><dl class="py method">
+<dt class="sig sig-object py" id="object_definitions.AntennaPatternGenerator_def.ArrayFactor.calculate_array_factor">
+<span class="sig-name descname"><span class="pre">calculate_array_factor</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">phi</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/object_definitions/AntennaPatternGenerator_def.html#ArrayFactor.calculate_array_factor"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#object_definitions.AntennaPatternGenerator_def.ArrayFactor.calculate_array_factor" title="Link to this definition">¶</a></dt>
+<dd><p>Compute the (theta x phi) array factor pattern in dB, normalized to a 0 dB peak.</p>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+</section>
+<section id="module-object_definitions.Rx_antenna_def">
+<span id="receiver-antenna"></span><h2>Receiver antenna<a class="headerlink" href="#module-object_definitions.Rx_antenna_def" title="Link to this heading">¶</a></h2>
+<section id="id1">
+<h3>Summary<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">RxAntenna</span></code> is the run-time antenna. It loads the generated patterns and, given a look direction in the
+antenna frame, returns the gain there. The receiver auto-steers to each reflection, so the gain it reports
+is the steered-beam value used in the link budget. It also owns the <strong>footprint</strong> – the ground area inside
+a chosen gain contour (<code class="docutils literal notranslate"><span class="pre">footprint_dB</span></code>, e.g. -1 dB) – which sets the illuminated area for distributed
+targets.</p>
+<div class="table-wrapper colwidths-given docutils container" id="id5">
+<table class="docutils align-default" id="id5">
+<caption><span class="caption-number">Table 11: </span><span class="caption-text">Key public methods</span><a class="headerlink" href="#id5" title="Link to this table">¶</a></caption>
+<colgroup>
+<col style="width: 44.0%" />
+<col style="width: 56.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Method</p></th>
+<th class="head"><p>What it does</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">get_gain_dbi_for_direction(direction,</span> <span class="pre">frequency_mhz,</span> <span class="pre">...)</span></code></p></td>
+<td><p>Gain [dBi] along a look direction (optionally at a given steering).</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">resolve_steering_angles_for_direction(direction)</span></code></p></td>
+<td><p>The azimuth/elevation steering that points the beam at a direction (or <code class="docutils literal notranslate"><span class="pre">None</span></code> if unreachable).</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="absolute-gain-and-scan-loss">
+<span id="ant-gain"></span><h3>Absolute gain and scan loss<a class="headerlink" href="#absolute-gain-and-scan-loss" title="Link to this heading">¶</a></h3>
+<p>The link budget needs an absolute gain in dBi, not the 0 dB-normalised pattern. <code class="docutils literal notranslate"><span class="pre">RxAntenna</span></code> recovers it
+from the <strong>directivity</strong> of the steered beam, obtained by integrating the normalised power pattern over the
+<strong>front hemisphere</strong> (<span class="math notranslate nohighlight">\(\theta \le 90^\circ\)</span>),</p>
+<div class="math-wrapper docutils container" id="equation-ant-directivity">
+<div class="math notranslate nohighlight" id="equation-ant-directivity">
+<span class="eqno">(42)<a class="headerlink" href="#equation-ant-directivity" title="Link to this equation">¶</a></span>\[D = \frac{4\pi}{\displaystyle\int_0^{2\pi}\!\!\int_0^{\pi/2}
+\left|\mathrm{AF}_n(\theta,\phi)\right|^2\, \sin\theta\;d\theta\,d\phi},\]</div>
+</div>
+<p>with <span class="math notranslate nohighlight">\(\mathrm{AF}_n = \mathrm{AF}/|\mathrm{AF}|_{\max}\)</span> the array factor normalised to unit peak. The
+front-hemisphere domain is the shielded-panel assumption: the array is mounted on the Earth-facing
+spacecraft face over a ground plane, so the rear half-space is shielded and the isotropic-element array
+factor’s mirror back lobe (<span class="math notranslate nohighlight">\(|\mathrm{AF}|\)</span> depends on <span class="math notranslate nohighlight">\(\theta\)</span> only through
+<span class="math notranslate nohighlight">\(\sin\theta\)</span>) carries no physical power. For the
+uniform excitation used here <span class="math notranslate nohighlight">\(|\mathrm{AF}|_{\max} = N_x N_y\)</span> (<a class="reference internal" href="#equation-ant-af">(39)</a>), so
+<span class="math notranslate nohighlight">\(\mathrm{AF}_n = \mathrm{AF}/(N_x N_y)\)</span> and equivalently
+<span class="math notranslate nohighlight">\(D = 4\pi\,(N_x N_y)^2 / \int_\mathrm{front} |\mathrm{AF}|^2\, d\Omega\)</span>. The gain along a look direction
+<span class="math notranslate nohighlight">\(\hat{r}\)</span> is then the directivity of the commanded beam plus the relative pattern there,</p>
+<div class="math-wrapper docutils container" id="equation-ant-gain-eq">
+<div class="math notranslate nohighlight" id="equation-ant-gain-eq">
+<span class="eqno">(43)<a class="headerlink" href="#equation-ant-gain-eq" title="Link to this equation">¶</a></span>\[G(\hat{r})\;[\mathrm{dBi}] = D(\alpha_x, \alpha_y)\;[\mathrm{dBi}]
++ 20\log_{10}\left|\mathrm{AF}_n(\hat{r})\right|.\]</div>
+</div>
+<p>Because <span class="math notranslate nohighlight">\(D\)</span> is evaluated from the <em>steered array factor</em>, its idealised scan dependence is captured:
+tilting the beam changes the solid-angle integral and normally lowers peak directivity. Element-pattern
+scan loss, impedance mismatch, mutual coupling, finite ground plane and radome effects are not included.
+In practice the gain is bilinearly interpolated, in linear power, across the four stored steering patterns
+bracketing the commanded direction.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><strong>Spacing dependence of the directivity.</strong> The combining factor <span class="math notranslate nohighlight">\(|\mathrm{AF}|_{\max} = N_x N_y\)</span>
+(<a class="reference internal" href="#equation-ant-af">(39)</a>) is fixed by the element count and is independent of <span class="math notranslate nohighlight">\(d_x, d_y\)</span>. The directivity is
+not that maximum but the peak-to-mean of the power pattern,
+<span class="math notranslate nohighlight">\(D = 4\pi\,|\mathrm{AF}|_{\max}^2 / \oint|\mathrm{AF}|^2\,d\Omega\)</span> (equivalently <a class="reference internal" href="#equation-ant-directivity">(42)</a>),
+in which the spacing enters only through the denominator – the radiated power, i.e. the pattern shape.
+For a one-sided uniformly illuminated aperture, the standard reference approximation is</p>
+<div class="math-wrapper docutils container" id="equation-ant-aperture">
+<div class="math notranslate nohighlight" id="equation-ant-aperture">
+<span class="eqno">(44)<a class="headerlink" href="#equation-ant-aperture" title="Link to this equation">¶</a></span>\[D \approx \frac{4\pi}{\Omega_A} \approx \frac{4\pi\,A_\mathrm{ap}}{\lambda^2},
+\qquad A_\mathrm{ap} = (N_x d_x)(N_y d_y),\]</div>
+</div>
+<p>so broadside directivity tracks aperture area until grating lobes appear. The isotropic-element
+array factor is mirror-symmetric in <span class="math notranslate nohighlight">\(\sin\theta\)</span>, so over the full sphere it would radiate an
+equal rear lobe; the front-hemisphere normalisation of <a class="reference internal" href="#equation-ant-directivity">(42)</a> is the shielded-panel
+(ground-plane) assumption that removes that fictitious lobe from the power budget. With it, the
+computed broadside directivity sits just below the aperture bound – e.g. 14.9 dBi against the
+15.8 dBi bound for the configured <span class="math notranslate nohighlight">\(3 \times 4\)</span> half-wavelength array, the residual being the
+discrete array-factor taper – and runtime geometry additionally rejects rear-hemisphere looks.</p>
+</div>
+<dl class="py class">
+<dt class="sig sig-object py" id="object_definitions.Rx_antenna_def.RxAntenna">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">object_definitions.Rx_antenna_def.</span></span><span class="sig-name descname"><span class="pre">RxAntenna</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">settings</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/object_definitions/Rx_antenna_def.html#RxAntenna"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#object_definitions.Rx_antenna_def.RxAntenna" title="Link to this definition">¶</a></dt>
+<dd><p>Receiver antenna: holds the phased-array patterns and returns gain along a look direction.</p>
+<p>Built from the <code class="docutils literal notranslate"><span class="pre">[ANTENNA]</span></code> settings. It loads the generated radiation-pattern files, steers the beam
+analytically toward a requested direction, and reports the gain there (in dBi). It also owns the
+footprint contour used to project the beam onto the ground.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>settings</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a>) – Antenna configuration with keys: <code class="docutils literal notranslate"><span class="pre">antenna_pattern_files</span></code> (<code class="docutils literal notranslate"><span class="pre">{(across_track,</span> <span class="pre">along_track,</span>
+<span class="pre">frequency_mhz)</span> <span class="pre">-&gt;</span> <span class="pre">json</span> <span class="pre">path}</span></code>), <code class="docutils literal notranslate"><span class="pre">polarizations</span></code> (e.g. <code class="docutils literal notranslate"><span class="pre">[&quot;LHCP&quot;,</span> <span class="pre">&quot;RHCP&quot;]</span></code>), <code class="docutils literal notranslate"><span class="pre">bands</span></code>
+(e.g. <code class="docutils literal notranslate"><span class="pre">[&quot;L1&quot;,</span> <span class="pre">&quot;L5&quot;]</span></code>), and <code class="docutils literal notranslate"><span class="pre">footprint_dB</span></code> (the footprint contour level, below 0 dB).</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>The per-axis maximum steering angles are derived from the generated steering grid (the largest
+<code class="docutils literal notranslate"><span class="pre">|across_track|</span></code> and <code class="docutils literal notranslate"><span class="pre">|along_track|</span></code>), not set directly.</p>
+</dd></dl>
+
+</section>
+</section>
+<section id="module-assumptions-and-limitations">
+<h2>Module Assumptions and Limitations<a class="headerlink" href="#module-assumptions-and-limitations" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><strong>Ideal isotropic elements over an ideal ground plane.</strong> The pattern is the array factor only. The rear
+hemisphere is treated as shielded by the Earth-facing spacecraft panel: rear-lobe power is excluded
+from the directivity normalisation and rear look directions are rejected at runtime. A real element
+pattern (with its own off-axis roll-off), radiation efficiency, mismatch, mutual coupling, finite
+ground plane and radome are absent; absolute gain therefore remains an idealised value.</p></li>
+<li><p><strong>Sine-space steering limit.</strong> Steering is bounded by <code class="docutils literal notranslate"><span class="pre">sin^2(az)</span> <span class="pre">+</span> <span class="pre">sin^2(el)</span> <span class="pre">&lt;=</span> <span class="pre">1</span></code>; sweeps beyond that
+are rejected.</p></li>
+<li><p><strong>Patterns are generated, then cached.</strong> <code class="docutils literal notranslate"><span class="pre">RxAntenna</span></code> consumes whatever files the generator wrote; a
+changed array geometry needs the patterns regenerated.</p></li>
+<li><p><strong>Pattern peak normalised to 0 dB.</strong> The footprint contour must be below 0 dB.</p></li>
+<li><p><strong>Geographic footprint polygons.</strong> Ray/surface intersections are converted directly to longitude and
+latitude before building a Shapely polygon. Footprints crossing the antimeridian are not unwrapped and
+can be represented incorrectly.</p></li>
+</ul>
+</section>
+<section id="validation-and-tests">
+<h2>Validation and Tests<a class="headerlink" href="#validation-and-tests" title="Link to this heading">¶</a></h2>
+<div class="table-wrapper colwidths-given docutils container">
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 44.0%" />
+<col style="width: 56.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Test module</p></th>
+<th class="head"><p>What it pins</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">tests/test_antenna_gain_golden.py</span></code></p></td>
+<td><p>Golden-file regression of the gain pipeline (reference in <code class="docutils literal notranslate"><span class="pre">tests/golden/reference_gains.npz</span></code>;
+regenerate via <code class="docutils literal notranslate"><span class="pre">tests/golden/regenerate_gains.py</span></code>), plus steering-axis convention and invalid
+generator-input checks, and closed-form front-hemisphere directivity anchors (a uniform pattern
+gives <span class="math notranslate nohighlight">\(D = 2\)</span>, a <span class="math notranslate nohighlight">\(\cos^2\theta\)</span> pattern <span class="math notranslate nohighlight">\(D = 6\)</span>;
+<code class="docutils literal notranslate"><span class="pre">test_directivity_integrates_front_hemisphere_only</span></code>). A golden file detects code changes; it is
+not chamber calibration.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">tests/antenna_fixture.py</span></code></p></td>
+<td><p>Shared lightweight antenna fixture used across the suite.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="user-guide">
+<h2>User Guide<a class="headerlink" href="#user-guide" title="Link to this heading">¶</a></h2>
+<p>The array is configured in two INI sections plus the simulator YAML:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">[ANTENNA</span> <span class="pre">PATTERN]</span></code> – the array geometry that drives the generator: <code class="docutils literal notranslate"><span class="pre">elements_along_x</span></code> /
+<code class="docutils literal notranslate"><span class="pre">elements_along_y</span></code>, <code class="docutils literal notranslate"><span class="pre">d_x</span></code> / <code class="docutils literal notranslate"><span class="pre">d_y</span></code> (element spacing; commonly about half a wavelength to avoid grating lobes),
+and the <code class="docutils literal notranslate"><span class="pre">along_track_steering</span></code> / <code class="docutils literal notranslate"><span class="pre">across_track_steering</span></code> extent (<code class="docutils literal notranslate"><span class="pre">[min,</span> <span class="pre">max]</span></code>; along-track = flight
+direction / antenna elevation, across-track = antenna azimuth).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">[ANTENNA]</span></code> – what the receiver uses: <code class="docutils literal notranslate"><span class="pre">bands</span></code> and <code class="docutils literal notranslate"><span class="pre">footprint_db</span></code> (the footprint contour level).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">simulator_settings.yaml</span></code> (<code class="docutils literal notranslate"><span class="pre">antenna_pattern</span></code> block) – the engine/numerical settings: the pattern
+angular resolution <code class="docutils literal notranslate"><span class="pre">theta_resolution</span></code> / <code class="docutils literal notranslate"><span class="pre">phi_resolution</span></code> and the steering step counts
+<code class="docutils literal notranslate"><span class="pre">along_track_steering_steps</span></code> / <code class="docutils literal notranslate"><span class="pre">across_track_steering_steps</span></code>.</p></li>
+</ul>
+<p>When <code class="docutils literal notranslate"><span class="pre">[ANTENNA</span> <span class="pre">PATTERN]</span></code> is present the patterns are (re)generated before the run; otherwise the cached
+files are reused.</p>
+</section>
+<section id="references">
+<h2>References<a class="headerlink" href="#references" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Balanis, C. A., <em>Antenna Theory: Analysis and Design</em>, 4th ed., Wiley, 2016 (array factor, planar arrays).</p></li>
+<li><p>Mailloux, R. J., <em>Phased Array Antenna Handbook</em>, 3rd ed., Artech House, 2017.</p></li>
+</ul>
+</section>
+</section>
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="reflection.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">Specular reflection</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="satellites.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">Satellites, constellations and orbits</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2026, Oliver Hasler, Corrado Chiatante
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">Receiver antenna and pattern generator</a><ul>
+<li><a class="reference internal" href="#module-object_definitions.AntennaPatternGenerator_def">Pattern generator</a><ul>
+<li><a class="reference internal" href="#summary">Summary</a></li>
+<li><a class="reference internal" href="#the-array-factor">The array factor</a></li>
+<li><a class="reference internal" href="#steering">Steering</a></li>
+<li><a class="reference internal" href="#pattern-storage-and-caching">Pattern storage and caching</a><ul>
+<li><a class="reference internal" href="#object_definitions.AntennaPatternGenerator_def.AntennaPatternGenerator"><code class="docutils literal notranslate"><span class="pre">AntennaPatternGenerator</span></code></a></li>
+<li><a class="reference internal" href="#object_definitions.AntennaPatternGenerator_def.ArrayFactor"><code class="docutils literal notranslate"><span class="pre">ArrayFactor</span></code></a><ul>
+<li><a class="reference internal" href="#object_definitions.AntennaPatternGenerator_def.ArrayFactor.calculate_array_factor"><code class="docutils literal notranslate"><span class="pre">ArrayFactor.calculate_array_factor()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module-object_definitions.Rx_antenna_def">Receiver antenna</a><ul>
+<li><a class="reference internal" href="#id1">Summary</a></li>
+<li><a class="reference internal" href="#absolute-gain-and-scan-loss">Absolute gain and scan loss</a><ul>
+<li><a class="reference internal" href="#object_definitions.Rx_antenna_def.RxAntenna"><code class="docutils literal notranslate"><span class="pre">RxAntenna</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module-assumptions-and-limitations">Module Assumptions and Limitations</a></li>
+<li><a class="reference internal" href="#validation-and-tests">Validation and Tests</a></li>
+<li><a class="reference internal" href="#user-guide">User Guide</a></li>
+<li><a class="reference internal" href="#references">References</a></li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script src="../../_static/documentation_options.js?v=01f34227"></script>
+    <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../../_static/scripts/furo.js?v=46bd48cc"></script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
+    </body>
+</html>

@@ -50,6 +50,7 @@ MINIMAL_GNSS = dedent(
 MINIMAL_REFLECTION = dedent(
     """\
     [REFLECTION]
+    earth_model = spherical
     max_central_angle_deg = 80.0
     """
 )
@@ -411,6 +412,7 @@ class TestOptionalSections:
         reflection = dedent(
             """\
             [REFLECTION]
+            earth_model = spherical
             reflection_type = backscatter
             max_central_angle_deg = 80.0
             max_incidence_angle_deg = 45.0
@@ -425,6 +427,7 @@ class TestOptionalSections:
         reflection = dedent(
             """\
             [REFLECTION]
+            earth_model = spherical
             reflection_type = "backscatter"
             max_central_angle_deg = 80.0
             max_incidence_angle_deg = 45.0
@@ -625,10 +628,49 @@ class TestOptionalSections:
         with pytest.raises(ValueError, match=r"\[REFLECTION\] section is required"):
             initialize(path)
 
+    def test_missing_earth_model_raises(self, tmp_path):
+        # earth_model is a required [REFLECTION] key — no silent fallback to a default surface model.
+        reflection = dedent(
+            """\
+            [REFLECTION]
+            reflection_type = specular
+            max_central_angle_deg = 80.0
+            """
+        )
+        path = write_config(tmp_path, minimal_config_body(reflection_section=reflection))
+        with pytest.raises(ValueError, match="earth_model is required"):
+            initialize(path)
+
+    def test_invalid_earth_model_raises(self, tmp_path):
+        reflection = dedent(
+            """\
+            [REFLECTION]
+            earth_model = flat
+            max_central_angle_deg = 80.0
+            """
+        )
+        path = write_config(tmp_path, minimal_config_body(reflection_section=reflection))
+        with pytest.raises(ValueError, match="earth_model must be either 'spherical' or 'elliptical'"):
+            initialize(path)
+
+    @pytest.mark.parametrize("value", ["spherical", "elliptical"])
+    def test_earth_model_parsed(self, tmp_path, value):
+        reflection = dedent(
+            f"""\
+            [REFLECTION]
+            earth_model = {value}
+            max_central_angle_deg = 80.0
+            """
+        )
+        path = write_config(tmp_path, minimal_config_body(reflection_section=reflection))
+        _, settings = initialize(path)
+        assert settings["earth_model"] == value
+
     def test_missing_max_central_angle_raises(self, tmp_path):
         reflection = dedent(
             """\
             [REFLECTION]
+            earth_model = spherical
             reflection_type = specular
             """
         )
@@ -641,6 +683,7 @@ class TestOptionalSections:
         reflection = dedent(
             """\
             [REFLECTION]
+            earth_model = spherical
             reflection_type = backscatter
             max_central_angle_deg = 80.0
             """
@@ -661,6 +704,7 @@ class TestOptionalSections:
         reflection = dedent(
             """\
             [REFLECTION]
+            earth_model = spherical
             reflection_type = backscatter
             max_central_angle_deg = 70.0
             max_incidence_angle_deg = 30.0
@@ -675,6 +719,7 @@ class TestOptionalSections:
         reflection = dedent(
             """\
             [REFLECTION]
+            earth_model = spherical
             max_central_angle_deg = not_a_number
             """
         )
@@ -687,6 +732,7 @@ class TestOptionalSections:
         reflection = dedent(
             f"""\
             [REFLECTION]
+            earth_model = spherical
             max_central_angle_deg = {value}
             """
         )
@@ -698,6 +744,7 @@ class TestOptionalSections:
         reflection = dedent(
             """\
             [REFLECTION]
+            earth_model = spherical
             reflection_type = backscatter
             max_central_angle_deg = 80.0
             max_incidence_angle_deg = nope
@@ -712,6 +759,7 @@ class TestOptionalSections:
         reflection = dedent(
             f"""\
             [REFLECTION]
+            earth_model = spherical
             reflection_type = backscatter
             max_central_angle_deg = 80
             max_incidence_angle_deg = {value}
@@ -725,6 +773,7 @@ class TestOptionalSections:
         reflection = dedent(
             """\
             [REFLECTION]
+            earth_model = spherical
             reflection_type = typo
             max_central_angle_deg = 80
             """

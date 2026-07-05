@@ -185,7 +185,8 @@ BRP        "*" -- "2" Satellite : Tx + Rx
 
 ' ---- The two analysis modes orchestrate the model -----------------
 Coverage "1" o-- "1..*" SatelliteConstellation : Rx + GNSS
-Coverage "1" o-- "*"    Reflection             : per (Tx, Rx) pair
+Coverage "1" o-- "*"    Reflection             : specular mode
+Coverage "1" o-- "*"    BRP                    : backscatter mode
 
 MovingTargetDetection "1" o-- "1..*" SatelliteConstellation : Rx + GNSS
 MovingTargetDetection "1" o-- "1"    ShipTrajectory          : target

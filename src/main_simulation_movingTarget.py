@@ -41,8 +41,6 @@ def run_moving_target_detection(settings: dict):
     """
 
     # --- 1. Environment & Ship Setup ---
-    earth_model = "elliptical"
-
     ship_trajectory = ShipTrajectory(
         ship_id="DarkShip_001",
         ship_speed_knot=settings["moving_target_speed"],
@@ -89,7 +87,7 @@ def run_moving_target_detection(settings: dict):
         ship_trajectory,
         gnss_r_antenna,
         deltaT=step_size,
-        earth_model=earth_model,
+        earth_model=settings["earth_model"],
         reflection_mode=settings["reflection_type"],
         link_budget_settings=settings.get("link_budget"),
         bbox_buffer_deg=settings["detection_bbox_buffer_deg"],

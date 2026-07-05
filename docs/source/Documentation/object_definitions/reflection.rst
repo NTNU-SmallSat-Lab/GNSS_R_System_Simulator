@@ -14,7 +14,8 @@ power. :class:`~object_definitions.Coverage_def.Coverage` builds one ``Reflectio
 (LEO, GNSS) pair to accumulate revisit counts; the moving-target detector uses the same geometry per
 Tx/Rx pair.
 
-The specular point is the surface point :math:`S` for which the incoming ray :math:`T\!\to\!S` and the
+The specular point is the surface point :math:`S` at which the signal from the transmitter (GNSS) position
+:math:`T` reflects toward the receiver (LEO) position :math:`R`. The incoming ray :math:`T\!\to\!S` and the
 outgoing ray :math:`S\!\to\!R` make equal angles with the local surface normal (the law of reflection).
 Two solvers implement this:
 
@@ -22,6 +23,19 @@ Two solvers implement this:
   circle;
 - **elliptical** -- solve the two tangent components of Fermat's stationary-path condition on a
   two-angle WGS-84 surface parameterisation, then verify the specular condition.
+
+.. figure:: ../../images/specular_reflection_geometry.svg
+   :width: 90%
+   :align: center
+
+   Specular reflection geometry. The signal from the GNSS transmitter :math:`T` reflects at the specular
+   point :math:`S` on the Earth's surface and reaches the LEO receiver :math:`R`. At :math:`S` the incidence
+   angle :math:`\theta_i` (between the incoming ray and the local surface normal :math:`\hat{n}`) equals the
+   reflection angle :math:`\theta_r`; the normal is radial (points away from the Earth's centre :math:`O`).
+   The incident ray, reflected ray, and normal are coplanar, with :math:`T` and :math:`R` on opposite sides
+   of the normal. The geocentric central angle :math:`\theta_c` at :math:`O`, subtended between the
+   transmitter and receiver position vectors :math:`\mathbf{r}_{tx}` and :math:`\mathbf{r}_{rx}`, is the
+   coarse pre-filter of :eq:`refl-central`. The illuminated glistening zone surrounds :math:`S`.
 
 Interface
 ---------
@@ -97,8 +111,9 @@ Detailed Module Description
 Central-angle gate and line of sight
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Before any solve, two cheap filters reject samples that cannot produce a reflection. The Tx-Rx geocentric
-central angle
+Before any solve, two cheap filters reject samples that cannot produce a reflection. Let
+:math:`\mathbf{r}_{tx}` and :math:`\mathbf{r}_{rx}` be the transmitter :math:`T` and receiver :math:`R`
+position vectors in the Earth-centred inertial (ECI) frame. The Tx-Rx geocentric central angle
 
 .. math::
    :label: refl-central
@@ -107,7 +122,8 @@ central angle
    {\lVert\mathbf{r}_{tx}\rVert\,\lVert\mathbf{r}_{rx}\rVert}\right)
 
 must be below ``max_central_angle_deg``. Line of sight is tested analytically on the finite chord between
-the two satellites,
+the two satellite positions :math:`\mathbf{r}_1` and :math:`\mathbf{r}_2` (that is, :math:`\mathbf{r}_{tx}`
+and :math:`\mathbf{r}_{rx}`), parameterised by :math:`t\in[0,1]`,
 
 .. math::
    :label: refl-los
@@ -239,7 +255,7 @@ Module Assumptions and Limitations
   is not the physical horizon limit.
 - **One Tx-Rx pair per object.** A constellation sweep builds many ``Reflection`` objects.
 - **Array layout.** Reflection points are stored ``(n, 3)`` / ``(n, 2)`` while satellite states are
-  ``(3, n)`` (a transpose clean-up is noted in the source TODOs).
+  ``(3, n)``; the two conventions are not yet aligned.
 
 Validation and Tests
 --------------------
@@ -283,6 +299,9 @@ knobs live in ``[REFLECTION]``.
 
    * - Key
      - Meaning
+   * - ``earth_model``
+     - ``"spherical"`` (closed-form quartic on a mean-radius sphere) or ``"elliptical"`` (WGS-84
+       stationary-path solve). Required; missing or invalid values raise.
    * - ``reflection_type``
      - ``"specular"`` selects this specular-reflection path (vs ``"backscatter"``, the
        :class:`~object_definitions.BackScattPoint_def.BRP` path).

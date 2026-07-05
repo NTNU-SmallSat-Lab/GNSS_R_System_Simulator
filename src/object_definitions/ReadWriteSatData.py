@@ -127,9 +127,9 @@ def _classical_to_equinoctial_solver_vars(elements):
     return np.array(
         [
             elements["a"],
+            e * np.cos(arg_perigee),
             elements["i"],
             elements["raan"],
-            e * np.cos(arg_perigee),
             e * np.sin(arg_perigee),
             arg_perigee + mean_anomaly,
         ],
@@ -138,7 +138,7 @@ def _classical_to_equinoctial_solver_vars(elements):
 
 
 def _equinoctial_solver_vars_to_classical(values):
-    a, i, raan, e_cos_argp, e_sin_argp, mean_longitude = values
+    a, e_cos_argp, i, raan, e_sin_argp, mean_longitude = values
     a = max(float(a), Constants.RADIUS_EARTH_EQUAT + 1.0)
     i = float(np.clip(i, 0.0, np.pi))
     e = float(np.hypot(e_cos_argp, e_sin_argp))
@@ -208,15 +208,19 @@ def _solve_sgp4_mean_elements_from_osculating(satellite):
     ndot = satellite.meanMotion_1 if satellite.meanMotion_1 is not None else 0.0
     nddot = satellite.meanMotion_2 if satellite.meanMotion_2 is not None else 0.0
 
+    from __init__ import tle_fit_weights_from_yaml  # Function-local import: engine settings live in the YAML reader, avoid an import cycle at module load
+
+    position_weight_m, velocity_weight_m_s = tle_fit_weights_from_yaml()  # Residual normalization weights [m], [m/s]
+
     def residual(values):
         mean_elements = _equinoctial_solver_vars_to_classical(values)
         position, velocity = _skyfield_state_from_sgp4_mean_elements(mean_elements, epoch, satnum, bstar=bstar, ndot=ndot, nddot=nddot)
-        return np.concatenate(((position - target_position) / 100.0, (velocity - target_velocity) / 0.1))
+        return np.concatenate(((position - target_position) / position_weight_m, (velocity - target_velocity) / velocity_weight_m_s))
 
     result = least_squares(
         residual,
         initial_guess,
-        x_scale=np.array([1e4, 1e-3, 1e-3, 1e-4, 1e-4, 1e-3]),
+        x_scale=np.array([1e4, 1e-4, 1e-3, 1e-3, 1e-4, 1e-3]),
         ftol=1e-12,
         xtol=1e-12,
         gtol=1e-12,

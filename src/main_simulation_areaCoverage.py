@@ -34,7 +34,6 @@ def run_area_coverage_simulation(sim_settings):
         sim_settings: [dict]   Dictionary containing simulation parameters
     =========================================================================================================
     """
-    earth = "elliptical"  #'spherical'
     print("Simulation start Time:", sim_settings["start_time"])
 
     ####################################
@@ -86,13 +85,18 @@ def run_area_coverage_simulation(sim_settings):
         gnss_constl_dict,
         sim_settings["shapefile_path"],
         grid_size_m=sim_settings["grid_size_m"],
-        earth_model=earth,
+        earth_model=sim_settings["earth_model"],
         link_budget_settings=sim_settings.get("link_budget"),
         max_central_angle_deg=sim_settings["max_central_angle_deg"],
         selected_signals=sim_settings["selected_signals"],
+        reflection_type=sim_settings["reflection_type"],
+        max_incidence_angle_deg=sim_settings["max_incidence_angle_deg"],
+        max_bistatic_bksc_angle_deg=sim_settings["max_bistatic_bksc_angle_deg"],
     )
     if not coverage.coverage_constellations:
         raise ValueError("No usable constellations for coverage. Check [ANTENNA].bands and the loaded GNSS constellations.")
+    # Specular output names stay unchanged; backscatter maps carry the mode so the two cannot be confused.
+    mode_tag = "" if coverage.reflection_type == "specular" else "_backscatter"
 
     ####################################
     # 6/7. Per-constellation geometric coverage: compute, plot reflection/coverage maps, print stats.
@@ -106,8 +110,8 @@ def run_area_coverage_simulation(sim_settings):
             eirp_dbw=sig["eirp_dbw"],
             verbose=True,
         )
-        coverage.plot_coverage_shapefile(gnss_constellation=constellation, file_name=f"Coverage_{constellation}.png")
-        coverage.plot_coverage_gridded_shapefile(gnss_constellation=constellation, file_name=f"Coverage_grid_{constellation}.png")
+        coverage.plot_coverage_shapefile(gnss_constellation=constellation, file_name=f"Coverage_{constellation}{mode_tag}.png")
+        coverage.plot_coverage_gridded_shapefile(gnss_constellation=constellation, file_name=f"Coverage_grid_{constellation}{mode_tag}.png")
         coverage.calculate_statistics(gnss_constellation=constellation)
 
     ####################################
@@ -115,8 +119,8 @@ def run_area_coverage_simulation(sim_settings):
     ####################################
     present_consts = sorted({sig["constellation"] for sig in coverage.coverage_constellations})
     combined_filter = ", ".join(present_consts)
-    coverage.plot_coverage_shapefile(gnss_constellation=combined_filter, file_name="Coverage_all_configurations.png")
-    coverage.plot_coverage_gridded_shapefile(gnss_constellation=combined_filter, file_name="Coverage_grid_all_configurations.png")
+    coverage.plot_coverage_shapefile(gnss_constellation=combined_filter, file_name=f"Coverage_all_configurations{mode_tag}.png")
+    coverage.plot_coverage_gridded_shapefile(gnss_constellation=combined_filter, file_name=f"Coverage_grid_all_configurations{mode_tag}.png")
     coverage.calculate_statistics(gnss_constellation=combined_filter)
 
     ####################################

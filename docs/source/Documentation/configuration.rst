@@ -12,9 +12,11 @@ each section.
 .. note::
 
    Engine/numerical settings live in ``simulator_settings.yaml`` at the repo root, kept separate from the
-   per-mission INI: the simulation ``step_size_s``, and the antenna-pattern angular resolution
+   per-mission INI: the simulation ``step_size_s``, the antenna-pattern angular resolution
    ``theta_resolution`` / ``phi_resolution`` plus the steering step counts ``along_track_steering_steps`` /
-   ``across_track_steering_steps``. It is loaded strictly -- a missing file or key raises.
+   ``across_track_steering_steps``, and the TLE-fit residual weights ``tle_fit.position_weight_m`` /
+   ``tle_fit.velocity_weight_m_s`` (available for tuning the osculating-to-SGP4 mean-element fit). It is
+   loaded strictly -- a missing file or key raises.
 
 [SIMULATION SETTINGS]
 ---------------------
@@ -123,8 +125,18 @@ See :doc:`object_definitions/coverage`, :doc:`object_definitions/reflection`, an
    * - ``[COVERAGE].grid_size_meters``
      - Coverage cell size.
      - m
+   * - ``[COVERAGE].max_bistatic_bksc_angle_deg``
+     - Near-backscatter acceptance half-angle for backscatter area coverage (swath half-width around
+       the BRP track). Required when ``reflection_type = backscatter`` with a gridded region; finite
+       and in ``(0, 90)``.
+     - deg
+   * - ``[REFLECTION].earth_model``
+     - Surface model for the reflection-point solver: ``"spherical"`` (closed-form quartic on a
+       mean-radius sphere) or ``"elliptical"`` (WGS-84 stationary-path solve). Required for both
+       analysis modes; other values raise.
+     - --
    * - ``[REFLECTION].reflection_type``
-     - ``"specular"`` or ``"backscatter"``; other values raise.
+     - ``"specular"`` or ``"backscatter"`` (both analysis modes); other values raise.
      - --
    * - ``[REFLECTION].max_central_angle_deg``
      - Tx-Rx geometric gate, finite and in ``(0, 180]``.

@@ -15,16 +15,41 @@ from shapely.geometry import LineString, Point, Polygon
 from tqdm import tqdm
 
 import functions.functions as fn
+from object_definitions.BackScattPoint_def import BRP
 from object_definitions.Constants_def import Constants
 from object_definitions.Reflection_def import Reflection
 from object_definitions.Static_classes_def import Plotting
 
 
+def backscatter_swath_half_width_m(range_rx_m, range_tx_m, max_bistatic_bksc_angle_deg):
+    """Ground half-width of the near-backscatter acceptance region around the BRP [m].
+
+    A surface point displaced by d perpendicular to the shared line of sight opens the bistatic angle
+    by beta ~= d * (1/R_r - 1/R_t) (Tx and Rx sit on the SAME side of the surface, hence the
+    difference of curvatures, not the sum), so the beta <= beta_max region has cross-LOS half-width
+    beta_max / (1/R_r - 1/R_t). This is the conservative (smaller) semi-axis of the acceptance
+    ellipse; the in-plane semi-axis is wider by 1/cos(incidence) and is deliberately not used, so
+    the swath never overstates coverage.
+    """
+    beta_max_deg = float(max_bistatic_bksc_angle_deg)
+    if not math.isfinite(beta_max_deg) or not (0.0 < beta_max_deg < 90.0):
+        raise ValueError(f"max_bistatic_bksc_angle_deg must be finite and in (0, 90) deg; got {beta_max_deg}")
+    range_rx_m = np.asarray(range_rx_m, dtype=float)
+    range_tx_m = np.asarray(range_tx_m, dtype=float)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        curvature_rad_m = 1.0 / range_rx_m - 1.0 / range_tx_m       # d(beta)/d(cross-LOS offset) [rad/m]
+        half_width_m = np.radians(beta_max_deg) / curvature_rad_m   # beta_max / (1/R_r - 1/R_t)
+    return np.where(np.isfinite(half_width_m) & (half_width_m > 0.0), half_width_m, np.nan)
+
+
 class Coverage:
-    """Count contiguous specular-track visits per grid cell over a region (the area-coverage mode).
+    """Count contiguous reflection-track visits per grid cell over a region (the area-coverage mode).
 
     Builds (or loads) a gridded version of an input shapefile, then -- per GNSS constellation -- connects
     each contiguous run of valid samples into a track and counts one visit per intersected cell and run.
+    In ``specular`` mode the track is the specular-point line; in ``backscatter`` mode it is the BRP
+    track buffered by the near-backscatter swath (all cells whose bistatic angle to some (Tx, Rx) pair
+    stays below ``max_bistatic_bksc_angle_deg``).
     Coverage is a **geometric** metric: the band's frequency and EIRP only feed the antenna-field-of-view
     finiteness gate, not a detection threshold, so the result is per constellation, not per band.
 
@@ -50,6 +75,13 @@ class Coverage:
         Maximum Tx-Rx central angle [deg].
     selected_signals : list of dict or None, keyword-only
         Validated INI band plan; deduplicated to one entry per constellation.
+    reflection_type : {"specular", "backscatter"}, keyword-only
+        Reflection geometry the coverage counts (default "specular").
+    max_incidence_angle_deg : float or None, keyword-only
+        Maximum BRP incidence angle [deg]; required for backscatter.
+    max_bistatic_bksc_angle_deg : float or None, keyword-only
+        Maximum bistatic angle at the surface for a cell to count as near-backscatter-covered [deg];
+        sets the swath half-width around the BRP track. Required for backscatter, unused for specular.
     """
 
     def __init__(
@@ -65,6 +97,9 @@ class Coverage:
         *,
         max_central_angle_deg,
         selected_signals: list[dict] | None = None,
+        reflection_type: str = "specular",
+        max_incidence_angle_deg: float | None = None,
+        max_bistatic_bksc_angle_deg: float | None = None,
     ) -> None:
         """Build (or load) the gridded shapefile and prepare the per-constellation coverage vectors."""
         # Path to the input shapefile (outline of the area of interest)
@@ -111,6 +146,32 @@ class Coverage:
             raise ValueError("earth_model must be either 'spherical' or 'elliptical'")
         else:
             self.earth_model = earth_model
+
+        if reflection_type not in ["specular", "backscatter"]:
+            raise ValueError("reflection_type must be either 'specular' or 'backscatter'")
+        self.reflection_type = reflection_type
+        if reflection_type == "backscatter":
+            if max_incidence_angle_deg is None:
+                raise ValueError("max_incidence_angle_deg is required for backscatter area coverage.")
+            if max_bistatic_bksc_angle_deg is None:
+                raise ValueError(
+                    "[COVERAGE].max_bistatic_bksc_angle_deg is required for backscatter area coverage: "
+                    "it sets the near-backscatter acceptance half-angle (the swath width around the BRP track)."
+                )
+            self.max_incidence_angle_deg = float(max_incidence_angle_deg)
+            beta_max = float(max_bistatic_bksc_angle_deg)
+            if not math.isfinite(beta_max) or not (0.0 < beta_max < 90.0):
+                raise ValueError(f"max_bistatic_bksc_angle_deg must be finite and in (0, 90) deg; got {beta_max}")
+            self.max_bistatic_bksc_angle_deg = beta_max
+        else:
+            if max_bistatic_bksc_angle_deg is not None:
+                warnings.warn(
+                    "max_bistatic_bksc_angle_deg is only used for backscatter area coverage; "
+                    "it is ignored for reflection_type = 'specular'.",
+                    stacklevel=2,
+                )
+            self.max_incidence_angle_deg = None
+            self.max_bistatic_bksc_angle_deg = None
 
         self.initialize_coverage(overwrite_shapefile)
 
@@ -202,6 +263,16 @@ class Coverage:
                     valid_position = ref_points_in_box[cluster]
                     lon_lat = valid_position[:, [1, 0]]
                     track_geometry = Point(lon_lat[0]) if len(cluster) == 1 else LineString(lon_lat)
+                    if self.reflection_type == "backscatter":
+                        # A cell is near-backscatter-covered while its bistatic angle to the pair stays
+                        # below max_bistatic_bksc_angle_deg, i.e. while it lies inside the acceptance
+                        # swath around the exact-retroreflection BRP track. Buffer the track by the
+                        # cluster-minimum swath half-width (conservative), converted to degrees at the
+                        # cluster mean latitude with the latitude conversion (the smaller of the two
+                        # degree equivalents, so the east-west extent is never overstated).
+                        swath_deg = self._cluster_swath_half_width_deg(refl_vector[i], cluster, valid_position)
+                        if np.isfinite(swath_deg) and swath_deg > 0.0:
+                            track_geometry = track_geometry.buffer(swath_deg)
                     for idx, polygon in self.grid_gdf.iterrows():
                         intersection = polygon["geometry"].intersection(track_geometry)
                         if not intersection.is_empty:
@@ -234,6 +305,20 @@ class Coverage:
                             self.coverage_dict[gnss_name][rect_idx].rx_satID.append(refl_vector[i].rx_satID)
                             self.coverage_dict[gnss_name][rect_idx].angles.append(angle)
                             self.coverage_dict[gnss_name][rect_idx].power.append(power)
+
+    def _cluster_swath_half_width_deg(self, reflection_obj, cluster, valid_position) -> float:
+        """Near-backscatter swath half-width for one track cluster, in degrees at its mean latitude."""
+        refl_eci = np.asarray(reflection_obj.refl_ECI_vec, dtype=float)[cluster]      # (k, 3)
+        rx_eci = np.asarray(reflection_obj.sat_pos_vec, dtype=float)[:, cluster].T    # (k, 3)
+        tx_eci = np.asarray(reflection_obj.gnss_pos_vec, dtype=float)[:, cluster].T   # (k, 3)
+        range_rx_m = np.linalg.norm(rx_eci - refl_eci, axis=1)                        # surface -> Rx slant range
+        range_tx_m = np.linalg.norm(tx_eci - refl_eci, axis=1)                        # surface -> Tx slant range
+        half_width_m = backscatter_swath_half_width_m(range_rx_m, range_tx_m, self.max_bistatic_bksc_angle_deg)
+        if not np.isfinite(half_width_m).any():
+            return float("nan")
+        half_width_min_m = float(np.nanmin(half_width_m))                             # conservative: narrowest sample
+        mean_lat_deg = float(np.nanmean(valid_position[:, 0]))
+        return float(fn.delta_lat_from_distance(mean_lat_deg, half_width_min_m))      # smaller degree equivalent
 
     def compute_coverage_for_constellation(self, constellation, freq_hz, eirp_dbw, verbose=False):
         """
@@ -271,22 +356,41 @@ class Coverage:
                 for i, gnss_sat in enumerate(gnss_const.satellites):
                     if i % 5 == 0:
                         pbar.set_description(f"GNSS-R Sat-{sat_no + 1} with {constellation} [{i}/{len(gnss_const.satellites)}]")
-                    refl_gnss = Reflection(
-                        gnss_sat.satID,
-                        sat.satID,
-                        earth_model=self.earth_model,
-                        max_central_angle_deg=self.max_central_angle_deg,
-                        gnss_const=constellation,
-                    )
-                    refl_gnss.compute_reflection_coordinates(
-                        gnss_sat,
-                        sat,
-                        times,
-                        tx_eirp_dbw=eirp_dbw,
-                        antenna=antenna_obj,
-                        frequency_hz=freq_hz,
-                        link_budget_settings=self.link_budget_settings,
-                    )
+                    if self.reflection_type == "backscatter":
+                        refl_gnss = BRP(
+                            gnss_sat.satID,
+                            sat.satID,
+                            earth_model=self.earth_model,
+                            max_central_angle_deg=self.max_central_angle_deg,
+                            max_incidence_angle_deg=self.max_incidence_angle_deg,
+                            gnss_const=constellation,
+                        )
+                        refl_gnss.compute_brp_coordinates(
+                            gnss_sat,
+                            sat,
+                            fn.to_utc_datetime_array(times),
+                            tx_eirp_dbw=eirp_dbw,
+                            antenna=antenna_obj,
+                            frequency_hz=freq_hz,
+                            link_budget_settings=self.link_budget_settings,
+                        )
+                    else:
+                        refl_gnss = Reflection(
+                            gnss_sat.satID,
+                            sat.satID,
+                            earth_model=self.earth_model,
+                            max_central_angle_deg=self.max_central_angle_deg,
+                            gnss_const=constellation,
+                        )
+                        refl_gnss.compute_reflection_coordinates(
+                            gnss_sat,
+                            sat,
+                            times,
+                            tx_eirp_dbw=eirp_dbw,
+                            antenna=antenna_obj,
+                            frequency_hz=freq_hz,
+                            link_budget_settings=self.link_budget_settings,
+                        )
                     reflections_vec.append(refl_gnss)
                     pbar.update(1)
             self.reflection_dict[constellation] = reflections_vec

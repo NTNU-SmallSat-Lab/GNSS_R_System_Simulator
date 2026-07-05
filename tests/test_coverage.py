@@ -12,6 +12,7 @@ and not exercised here.
 """
 
 import contextlib
+import datetime as dt
 import io
 from types import SimpleNamespace
 
@@ -20,7 +21,7 @@ import numpy as np
 import pytest
 from shapely.geometry import Polygon
 
-from object_definitions.Coverage_def import Coverage
+from object_definitions.Coverage_def import Coverage, backscatter_swath_half_width_m
 
 # --------------------------------------------------------------------------- #
 # Fixtures                                                                    #
@@ -260,3 +261,138 @@ class TestEarthModelValidation:
                     earth_model="NOT_A_VALID_MODEL",
                     max_central_angle_deg=80.0,
                 )
+
+
+# --------------------------------------------------------------------------- #
+# Backscatter area coverage                                                   #
+# --------------------------------------------------------------------------- #
+
+def _build_coverage(input_shapefile_path, **kwargs):
+    with contextlib.redirect_stdout(io.StringIO()):
+        return Coverage(
+            sat_const=None,
+            gnss_const={"GPS": SimpleNamespace()},
+            shapefile=input_shapefile_path,
+            grid_size_deg=2.5,
+            overwrite_shapefile=True,
+            max_central_angle_deg=80.0,
+            **kwargs,
+        )
+
+
+class TestBackscatterSwathHalfWidth:
+    def test_representative_leo_gnss_geometry(self):
+        # beta_max = 5 deg, R_r = 1000 km, R_t = 20 000 km:
+        # r = radians(5) / (1/R_r - 1/R_t) = 0.0872665 / 9.5e-7 ~= 91.9 km.
+        r = backscatter_swath_half_width_m(1.0e6, 2.0e7, 5.0)
+        np.testing.assert_allclose(float(r), np.radians(5.0) / (1.0 / 1.0e6 - 1.0 / 2.0e7), rtol=1e-12)
+        assert 9.0e4 < float(r) < 9.5e4
+
+    def test_distant_transmitter_limit_is_beta_times_range(self):
+        # R_t -> inf: the acceptance half-width collapses to beta_max * R_r.
+        r = backscatter_swath_half_width_m(1.0e6, 1.0e15, 5.0)
+        np.testing.assert_allclose(float(r), np.radians(5.0) * 1.0e6, rtol=1e-6)
+
+    def test_wider_acceptance_gives_wider_swath(self):
+        narrow = float(backscatter_swath_half_width_m(1.0e6, 2.0e7, 5.0))
+        wide = float(backscatter_swath_half_width_m(1.0e6, 2.0e7, 10.0))
+        assert wide > narrow
+
+    def test_equal_ranges_yield_nan(self):
+        # Tx at the receiver range: the curvature difference vanishes, no finite swath.
+        assert np.isnan(float(backscatter_swath_half_width_m(1.0e6, 1.0e6, 5.0)))
+
+    def test_out_of_range_angle_raises(self):
+        with pytest.raises(ValueError, match="max_bistatic_bksc_angle_deg"):
+            backscatter_swath_half_width_m(1.0e6, 2.0e7, 0.0)
+        with pytest.raises(ValueError, match="max_bistatic_bksc_angle_deg"):
+            backscatter_swath_half_width_m(1.0e6, 2.0e7, 90.0)
+
+
+class TestBackscatterCoverageValidation:
+    def test_backscatter_requires_incidence_gate(self, input_shapefile_path):
+        with pytest.raises(ValueError, match="max_incidence_angle_deg"):
+            _build_coverage(input_shapefile_path, reflection_type="backscatter", max_bistatic_bksc_angle_deg=5.0)
+
+    def test_backscatter_requires_bistatic_angle(self, input_shapefile_path):
+        with pytest.raises(ValueError, match="max_bistatic_bksc_angle_deg"):
+            _build_coverage(input_shapefile_path, reflection_type="backscatter", max_incidence_angle_deg=45.0)
+
+    def test_bistatic_angle_range_validated(self, input_shapefile_path):
+        with pytest.raises(ValueError, match="max_bistatic_bksc_angle_deg"):
+            _build_coverage(
+                input_shapefile_path, reflection_type="backscatter", max_incidence_angle_deg=45.0, max_bistatic_bksc_angle_deg=95.0
+            )
+
+    def test_invalid_reflection_type_raises(self, input_shapefile_path):
+        with pytest.raises(ValueError, match="reflection_type"):
+            _build_coverage(input_shapefile_path, reflection_type="sideways")
+
+    def test_specular_warns_on_unused_bistatic_angle(self, input_shapefile_path):
+        with pytest.warns(UserWarning, match="max_bistatic_bksc_angle_deg"):
+            _build_coverage(input_shapefile_path, max_bistatic_bksc_angle_deg=5.0)
+
+
+class TestBackscatterSwathCoverage:
+    """A synthetic BRP track through the grid: the buffered swath must cover cells the thin line misses."""
+
+    RX_ALT_M = 1.0e6
+    TX_ALT_M = 2.0e7
+
+    def _fake_brp_track(self, lats, lons):
+        # Surface points on a sphere with Rx and Tx stacked radially above each point (exact retro
+        # geometry), so the surface-to-satellite slant ranges equal the stacked altitudes.
+        lats = np.asarray(lats, dtype=float)
+        lons = np.asarray(lons, dtype=float)
+        R = 6.371e6
+        clat, slat = np.cos(np.radians(lats)), np.sin(np.radians(lats))
+        clon, slon = np.cos(np.radians(lons)), np.sin(np.radians(lons))
+        up = np.column_stack((clat * clon, clat * slon, slat))          # (n, 3) radial unit vectors
+        n = len(lats)
+        return SimpleNamespace(
+            refl_LL_vec=np.column_stack((lats, lons)),
+            refl_ECI_vec=R * up,
+            sat_pos_vec=((R + self.RX_ALT_M) * up).T,                   # (3, n)
+            gnss_pos_vec=((R + self.TX_ALT_M) * up).T,                  # (3, n)
+            refl_ang_vec=np.zeros(n),
+            power=np.ones(n),
+            tx_satID="G01",
+            rx_satID="LEO-1",
+        )
+
+    def _visited_cells(self, coverage):
+        return {idx for idx in range(16) if len(coverage.coverage_dict["GPS"][idx].times) > 0}
+
+    def _run(self, coverage):
+        # North-south track at lon 5.1 deg: the thin line stays inside one 2.5-deg cell column, while
+        # the ~92 km (~0.83 deg) swath reaches into the neighbouring column on the west side.
+        lats = np.linspace(0.5, 9.5, 19)
+        lons = np.full_like(lats, 5.1)
+        track = self._fake_brp_track(lats, lons)
+        times = [dt.datetime(2026, 5, 27, 12, 0, tzinfo=dt.UTC) + dt.timedelta(seconds=10 * k) for k in range(len(lats))]
+        coverage.reflection_dict["GPS"] = [track]
+        coverage._calculate_coverage(times, "GPS")
+        return self._visited_cells(coverage)
+
+    def test_thin_specular_track_covers_one_cell_column(self, input_shapefile_path):
+        coverage = _build_coverage(input_shapefile_path)
+        assert len(self._run(coverage)) == 4                            # 4 rows x 1 column
+
+    def test_backscatter_swath_covers_neighbouring_column(self, input_shapefile_path):
+        coverage = _build_coverage(
+            input_shapefile_path, reflection_type="backscatter", max_incidence_angle_deg=45.0, max_bistatic_bksc_angle_deg=5.0
+        )
+        visited = self._run(coverage)
+        assert len(visited) == 8                                        # 4 rows x 2 columns: swath adds the west column
+
+    def test_swath_width_matches_the_analytic_half_width(self, input_shapefile_path):
+        coverage = _build_coverage(
+            input_shapefile_path, reflection_type="backscatter", max_incidence_angle_deg=45.0, max_bistatic_bksc_angle_deg=5.0
+        )
+        lats = np.linspace(0.5, 9.5, 19)
+        track = self._fake_brp_track(lats, np.full_like(lats, 5.1))
+        cluster = np.arange(len(lats))
+        swath_deg = coverage._cluster_swath_half_width_deg(track, cluster, track.refl_LL_vec)
+        expected_m = np.radians(5.0) / (1.0 / self.RX_ALT_M - 1.0 / self.TX_ALT_M)
+        assert 0.7 < swath_deg < 1.0                                    # ~91.9 km at mid latitudes
+        np.testing.assert_allclose(swath_deg * 111.0e3, expected_m, rtol=0.02)  # ~111 km per degree latitude

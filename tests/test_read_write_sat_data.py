@@ -113,3 +113,33 @@ class TestTrueAnomalyTleGeneration:
             nu_deg = ReadWriteSatData.mean_to_true_anomaly_deg(mean_anomaly_deg, self.E)
             mean_back_deg = np.degrees(_true_anomaly_to_mean_anomaly(np.radians(nu_deg), self.E))
             assert (mean_back_deg - mean_anomaly_deg + 180.0) % 360.0 - 180.0 == pytest.approx(0.0, abs=1e-6)
+
+
+class TestTleFitWeightsFromYaml:
+    """The residual normalization weights are engine settings read strictly from simulator_settings.yaml."""
+
+    def test_returns_committed_weights(self):
+        import __init__ as sim_init
+
+        assert sim_init.tle_fit_weights_from_yaml() == (100.0, 0.1)
+
+    def test_missing_section_raises(self, monkeypatch):
+        import __init__ as sim_init
+
+        monkeypatch.setattr(sim_init, "load_simulator_settings", lambda: {"simulation": {"step_size_s": 20}})
+        with pytest.raises(KeyError, match="tle_fit"):
+            sim_init.tle_fit_weights_from_yaml()
+
+    def test_missing_key_raises(self, monkeypatch):
+        import __init__ as sim_init
+
+        monkeypatch.setattr(sim_init, "load_simulator_settings", lambda: {"tle_fit": {"position_weight_m": 100.0}})
+        with pytest.raises(KeyError, match="velocity_weight_m_s"):
+            sim_init.tle_fit_weights_from_yaml()
+
+    def test_nonpositive_weight_raises(self, monkeypatch):
+        import __init__ as sim_init
+
+        monkeypatch.setattr(sim_init, "load_simulator_settings", lambda: {"tle_fit": {"position_weight_m": 0.0, "velocity_weight_m_s": 0.1}})
+        with pytest.raises(ValueError, match="finite and > 0"):
+            sim_init.tle_fit_weights_from_yaml()

@@ -181,8 +181,8 @@ toward nadir (:math:`\sigma^0 \sim B/(4\sin^4\theta)` as the resonant wavenumber
 energetic long-wave spectrum), and the tilt average leaks that growth through mirror-ward-tilted facets
 well above nadir. Below the gate the quasi-specular geometric-optics term owns the return. Lowering the
 gate requires first restricting the facet-local Bragg wavenumber inside the tilt average
-(:math:`k_B(\theta_\mathrm{local}) \ge k_\mathrm{radar}/3`, the same two-scale division) -- a recorded
-refinement, see ``TODO.md``.
+(:math:`k_B(\theta_\mathrm{local}) \ge k_\mathrm{radar}/3`, the same two-scale division), a refinement
+deferred to future work.
 
 The clutter area
 ^^^^^^^^^^^^^^^^

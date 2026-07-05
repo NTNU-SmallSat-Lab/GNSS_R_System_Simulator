@@ -345,17 +345,17 @@ class Reflection:
 
         # Convert positions to column vectors
         satCoord = np.array(satPos).reshape(-1, 1)
-        GPSCoord = np.array(gnssPos).reshape(-1, 1)
+        txCoord = np.array(gnssPos).reshape(-1, 1)
 
         # Get rotation matrix
-        Rot = self.get_rotation_3D_to_plane_coords(satCoord, GPSCoord)
+        Rot = self.get_rotation_3D_to_plane_coords(satCoord, txCoord)
 
         # Rotate satellite and GPS coordinates
         satCoord1 = Rot @ satCoord
-        GPSCoord1 = Rot @ GPSCoord
+        txCoord1 = Rot @ txCoord
 
         # Find 2D reflection point
-        N, A, B = self.get_reflection_point2d(satCoord1.flatten(), GPSCoord1.flatten(), earth_radius=earth_radius)
+        N, A, B = self.get_reflection_point2d(satCoord1.flatten(), txCoord1.flatten(), earth_radius=earth_radius)
         if N is None:
             return np.array([np.nan, np.nan, np.nan]), np.nan, np.nan
 
@@ -404,6 +404,10 @@ class Reflection:
             )
 
         def ellipsoid_normal(S):
+            """
+            Returns the normal vector to the ellipsoid at the given point.
+            Raises ZeroDivisionError if the point is at the origin.
+            """
             n_surface = np.array([S[0] / a**2, S[1] / a**2, S[2] / b**2])
             normal_norm = np.linalg.norm(n_surface)
             if normal_norm <= 0.0:
@@ -411,6 +415,9 @@ class Reflection:
             return n_surface / normal_norm
 
         def unit_vector(vec):
+            """
+            Returns the unit vector of the input vector. Raises ZeroDivisionError for near-zero vectors.
+            """
             norm = np.linalg.norm(vec)
             if norm < 1e-12:
                 raise ZeroDivisionError("Cannot normalize near-zero vector.")
@@ -428,6 +435,10 @@ class Reflection:
             return v_reflected - v_out, cos_incident, cos_reflected
 
         def tangent_stationarity(angles):
+            """
+            Returns the tangent components of the gradient of the total path length |S-T| + |R-S| at the
+            given latitude and longitude parameters. Raises ZeroDivisionError if the surface point is at the origin.
+            """
             latitude_param, longitude_param = angles
             S = surface_point(latitude_param, longitude_param)
             try:
@@ -513,10 +524,10 @@ class Reflection:
 
         return S, theta_degrees2, theta_degrees3
 
-    def get_rotation_3D_to_plane_coords(self, satCoord, GPSCoord):  # noqa: N802
+    def get_rotation_3D_to_plane_coords(self, satCoord, txCoord):  # noqa: N802
         """Rotation matrix mapping the Tx-Rx orbital plane onto the z = 0 plane."""
         # Calculate the rotation matrix to transform from 3D coordinates to plane coordinates
-        plane = np.cross(satCoord.flatten(), GPSCoord.flatten())
+        plane = np.cross(satCoord.flatten(), txCoord.flatten())
         plane_norm = np.linalg.norm(plane)
         if plane_norm <= 1e-14:
             # Same-side parallel position vectors have a valid nadir reflection but do not define a
@@ -578,7 +589,7 @@ class Reflection:
         )
 
     @staticmethod
-    def get_reflection_point2d(satCoord1, GPSCoord1, earth_radius=Constants.R_EARTH_MEAN):
+    def get_reflection_point2d(satCoord1, txCoord1, earth_radius=Constants.R_EARTH_MEAN):
         """Specular point in the 2D orbital-plane frame (after rotation).
 
         Solves the quartic that places the reflection on the circle while obeying the law of reflection.
@@ -587,7 +598,7 @@ class Reflection:
         ----------
         satCoord1 : numpy.ndarray
             Receiver coordinates in the 2D plane (x, y) [m].
-        GPSCoord1 : numpy.ndarray
+        txCoord1 : numpy.ndarray
             GNSS coordinates in the 2D plane (x, y) [m].
         earth_radius : float, optional
             Sphere radius [m] (default ``Constants.R_EARTH_MEAN``).
@@ -600,7 +611,7 @@ class Reflection:
         """
         # Calculates the reflection point in 2D
         A = satCoord1[:2] / earth_radius
-        B = GPSCoord1[:2] / earth_radius
+        B = txCoord1[:2] / earth_radius
 
         u = np.dot(A, A)
         v = np.dot(A, B)

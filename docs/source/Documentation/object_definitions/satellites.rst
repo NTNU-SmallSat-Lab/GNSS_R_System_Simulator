@@ -68,8 +68,7 @@ epoch is stored in the TLE ``YYDDD.DDDDDDDD`` format, ready for
    * - ``p``
      - :math:`\omega`
      - float
-     - Argument of periapsis (the code name ``p`` is historical -- it is **not** the semi-latus
-       rectum :math:`p` of :eq:`sat-perifocal`).
+     - Argument of periapsis.
      - deg
    * - ``nu``
      - :math:`f`
@@ -237,10 +236,27 @@ true anomaly :math:`f`,
    \mathbf{r}_\mathrm{pf} = r\begin{pmatrix}\cos f\\ \sin f\\ 0\end{pmatrix}, \qquad
    \mathbf{v}_\mathrm{pf} = \sqrt{\tfrac{\mu_\oplus}{p}}\begin{pmatrix}-\sin f\\ e+\cos f\\ 0\end{pmatrix},
 
-rotated into the inertial frame by the 3-1-3 sequence of the right ascension of the ascending node
-:math:`\Omega`, the inclination :math:`i`, and the argument of periapsis :math:`\omega`,
-:math:`\mathbf{r} = R_3(\Omega)\,R_1(i)\,R_3(\omega)\,\mathbf{r}_\mathrm{pf}` (and likewise for
-:math:`\mathbf{v}`). This is the **target** state the TLE must reproduce.
+rotated from the perifocal frame into the Earth-centred inertial frame by the 3-1-3 sequence of the right
+ascension of the ascending node :math:`\Omega`, the inclination :math:`i`, and the argument of periapsis
+:math:`\omega`,
+
+.. math::
+   :label: sat-rotation
+
+   \mathbf{r}_\mathrm{target} = R_3(\Omega)\,R_1(i)\,R_3(\omega)\,\mathbf{r}_\mathrm{pf}, \qquad
+   \mathbf{v}_\mathrm{target} = R_3(\Omega)\,R_1(i)\,R_3(\omega)\,\mathbf{v}_\mathrm{pf},
+
+with the elementary rotations
+
+.. math::
+   :label: sat-elementary-rotations
+
+   R_1(\theta) = \begin{pmatrix}1 & 0 & 0\\ 0 & \cos\theta & -\sin\theta\\ 0 & \sin\theta & \cos\theta\end{pmatrix},
+   \qquad
+   R_3(\theta) = \begin{pmatrix}\cos\theta & -\sin\theta & 0\\ \sin\theta & \cos\theta & 0\\ 0 & 0 & 1\end{pmatrix}.
+
+The pair :math:`(\mathbf{r}_\mathrm{target}, \mathbf{v}_\mathrm{target})` is the **target** state the fitted
+TLE must reproduce -- the fixed reference that enters the residual :eq:`sat-residual` in step 2.
 
 **2. Fit the mean elements.** SGP4 mean elements :math:`(a, e, i, \Omega, \omega, M)` are chosen so that
 propagating them with SGP4 *back to the same epoch* returns the target state. A least-squares solver
@@ -254,25 +270,46 @@ propagating them with SGP4 *back to the same epoch* returns the target state. A 
    \frac{\mathbf{v}_\mathrm{SGP4}(\mathbf{x}) - \mathbf{v}_\mathrm{target}}{0.1\ \mathrm{m/s}}\right],
 
 where :math:`\mathbf{r}_\mathrm{SGP4}(\mathbf{x})` is the Skyfield/SGP4 epoch state built from the trial
-mean elements. The solver variables :math:`\mathbf{x}` are equinoctial-style
-(:math:`a,\ i,\ \Omega,\ e\cos\omega,\ e\sin\omega,\ \omega + M`) to stay well-conditioned as
-:math:`e \to 0` (where :math:`\omega` becomes undefined); the osculating elements seed the initial guess,
-with :math:`M` obtained from :math:`\nu` via the eccentric anomaly. Non-convergence emits a warning rather
-than raising.
+mean elements and :math:`(\mathbf{r}_\mathrm{target}, \mathbf{v}_\mathrm{target})` is the step-1 osculating
+state from :eq:`sat-rotation`. The two normalization weights (shown here as the representative :math:`100\ \mathrm{m}` and
+:math:`0.1\ \mathrm{m/s}`) make the position and velocity blocks dimensionless and comparable, setting
+their relative weighting in the fit; they are engine settings read strictly from ``simulator_settings.yaml``
+(the ``tle_fit`` section), not fixed constants. The solver variables :math:`\mathbf{x}` are equinoctial-style
+(:math:`a,\ e\cos\omega,\ i,\ \Omega,\ e\sin\omega,\ \omega + M`) to stay well-conditioned as
+:math:`e \to 0` (where :math:`\omega` becomes undefined); the osculating elements seed the initial guess.
+The mean anomaly :math:`M` is obtained from the true anomaly :math:`f` through the eccentric anomaly
+:math:`E`:
 
-**3. Write the TLE.** The fitted mean elements are formatted onto the two 69-character lines: inclination,
-RAAN, eccentricity (:math:`\times 10^7`), argument of periapsis and mean anomaly in degrees, and the mean
+.. math::
+   :label: sat-true-to-mean
+
+   \tan\frac{E}{2} = \sqrt{\frac{1-e}{1+e}}\,\tan\frac{f}{2},
+   \qquad
+   M = E - e\sin E,
+
+the second relation being Kepler's equation. The implementation evaluates the half-angle relation in the
+quadrant-safe two-argument form
+:math:`E = 2\,\mathrm{arctan2}\!\left(\sqrt{1-e}\,\sin\tfrac{f}{2},\ \sqrt{1+e}\,\cos\tfrac{f}{2}\right)`,
+which is valid for all quadrants of :math:`f`. Non-convergence of the least-squares fit emits a warning
+rather than raising.
+
+**3. Write the TLE.** The fitted mean elements are formatted onto the two 69-character lines: inclination
+:math:`i`, node :math:`\Omega`, eccentricity :math:`e` (:math:`\times 10^7`), argument of periapsis
+:math:`\omega` and mean anomaly :math:`M` in degrees, and the mean
 motion :math:`n = \sqrt{\mu_\oplus/a^3}` in revolutions per day, alongside the epoch, drag terms and
 checksums. For a near-circular LEO the result reproduces the requested position to a few metres; the floor
 comes from TLE field quantisation (angles stored to :math:`10^{-4}` deg), not the solver.
 
 .. note::
 
-   **Reading** a TLE runs the inverse anomaly step. A file stores the *mean* anomaly, so
+   **Reading** a TLE runs the inverse anomaly step. A file stores the *mean* anomaly :math:`M`, so
    :meth:`~object_definitions.ReadWriteSatData.ReadWriteSatData.read_tle_data` and
-   :class:`~object_definitions.Satellite_def.Satellite` convert it to the *true* anomaly
-   (:meth:`~object_definitions.ReadWriteSatData.ReadWriteSatData.mean_to_true_anomaly_deg`) before storing
-   it in an ``Orbit_specification`` -- so that container always holds a true anomaly regardless of source.
+   :class:`~object_definitions.Satellite_def.Satellite` convert it to the *true* anomaly :math:`f`
+   (:meth:`~object_definitions.ReadWriteSatData.ReadWriteSatData.mean_to_true_anomaly_deg`): Kepler's
+   equation :math:`M = E - e\sin E` is solved for :math:`E` by Newton iteration, then
+   :math:`f = 2\,\mathrm{arctan2}\!\left(\sqrt{1+e}\,\sin\tfrac{E}{2},\ \sqrt{1-e}\,\cos\tfrac{E}{2}\right)`
+   inverts :eq:`sat-true-to-mean`. The result is stored in an ``Orbit_specification`` -- so that container
+   always holds a true anomaly regardless of source.
    A read TLE's mean elements are then held as if osculating; this is an accepted approximation because
    GNSS transmitters are propagated straight from their own TLE, never re-generated.
 

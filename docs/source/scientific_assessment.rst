@@ -17,8 +17,8 @@ Corrections made by the audit
    * - Metre-scale constrained ellipsoid solve accepted a loose vector residual.
      - Some accepted specular points violated equal-angle reflection by nearly a degree.
      - Parameterised the WGS-84 surface by two angles, solved tangent stationarity, and independently
-       verify the reflection-vector residual. The acceptance gate is :math:`5\times 10^{-2}` (kept
-       deliberately coarse -- see ``TODO.md``); well-posed geometries converge far tighter, and the
+       verify the reflection-vector residual. The acceptance gate is :math:`5\times 10^{-2}`, kept
+       deliberately coarse; well-posed geometries converge far tighter, and the
        tests pin the angle mismatch below :math:`10^{-7}` deg for converged solutions.
    * - Spherical line of sight sampled only 100 chord points.
      - A sufficiently narrow grazing intersection could be missed.
@@ -100,8 +100,8 @@ Corrections made by the audit
        :math:`1/\sin^4\theta` divergence leaking through tilted facets (diagnosed, not yet re-modelled).
      - Lowering the empirical 20 deg gate would inject tens of dB of spurious clutter.
      - Documented the gate as divergence protection; the facet-local
-       :math:`k_B(\theta_\mathrm{local}) \ge k_\mathrm{radar}/3` gate is recorded in ``TODO.md`` as the
-       principled refinement.
+       :math:`k_B(\theta_\mathrm{local}) \ge k_\mathrm{radar}/3` gate is the principled refinement,
+       deferred to future work.
 
 Model maturity and suitable use
 -------------------------------

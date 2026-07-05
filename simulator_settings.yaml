@@ -9,6 +9,12 @@ simulation:
   # Propagation / sampling step size in whole seconds (integer > 0).
   step_size_s: 20
 
+tle_fit:
+  # Residual normalization weights for the osculating -> SGP4 mean-element least-squares fit.
+  # One residual unit = this much position (m) or velocity (m/s) miss; sets their relative weighting.
+  position_weight_m: 100.0
+  velocity_weight_m_s: 0.1
+
 antenna_pattern:
   # Polar-angle (theta) sample count over 0..180 deg off boresight (integer >= 2).
   theta_resolution: 180

@@ -9,8 +9,11 @@ surface point, and the receiver sit nearly on one straight line, so the wave is 
 path (a **retroreflection**). This is the geometry of ordinary radar: a ship is a hard, strong scatterer
 that stands out against the weak return of the open sea.
 
-This mode is used only by **moving-target detection**. It compares the modelled return from the ship
-against the modelled return from the sea around it, giving a deterministic ship-versus-sea ratio.
+Both analysis modes can use this geometry. **Moving-target detection** compares the modelled return from
+the ship against the modelled return from the sea around it, giving a deterministic ship-versus-sea
+ratio. **Area coverage** counts, per grid cell, the contiguous passes of the near-backscatter swath --
+all cells whose bistatic angle to some (Tx, Rx) pair stays below
+``[COVERAGE].max_bistatic_bksc_angle_deg`` (see :doc:`../Documentation/object_definitions/coverage`).
 
 The geometry
 ------------
@@ -97,6 +100,10 @@ noise), as footprint-overlap maps, link-budget breakdown plots, and an optional 
 ``OUTPUT/Link_budget_breakdown_backscatter_<CONST>_<band>_*.png``). See
 :doc:`../Documentation/object_definitions/moving_target_detection`.
 
+In area-coverage mode, per-constellation swath-visit maps
+(``OUTPUT/Coverage_grid_<CONST>_backscatter.png`` plus a combined map). See
+:doc:`../Documentation/object_definitions/coverage`.
+
 Where it lives in the code
 --------------------------
 
@@ -120,6 +127,8 @@ Where it lives in the code
      - The bistatic radar equation behind the ship and sea powers.
    * - :doc:`../Documentation/object_definitions/moving_target_detection`
      - Matches reflections to the ship and computes the SCR / SINR.
+   * - :doc:`../Documentation/object_definitions/coverage`
+     - Counts near-backscatter swath visits per grid cell (area-coverage mode).
 
 Assumptions and limitations
 ---------------------------

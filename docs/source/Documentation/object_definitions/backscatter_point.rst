@@ -106,8 +106,11 @@ with, for :math:`T = (x_0, y_0, z_0)` and :math:`\hat{u} = (u_x, u_y, u_z)`,
    \end{aligned}
 
 The selected root must satisfy :math:`t>\lVert R-T\rVert`, so it is beyond the receiver along the
-Tx-to-Rx ray. Merely choosing a positive root can incorrectly select an intersection between the
-transmitter and receiver.
+Tx-to-Rx ray; this surface point is the BRP, denoted :math:`S`. Merely choosing a positive root can
+incorrectly select an intersection between the transmitter and receiver. This condition doubles as the
+backscatter visibility check -- a geometry whose Tx-Rx line misses the ellipsoid, or whose intersection
+does not lie beyond the receiver, is rejected. It is the counterpart of the chord line-of-sight test used
+for the specular point (:doc:`reflection`), which the BRP path does not reuse.
 
 Incidence angle and gates
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -121,9 +124,10 @@ S_y/a^2, S_z/b^2)`,
    \cos\left(\theta_i\right) = \frac{(R - S)\cdot\hat{n}(S)}{\lVert R - S\rVert},
 
 and the sample is kept only if :math:`\theta_i` is below ``max_incidence_angle_deg``. Two cheaper gates
-run first: the Tx-Rx central angle must be below ``max_central_angle_deg``, and -- when an antenna is given
--- the look direction must fall inside the antenna's steering cone (the retroreflector look direction is
-parallel to :math:`R - T`, so this can be checked before solving the quadratic).
+run first: the Tx-Rx central angle must be below ``max_central_angle_deg`` (the same central-angle gate as
+the specular path), and -- when an antenna is given -- the look direction must fall inside the antenna's
+steering cone (the retroreflector look direction is parallel to :math:`R - T`, so this can be checked
+before solving the quadratic).
 
 Module Assumptions and Limitations
 ----------------------------------
@@ -166,6 +170,10 @@ from ``[REFLECTION]``:
    * - Key
      - Meaning
      - Unit
+   * - ``earth_model``
+     - ``"spherical"`` (mean-radius sphere) or ``"elliptical"`` (WGS-84 ellipsoid). Required; missing
+       or invalid values raise.
+     - --
    * - ``reflection_type``
      - ``"backscatter"`` selects this BRP path (vs ``"specular"``).
      - --
