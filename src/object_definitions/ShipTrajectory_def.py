@@ -561,6 +561,8 @@ class ShipTrajectory:
             print("Direct path possible - no land obstacles")
             self.waypoints = [start_safe, end_safe]
             self.route_distance = self._calculate_haversine_distance(start_safe, end_safe)
+            if self.route_distance:
+                self.end_time = self.start_time + timedelta(seconds=self.route_distance / self.ship_speed)
             return
 
         print("Planning route to avoid land")
