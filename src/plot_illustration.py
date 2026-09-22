@@ -33,22 +33,15 @@ def main():
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.4))
     for ax, ens_y, col_y, ylab in ((ax1, ens_scr, col_scr, "SCR [dB]"),
                                     (ax2, ens_sinr, col_sinr, "SINR [dB]")):
-        ax.scatter(ens_km, ens_y, s=28, c="#4477aa", label="representative ensemble (BRP off ship)")
-        ax.scatter(col_km, col_y, s=90, marker="*", c="#cc3311", zorder=5,
-                   label="phased co-located BRP-on-ship (idealized upper bound)")
+        ax.scatter(ens_km, ens_y, s=28, c="#4477aa")
+        ax.scatter(col_km, col_y, s=28, c="#4477aa")
         ax.set_xlabel("BRP distance from ship [km]")
         ax.set_ylabel(ylab)
         ax.grid(True, alpha=0.3)
     ax2.axhline(DET_THR_DB, ls="--", c="grey", lw=1)
     ax2.text(ax2.get_xlim()[1], DET_THR_DB, " detection threshold", va="bottom", ha="right", color="grey", fontsize=8)
-    # Flag the co-located point as a best-case bound, not a representative detection.
-    if len(col_km):
-        ax2.annotate("idealized dihedral\nretroreflection bound", xy=(col_km[0], col_sinr[0]),
-                     xytext=(col_km[0] + 130, col_sinr[0] - 30), fontsize=8, color="#cc3311",
-                     arrowprops=dict(arrowstyle="->", color="#cc3311", lw=0.8))
     ax1.set_title("Signal-to-clutter ratio")
     ax2.set_title("Signal-to-interference-plus-noise ratio")
-    ax1.legend(fontsize=8, loc="upper right")
     fig.suptitle("Backscatter ship detection vs bistatic reflection-point co-location\n"
                  "(dark-fleet tanker, open Skagerrak, GPS L1, 1 Oct 2025)", fontsize=11)
     fig.tight_layout(rect=(0, 0, 1, 0.94))
