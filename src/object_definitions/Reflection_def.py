@@ -394,6 +394,8 @@ class Reflection:
             return invalid_result
 
         def surface_point(latitude_param, longitude_param):
+
+
             cos_lat = np.cos(latitude_param)
             return np.array(
                 [

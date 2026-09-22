@@ -259,20 +259,12 @@ class Coverage:
                     if len(cluster) == 0:
                         continue
 
-                    # Extract valid times and positions for this cluster
-                    valid_position = ref_points_in_box[cluster]
-                    lon_lat = valid_position[:, [1, 0]]
-                    track_geometry = Point(lon_lat[0]) if len(cluster) == 1 else LineString(lon_lat)
-                    if self.reflection_type == "backscatter":
-                        # A cell is near-backscatter-covered while its bistatic angle to the pair stays
-                        # below max_bistatic_bksc_angle_deg, i.e. while it lies inside the acceptance
-                        # swath around the exact-retroreflection BRP track. Buffer the track by the
-                        # cluster-minimum swath half-width (conservative), converted to degrees at the
-                        # cluster mean latitude with the latitude conversion (the smaller of the two
-                        # degree equivalents, so the east-west extent is never overstated).
-                        swath_deg = self._cluster_swath_half_width_deg(refl_vector[i], cluster, valid_position)
-                        if np.isfinite(swath_deg) and swath_deg > 0.0:
-                            track_geometry = track_geometry.buffer(swath_deg)
+                    # Extract valid times and positions for this cluster. The track geometry is the
+                    # specular/BRP polyline; in backscatter mode it is buffered by the near-backscatter
+                    # acceptance swath (a cell counts while its bistatic angle to the pair stays below
+                    # max_bistatic_bksc_angle_deg). _cluster_track_geometry is shared with the plotting.
+                    lon_lat = ref_points_in_box[cluster][:, [1, 0]]
+                    track_geometry = self._cluster_track_geometry(refl_vector[i], cluster, ref_points_in_box)
                     for idx, polygon in self.grid_gdf.iterrows():
                         intersection = polygon["geometry"].intersection(track_geometry)
                         if not intersection.is_empty:
@@ -319,6 +311,19 @@ class Coverage:
         half_width_min_m = float(np.nanmin(half_width_m))                             # conservative: narrowest sample
         mean_lat_deg = float(np.nanmean(valid_position[:, 0]))
         return float(fn.delta_lat_from_distance(mean_lat_deg, half_width_min_m))      # smaller degree equivalent
+
+    def _cluster_track_geometry(self, reflection_obj, cluster, ref_points_in_box):
+        """Coverage geometry for one in-box track cluster: the specular/BRP polyline, buffered by the
+        near-backscatter swath half-width in backscatter mode. Shared by the coverage counting and the
+        map plotting, so the drawn swath is exactly the region that is counted."""
+        valid_position = ref_points_in_box[cluster]                          # (k, 2) = (lat, lon)
+        lon_lat = valid_position[:, [1, 0]]
+        geom = Point(lon_lat[0]) if len(cluster) == 1 else LineString(lon_lat)
+        if self.reflection_type == "backscatter":
+            swath_deg = self._cluster_swath_half_width_deg(reflection_obj, cluster, valid_position)
+            if np.isfinite(swath_deg) and swath_deg > 0.0:
+                geom = geom.buffer(swath_deg)                                # near-backscatter acceptance swath
+        return geom
 
     def compute_coverage_for_constellation(self, constellation, freq_hz, eirp_dbw, verbose=False):
         """
@@ -528,16 +533,29 @@ class Coverage:
             alpha=0.5,
             label="Coverage Area",
         )
+        # Draw only the in-box, contiguous track segments used by the coverage counting (the full
+        # refl_LL_vec would add out-of-region / pole-wrapping fragments unrelated to this map).
         for gnss_constel in gnss_const:
             color = fn.color_gnss_const(gnss_constel)
-            refl_vec = self.reflection_dict[gnss_constel]
-            for i in range(len(refl_vec)):
-                ax.plot(
-                    refl_vec[i].refl_LL_vec[:, 1],
-                    refl_vec[i].refl_LL_vec[:, 0],
-                    color=color,
-                    transform=ccrs.PlateCarree(),
-                )
+            for refl in self.reflection_dict[gnss_constel]:
+                validity_mask, ref_points_in_box = self.validity_mask(refl, self.bounding_box)
+                for cluster in self._get_reflection_clusters(refl, validity_mask):
+                    if len(cluster) < 2:
+                        continue
+                    segment = ref_points_in_box[cluster]  # (k, 2) = (lat, lon), finite within the box
+                    # Backscatter: fill the near-backscatter acceptance swath (the counted region) at
+                    # 90% transparency, so the coloured cells line up with the drawn track.
+                    if self.reflection_type == "backscatter":
+                        swath = self._cluster_track_geometry(refl, cluster, ref_points_in_box)
+                        if swath.geom_type in ("Polygon", "MultiPolygon"):
+                            ax.add_geometries([swath], crs=ccrs.PlateCarree(), facecolor=color, edgecolor="none", alpha=0.1)
+                    ax.plot(
+                        segment[:, 1],
+                        segment[:, 0],
+                        color=color,
+                        linewidth=0.8,
+                        transform=ccrs.PlateCarree(),
+                    )
 
         file_path = os.path.join(Constants.output_folder_path, file_name)
         if title is None:
@@ -623,23 +641,32 @@ class Coverage:
             if mask.any():
                 self.grid_gdf[mask].plot(ax=ax, color=fill_color, edgecolor="red", alpha=0.3)
 
-        # Plot reflection lines
-        # Loop through the reflection vectors for each GNSS constellation
-        # for gnss_key in self.gnss_constellation.keys():
-        #    refl_vec = self.reflection_dict[gnss_key]
-        #    for i in range(len(refl_vec)):
-        #        ax.plot(refl_vec[i].refl_LL_vec[:, 1], refl_vec[i].refl_LL_vec[:, 0], color='red', transform=ccrs.PlateCarree())
-
-        # Plot reflection lines for selected GNSS constellations
+        # Plot reflection tracks -- only the in-box, contiguous segments that the coverage counting
+        # uses, so the drawn tracks correspond to the coloured cells. Plotting the full refl_LL_vec
+        # would draw out-of-region and pole-wrapping segments (e.g. a BRP track that lies over the
+        # equator or the south pole for this window) clipped onto the map, which are unrelated to the
+        # coverage counted here.
         for gnss_name in gnss_const:
-            if gnss_name in self.reflection_dict:
-                color = fn.color_gnss_const(gnss_name)
-                refl_vec = self.reflection_dict[gnss_name]
-                for i in range(len(refl_vec)):
+            if gnss_name not in self.reflection_dict:
+                continue
+            color = fn.color_gnss_const(gnss_name)
+            for refl in self.reflection_dict[gnss_name]:
+                validity_mask, ref_points_in_box = self.validity_mask(refl, self.bounding_box)
+                for cluster in self._get_reflection_clusters(refl, validity_mask):
+                    if len(cluster) < 2:
+                        continue
+                    segment = ref_points_in_box[cluster]  # (k, 2) = (lat, lon), finite within the box
+                    # Backscatter: fill the near-backscatter acceptance swath (the counted region) at
+                    # 90% transparency, so the coloured cells line up with the drawn track.
+                    if self.reflection_type == "backscatter":
+                        swath = self._cluster_track_geometry(refl, cluster, ref_points_in_box)
+                        if swath.geom_type in ("Polygon", "MultiPolygon"):
+                            ax.add_geometries([swath], crs=ccrs.PlateCarree(), facecolor=color, edgecolor="none", alpha=0.1)
                     ax.plot(
-                        refl_vec[i].refl_LL_vec[:, 1],
-                        refl_vec[i].refl_LL_vec[:, 0],
+                        segment[:, 1],
+                        segment[:, 0],
                         color=color,
+                        linewidth=0.8,
                         transform=ccrs.PlateCarree(),
                     )
 

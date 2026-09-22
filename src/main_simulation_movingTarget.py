@@ -130,9 +130,11 @@ def run_moving_target_detection(settings: dict):
             if mtd.show_link_budget_contributions(file_name=contributions_plot, show_figure=False, band=band):
                 print(f"Link-budget breakdown plots saved as: {contributions_plot.replace('.png', '_*.png')}")
 
-            # Forward-scatter shadow delta-Pr summary (specular mode: the change the ship induces in the glint).
+            # Forward-scatter shadow delta-Pr summary + figures (specular mode: the change the ship induces in the glint).
             if mtd.reflection_mode == "specular":
-                mtd.show_forward_shadow_summary(band=band)
+                shadow_plot = f"Forward_shadow_{mtd.reflection_mode}_{gnss_name}_{band}.png"
+                if mtd.show_forward_shadow_summary(file_name=shadow_plot, show_figure=False, band=band):
+                    print(f"Forward-shadow plots saved as: {shadow_plot.replace('.png', '_*.png')}")
 
     # 6b. Combined plots: all constellations and bands together, color-coded by constellation.
     constellations_with_signals = [name for name, sigs in mtd.signals_per_constellation.items() if sigs]
@@ -145,6 +147,11 @@ def run_moving_target_detection(settings: dict):
     combined_contributions_plot = f"Link_budget_breakdown_{mtd.reflection_mode}_combined.png"
     if mtd.show_link_budget_contributions(file_name=combined_contributions_plot, show_figure=False, band=None):
         print(f"Combined link-budget breakdown plots saved as: {combined_contributions_plot.replace('.png', '_*.png')}")
+
+    if mtd.reflection_mode == "specular":
+        combined_shadow_plot = f"Forward_shadow_{mtd.reflection_mode}_combined.png"
+        if mtd.show_forward_shadow_summary(file_name=combined_shadow_plot, show_figure=False, band=None):
+            print(f"Combined forward-shadow plots saved as: {combined_shadow_plot.replace('.png', '_*.png')}")
 
     # 7. Reflection animation (band-independent: reflection geometry is the same across bands).
     if settings["create_animation"]:

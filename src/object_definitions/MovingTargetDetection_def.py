@@ -1248,13 +1248,17 @@ class MovingTargetDetection:
         print("=" * 64)
         return True
 
-    def show_forward_shadow_summary(self, band: str | None = None) -> bool:
+    def show_forward_shadow_summary(self, file_name: str | None = None, show_figure: bool = False, band: str | None = None) -> bool:
         """
-        Print the forward-scatter shadow delta-Pr per constellation (specular mode).
+        Summarise the forward-scatter shadow delta-Pr per constellation (specular mode).
 
         Reports, per GNSS constellation, the change the ship induces in the ocean glint by occulting
         its waterline-area patch: delta-Pr relative to the footprint glint and relative to the thermal
-        floor. Returns True if any constellation had a finite shadow delta-Pr, False otherwise.
+        floor. Prints a text summary and, when file_name is given, saves two histogram figures (the
+        forward-scatter analogues of the backscatter SCR / SINR distributions):
+            - <stem>_shadow_fraction<ext>:   delta-Pr / footprint glint [dB] per constellation.
+            - <stem>_shadow_over_noise<ext>: delta-Pr / noise [dB] per constellation, 0 dB = noise floor.
+        Returns True if any constellation had a finite shadow delta-Pr, False otherwise.
         """
         rows = []
         for gnss_name in self.gnss_constellation:
@@ -1282,6 +1286,64 @@ class MovingTargetDetection:
                 n_above = int(np.sum(on > 0.0))
                 print(f"    delta-Pr / noise [dB]            min={on.min():7.2f}  median={np.median(on):7.2f}  max={on.max():7.2f}  (above noise: {n_above}/{on.size})")
         print("=" * 64)
+
+        if file_name is None and not show_figure:
+            return True
+
+        color_cycle = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+        const_color = {name: color_cycle[i % len(color_cycle)] for i, name in enumerate(self.gnss_constellation.keys())}
+
+        def _panel_file(suffix: str) -> str | None:
+            if file_name is None:
+                return None
+            stem, ext = os.path.splitext(file_name)
+            return f"{stem}_{suffix}{ext}"
+
+        def _finalize(fig, suffix: str) -> None:
+            if band is not None:
+                owner = Constants.get_constellation_for_band(band)
+                fig.suptitle(f"{owner} -- Band {band}" if owner else f"Band {band}", fontweight="bold")
+            fig.tight_layout()
+            panel_file = _panel_file(suffix)
+            if panel_file is not None:
+                fig.savefig(os.path.join(Constants.output_folder_path, panel_file), dpi=300, bbox_inches="tight")
+                logger.info(f"Figure saved as {panel_file}")
+            if show_figure:
+                plt.show(block=True)
+            plt.close(fig)
+
+        # delta-Pr / footprint-glint histogram (forward-scatter analogue of the SCR distribution).
+        fig, ax_frac = plt.subplots(figsize=(8, 6))
+        all_fr = np.concatenate([fr for _, _, fr, _ in rows])
+        frac_bins = np.linspace(all_fr.min() - 5.0, all_fr.max() + 5.0, max(10, min(30, all_fr.size)) + 1)
+        for gnss_name, _, fr, _ in rows:
+            ax_frac.hist(fr, bins=frac_bins, color=const_color[gnss_name], alpha=0.5,
+                         label=f"{gnss_name} (n={fr.size})", edgecolor="black")
+        ax_frac.set_xlabel("delta-Pr / footprint glint = 10 log10(shadow Pr / ocean Pr) [dB]")
+        ax_frac.set_ylabel("Number of footprint-overlap events")
+        ax_frac.set_title("Forward-Scatter Shadow vs Glint Distribution")
+        ax_frac.legend(loc="best")
+        ax_frac.grid(True, alpha=0.3)
+        _finalize(fig, "shadow_fraction")
+
+        # delta-Pr / noise histogram (forward-scatter analogue of the SINR distribution).
+        fig, ax_on = plt.subplots(figsize=(8, 6))
+        on_rows = [(name, on) for name, _, _, on in rows if on.size > 0]
+        if on_rows:
+            all_on = np.concatenate([on for _, on in on_rows])
+            on_bins = np.linspace(all_on.min() - 5.0, all_on.max() + 5.0, max(10, min(30, all_on.size)) + 1)
+            for gnss_name, on in on_rows:
+                ax_on.hist(on, bins=on_bins, color=const_color[gnss_name], alpha=0.5,
+                           label=f"{gnss_name} (n={on.size})", edgecolor="black")
+            ax_on.axvline(0.0, color="k", linestyle="--", alpha=0.6, label="Noise floor (0 dB)")
+            ax_on.legend(loc="best")
+        else:
+            ax_on.text(0.5, 0.5, "No finite delta-Pr / noise values", transform=ax_on.transAxes, ha="center", va="center")
+        ax_on.set_xlabel("delta-Pr / noise = 10 log10(shadow Pr / noise) [dB]")
+        ax_on.set_ylabel("Number of footprint-overlap events")
+        ax_on.set_title("Forward-Scatter Shadow vs Noise Distribution")
+        ax_on.grid(True, alpha=0.3)
+        _finalize(fig, "shadow_over_noise")
         return True
 
     def show_reflections_and_target_position_at_time_i(
