@@ -520,6 +520,7 @@ class Coverage:
 
         plt.figure(figsize=(12, 6))
         ax = plt.axes(projection=ccrs.PlateCarree())
+        ax.set_aspect("equal", adjustable="box")
         ax.add_feature(cfeature.COASTLINE)
         ax.add_feature(cfeature.BORDERS, linestyle=":")
         ax.set_global()
@@ -532,6 +533,7 @@ class Coverage:
             linestyle="-",
             alpha=0.5,
             label="Coverage Area",
+            aspect=None,
         )
         # Draw only the in-box, contiguous track segments used by the coverage counting (the full
         # refl_LL_vec would add out-of-region / pole-wrapping fragments unrelated to this map).
@@ -604,6 +606,7 @@ class Coverage:
         # Define color based on the count
         plt.figure(figsize=(12, 6))
         ax = plt.axes(projection=ccrs.PlateCarree())
+        ax.set_aspect("equal", adjustable="box")
 
         # Add map features
         ax.add_feature(cfeature.COASTLINE)
@@ -628,6 +631,7 @@ class Coverage:
             linestyle="-",
             alpha=0.5,
             label="Grid Background",
+            aspect=None,
         )
 
         # Group cells by intersection count and plot each group in a single batch call —
@@ -639,7 +643,7 @@ class Coverage:
             (counts > 2, "orange"),
         ]:
             if mask.any():
-                self.grid_gdf[mask].plot(ax=ax, color=fill_color, edgecolor="red", alpha=0.3)
+                self.grid_gdf[mask].plot(ax=ax, color=fill_color, edgecolor="red", alpha=0.3, aspect=None)
 
         # Plot reflection tracks -- only the in-box, contiguous segments that the coverage counting
         # uses, so the drawn tracks correspond to the coloured cells. Plotting the full refl_LL_vec
@@ -701,6 +705,8 @@ class Coverage:
         ]
         ax.legend(handles=legend_elements, loc="upper right")
 
+        # Keep Cartopy map proportions independent of the latitude of each coverage group.
+        ax.set_aspect("equal", adjustable="box")
         plt.tight_layout()
 
         file_path = os.path.join(Constants.output_folder_path, file_name)
@@ -814,6 +820,7 @@ class Coverage:
 
         # Plotting the results
         fig, ax = plt.subplots(figsize=(10, 10))
+        ax.set_aspect("equal", adjustable="box")
 
         # Plot the original shapefile
         self.grid_gdf.plot(
@@ -822,6 +829,7 @@ class Coverage:
             edgecolor="black",
             alpha=0.5,
             label="Original Shapefile",
+            aspect=None,
         )
 
         # Plot the gridded shapefile grid
@@ -831,6 +839,7 @@ class Coverage:
             facecolor="none",
             linestyle="-",
             label="Fishnet Grid",
+            aspect=None,
         )
 
         # Add title and legend

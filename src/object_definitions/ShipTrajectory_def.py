@@ -1355,10 +1355,11 @@ class ShipTrajectory:
 
         # Create plot
         fig, ax = plt.subplots(figsize=(12, 8))
+        ax.set_aspect("equal", adjustable="box")
 
         # Plot land if available
         if self.ocean_polygons is not None:
-            gpd.GeoSeries(self.ocean_polygons).plot(ax=ax, color="lightgreen", edgecolor="darkblue", alpha=0.5)
+            gpd.GeoSeries(self.ocean_polygons).plot(ax=ax, color="lightgreen", edgecolor="darkblue", alpha=0.5, aspect=None)
 
         # Plot trajectory
         if show_trajectory and self.trajectory_points:

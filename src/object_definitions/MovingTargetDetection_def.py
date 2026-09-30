@@ -198,6 +198,7 @@ class MovingTargetDetection:
             # Must happen before the figure is created, since a figure binds to the active backend.
             plt.switch_backend("Qt5Agg")
             fig, ax = plt.subplots(figsize=(10, 6), subplot_kw={"projection": ccrs.PlateCarree()})
+            ax.set_aspect("equal", adjustable="box")
 
             buffer_deg = self.bbox_buffer_deg
             min_lon, max_lon, min_lat, max_lat = self.bounding_box
@@ -1419,6 +1420,7 @@ class MovingTargetDetection:
 
         # Plot the target position and the reflection points with footprints
         fig, ax = plt.subplots(figsize=(10, 6), subplot_kw={"projection": ccrs.PlateCarree()})
+        ax.set_aspect("equal", adjustable="box")
         # Set the map extent to your bounding box (order: west, east, south, north)
 
         #ax.set_global()
@@ -1740,6 +1742,7 @@ class MovingTargetDetection:
             """
             ## DEBUG plot footprint_poly
             fig, ax = plt.subplots(figsize=(10, 6), subplot_kw={"projection": ccrs.PlateCarree()})
+            ax.set_aspect("equal", adjustable="box")
 
             # Make sure bounding box is appropriate for your circle
             # If self.bounding_box is too large compared to your circle, adjust it
@@ -2175,6 +2178,7 @@ class MovingTargetDetection:
 
         # Create figure
         fig, ax = plt.subplots(figsize=(10, 6), subplot_kw={"projection": ccrs.PlateCarree()})
+        ax.set_aspect("equal", adjustable="box")
         ax.set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
 
         gnss_const_str = ", ".join(gnss_const).replace("[", "").replace("]", "").replace(", ", " and ")

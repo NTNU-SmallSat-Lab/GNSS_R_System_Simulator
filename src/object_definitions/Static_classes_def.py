@@ -35,6 +35,7 @@ class Plotting:
         """
         plt.figure(figsize=(12, 6))
         ax = plt.axes(projection=ccrs.PlateCarree())
+        ax.set_aspect("equal", adjustable="box")
         ax.add_feature(cfeature.COASTLINE)
         ax.add_feature(cfeature.BORDERS, linestyle=":")
         ax.set_global()
@@ -87,6 +88,7 @@ class Plotting:
         """
         plt.figure(figsize=(12, 6))
         ax = plt.axes(projection=ccrs.PlateCarree())
+        ax.set_aspect("equal", adjustable="box")
         ax.add_feature(cfeature.COASTLINE)
         ax.add_feature(cfeature.BORDERS, linestyle=":")
         ax.set_global()
