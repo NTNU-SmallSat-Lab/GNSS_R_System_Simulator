@@ -249,6 +249,24 @@ class TestBraggBackscatterNrcs:
         )
         return float(sigma0_rl if pol == "RL" else sigma0_rr)
 
+    def test_prefactor_matches_kirchhoff_small_roughness_limit(self):
+        # Normal-incidence Kirchhoff NRCS for a Gaussian-correlated surface, (k^2 |R|^2 / pi) * int
+        # [exp(-q_z^2 s^2 (1 - rho)) - exp(-q_z^2 s^2)] d^2r, tends to C k^4 |R|^2 Psi(0) for small s,
+        # with Psi the height spectrum normalised to s^2 (as W_iso). Its large-s limit is the GO NRCS.
+        k = 2.0 * np.pi / self.LAMBDA_L1_M
+        s, corr_len = 1.0e-4, 5.0
+        integrand = lambda r: (np.exp(-4 * k**2 * s**2 * (1 - np.exp(-(r**2) / corr_len**2))) - np.exp(-4 * k**2 * s**2)) * 2 * np.pi * r
+        sigma0_ka = k**2 / np.pi * integrate.quad(integrand, 0.0, 20.0 * corr_len, limit=400)[0]
+        psi_0 = s**2 * corr_len**2 / (4.0 * np.pi)                    # Psi(0) = s^2 / (2 pi)^2 * int rho d^2r
+        prefactor_ka = sigma0_ka / (k**4 * psi_0)
+
+        theta = np.radians(30.0)
+        k_bragg = 2.0 * k * np.sin(theta)
+        w_iso = elfouhaily_omnidirectional_spectrum(k_bragg, 7.0, 0.84) / (2.0 * np.pi * k_bragg)
+        g_hh, g_vv = bragg_scattering_coefficients(theta, self.EPS_SEAWATER_L1)
+        unit_prefactor = k**4 * np.cos(theta) ** 4 * abs(0.5 * (g_hh + g_vv)) ** 2 * w_iso
+        np.testing.assert_allclose(self._sigma0(30.0) / unit_prefactor, prefactor_ka, rtol=1e-3)
+
     def test_representative_l_band_value_stays_in_broad_envelope(self):
         # Broad plausibility/regression bound, not measurement calibration: circular-polarisation
         # sigma0_RL at 30 deg / 7 m/s should remain in an oceanic L-band range.
@@ -354,6 +372,16 @@ class TestTwoScaleBackscatterNrcs:
     def test_decreases_with_incidence(self):
         vals = [self._ts(th) for th in (29.0, 38.0, 46.0)]
         assert vals[0] > vals[1] > vals[2], f"two-scale sigma0_RL not decreasing with incidence: {vals}"
+
+    def test_no_divergence_leak_near_gate_at_high_wind(self):
+        # Mirror-ward facets with local k_B < k_radar / 3 add no Bragg return, so steep large-scale
+        # slopes at high wind cannot leak the near-nadir divergence: sigma0 stays below 0 dB and
+        # decreases with incidence from 20 deg outward.
+        thetas = (20.0, 22.0, 25.0, 30.0, 35.0, 45.0)
+        for wind in (4.0, 7.0, 10.0, 13.0, 16.0):
+            vals = [self._ts(th, wind=wind) for th in thetas]
+            assert max(vals) < 1.0, f"two-scale sigma0_RL above 0 dB at {wind} m/s: {10 * np.log10(max(vals)):.1f} dB"
+            assert all(a > b for a, b in zip(vals, vals[1:])), f"not decreasing with incidence at {wind} m/s"
 
     def test_array_matches_scalar(self):
         thetas = np.radians(np.array([25.0, 35.0, 45.0]))

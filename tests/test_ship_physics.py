@@ -119,17 +119,17 @@ class TestDihedralRcs:
 
     def test_edge_component_sinc_falloff(self):
         # Bistatic case: bisector tilted along the edge direction -> sinc^2 reduces the peak.
-        # Choose n_tx2s and n_s2rx such that (n_s2rx + n_tx2s) . edge_hat is nontrivial.
+        # Choose n_tx2s and n_s2rx such that (n_tx2s - n_s2rx) . edge_hat is nontrivial.
         # Use a small tilt where sinc argument == 1 (first zero of sinc).
         L = 10.0
         H = 3.0
-        # We want u_edge = L / lambda * (n_s2rx + n_tx2s) . edge_hat = 1.0
+        # We want |u_edge| = L / lambda * |(n_tx2s - n_s2rx) . edge_hat| = 1.0
         # Pick n_tx2s with x-component eps, n_s2rx = -n_tx2s + correction; simpler: both
-        # mostly into corner but n_s2rx tilted in +x so the sum has +x component.
+        # mostly into corner but n_s2rx tilted in +x so the difference has a -x component.
         target_u = 1.0
-        sum_edge_target = target_u * WAVELENGTH_M / L      # required (sum).edge component
+        sum_edge_target = target_u * WAVELENGTH_M / L      # required |(difference).edge| component
         # n_tx2s = (-eps, -sqrt(.5), -sqrt(.5));  n_s2rx = (+eps + sum_edge_target, +sqrt(.5), +sqrt(.5))
-        # so that (n_s2rx + n_tx2s).x = sum_edge_target.
+        # so that (n_tx2s - n_s2rx).x = -sum_edge_target (eps = 0).
         eps = 0.0
         n_tx2s = np.array([[-eps, -np.sqrt(0.5), -np.sqrt(0.5)]])
         n_s2rx = np.array([[+eps + sum_edge_target, +np.sqrt(0.5), +np.sqrt(0.5)]])
@@ -146,6 +146,25 @@ class TestDihedralRcs:
         # it must be << peak.
         peak = 8.0 * np.pi * (L * H) ** 2 / WAVELENGTH_M**2
         assert 0.0 < sigma[0] < 0.5 * peak
+
+    def test_double_bounce_preserves_edge_component(self):
+        # Incoming ray with edge component c: the double bounce flips y and z and keeps x,
+        # so the peak lies at (c, +a, +a), while exact retro (-c, +a, +a) falls into the sinc sidelobes.
+        L = 10.0
+        H = 3.0
+        c = 0.1
+        a = np.sqrt((1.0 - c**2) / 2.0)
+        n_tx2s = np.array([[c, -a, -a]])
+        n_double_bounce = np.array([[c, +a, +a]])
+        n_retro = -n_tx2s
+        peak = 8.0 * np.pi * (L * H) ** 2 / WAVELENGTH_M**2
+        kwargs = dict(edge_hat=EX, leg_1_normal=EY, leg_2_normal=EZ, length_edge_m=L, leg_dimension_m=H, wavelength_m=WAVELENGTH_M)
+        sigma_bounce = dihedral_rcs(n_tx2s=n_tx2s, n_s2rx=n_double_bounce, **kwargs)
+        sigma_retro = dihedral_rcs(n_tx2s=n_tx2s, n_s2rx=n_retro, **kwargs)
+        np.testing.assert_allclose(sigma_bounce, [peak], rtol=1e-12)
+        expected_retro = peak * np.sinc(L / WAVELENGTH_M * 2.0 * c) ** 2   # u_edge = L / lambda * 2c
+        np.testing.assert_allclose(sigma_retro, [expected_retro], rtol=1e-9)
+        assert sigma_retro[0] < 1e-2 * peak
 
     def test_vectorised_over_samples(self):
         n_tx2s = np.vstack([

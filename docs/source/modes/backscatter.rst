@@ -49,7 +49,7 @@ almost no facet is tilted steeply enough to bounce the signal straight back. Wha
 scatter: a weak, resonant return from small wind-driven ripples whose wavelength matches the radar. The
 simulator carries both mechanisms: the quasi-specular geometric-optics term, which owns the steep
 (near-nadir) geometry, and the two-scale Bragg term of
-:doc:`../Documentation/functions/ocean_physics`, gated on at incidence >= 20 deg where it dominates. The
+:doc:`../Documentation/functions/ocean_physics`, which dominates from about 20 deg incidence. The
 resulting cross-section per unit area (the NRCS) is multiplied by a clutter area to get the sea power.
 
 That clutter area matters. The simulator can use the whole antenna footprint, patch-integrate over that

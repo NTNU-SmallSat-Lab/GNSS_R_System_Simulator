@@ -381,10 +381,15 @@ class TestOceanTargetComputeRcs:
         assert result.info["rcs_bragg_m2"][0] == 0.0
         assert result.info["nrcs_bragg_RL"][0] == 0.0
 
-    def test_bragg_zero_near_nadir_backscatter(self):
-        # Below the SPM incidence floor the quasi-specular GO term owns the geometry; Bragg is 0.
-        result = _default_ocean().compute_rcs(_oblique_backscatter_geometry(10.0), 0.19)
-        assert result.info["rcs_bragg_m2"][0] == 0.0
+    def test_go_dominates_bragg_near_nadir_backscatter(self):
+        # Two-scale crossover: near nadir the quasi-specular GO term dominates and Bragg adds the ripple
+        # contribution; at oblique incidence Bragg takes over.
+        area = np.array([1.0e8])
+        for theta_deg, go_dominates in ((10.0, True), (30.0, False)):
+            info = _default_ocean().compute_rcs(_oblique_backscatter_geometry(theta_deg), 0.19, illuminated_area_m2=area).info
+            rcs_go = info["nrcs"][0] * info["effective_glistening_area_m2"][0]
+            assert info["rcs_bragg_m2"][0] > 0.0
+            assert (rcs_go > info["rcs_bragg_m2"][0]) == go_dominates
 
     def test_bragg_dominates_at_oblique_backscatter(self):
         # At oblique backscatter the GO term collapses and Bragg carries the incoherent return.

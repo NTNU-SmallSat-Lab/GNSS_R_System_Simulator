@@ -70,15 +70,10 @@ if TYPE_CHECKING:
 
 # Bragg backscatter is gated to near-backscatter geometry: the BRP retroreflection line is collinear
 # (bistatic ~ 0 deg), while any forward-specular reflection sits at bistatic = 2 * incidence (>= ~10 deg).
-# Gating below this keeps the specular path -- and its golden reference -- exactly unchanged.
+# Gating below this keeps the forward-specular path unchanged. No incidence gate is needed: toward nadir
+# the facet-local restriction k_B(theta_local) >= k_radar / 3 in two_scale_backscatter_nrcs leaves the
+# quasi-specular facets to the GO term, and GO and Bragg add as in the two-scale model.
 _BRAGG_MAX_BISTATIC_DEG = 5.0
-# Divergence protection, not calibration: first-order Bragg diverges toward nadir
-# (sigma0 ~ B / (4 sin^4 theta) as k_Bragg slides into the energetic long-wave spectrum), and the
-# two-scale tilt average leaks that divergence through mirror-ward-tilted facets (unphysical
-# +16..+29 dB at 10..17.5 deg incidence for 7 m/s at L1). Below this gate the quasi-specular GO
-# term owns the return. Do not lower the gate without first restricting the facet-local Bragg
-# wavenumber inside the tilt average (k_B(theta_local) >= k_radar / 3); see TODO.md.
-_BRAGG_MIN_INCIDENCE_DEG = 20.0
 
 
 class OceanTarget(Target):
@@ -237,15 +232,15 @@ class OceanTarget(Target):
         geom_factor[valid_q] = (q_mag[valid_q] / np.abs(q_z[valid_q])) ** 4    # (|q| / q_z)^4
         nrcs = np.pi * R_RL_sq * geom_factor * pdf
 
-        # Two-scale (tilt-modulated) Bragg backscatter NRCS, gated to near-backscatter geometry at
-        # oblique incidence. The GO formula above collapses there (no facets tilted enough to
-        # retroreflect); Bragg fills it in. Forward-specular and near-nadir geometries get 0, so the
-        # specular path is untouched and the quasi-specular GO term owns nadir. The look azimuth
-        # relative to the upwind axis drives the upwind/crosswind asymmetry of the tilt average.
+        # Two-scale (tilt-modulated) Bragg backscatter NRCS, gated to near-backscatter geometry. At
+        # oblique incidence the GO formula above collapses (no facets tilted enough to retroreflect) and
+        # Bragg carries the return; toward nadir GO dominates and Bragg adds the ripple contribution.
+        # Forward-specular geometries get 0. The look azimuth relative to the upwind axis drives the
+        # upwind/crosswind asymmetry of the tilt average.
         look_e = np.einsum("ij,ij->i", n_s2rx, n_east)                    # look horizontal projection, east
         look_n = np.einsum("ij,ij->i", n_s2rx, n_north)                   # look horizontal projection, north
         azimuth_rel_wind = np.arctan2(look_e, look_n) - theta_w           # look azimuth relative to upwind axis
-        bragg_active = (bistatic_deg < _BRAGG_MAX_BISTATIC_DEG) & (incidence_deg >= _BRAGG_MIN_INCIDENCE_DEG)
+        bragg_active = bistatic_deg < _BRAGG_MAX_BISTATIC_DEG
         nrcs_bragg = np.zeros(n_samples)                                  # RHCP -> LHCP cross-pol (consumed)
         nrcs_bragg_co = np.zeros(n_samples)                               # RHCP -> RHCP co-pol (polarization-hook diagnostic)
         active = np.where(bragg_active & np.isfinite(azimuth_rel_wind))[0]

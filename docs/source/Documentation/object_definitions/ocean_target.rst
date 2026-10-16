@@ -168,21 +168,19 @@ Bragg backscatter
 In the backscatter direction at oblique incidence the geometric-optics term collapses (almost no facet is
 tilted steeply enough to bounce the signal straight back). There the return comes from **Bragg** resonance
 with small wind ripples, computed by the two-scale model in :doc:`../functions/ocean_physics`. It is
-switched on only near backscatter (bistatic angle below ~5 deg) and at oblique incidence (at or above
-20 deg), so the forward/specular path is left exactly unchanged:
+switched on only near backscatter (bistatic angle below ~5 deg), so the forward/specular path is left
+unchanged:
 
 .. math::
    :label: ot-bragg-gate
 
-   \text{Bragg active} \iff \beta < 5^\circ \;\text{and}\; \theta_i \ge 20^\circ.
+   \text{Bragg active} \iff \beta < 5^\circ.
 
-The incidence floor is **divergence protection**, not calibration: first-order Bragg grows without bound
-toward nadir (:math:`\sigma^0 \sim B/(4\sin^4\theta)` as the resonant wavenumber slides into the
-energetic long-wave spectrum), and the tilt average leaks that growth through mirror-ward-tilted facets
-well above nadir. Below the gate the quasi-specular geometric-optics term owns the return. Lowering the
-gate requires first restricting the facet-local Bragg wavenumber inside the tilt average
-(:math:`k_B(\theta_\mathrm{local}) \ge k_\mathrm{radar}/3`, the same two-scale division), a refinement
-deferred to future work.
+No incidence gate is needed: first-order Bragg grows without bound toward nadir
+(:math:`\sigma^0 \sim B/(4\sin^4\theta)`), but inside the tilt average the facet-local restriction
+:math:`k_B(\theta_\mathrm{local}) \ge k_\mathrm{radar}/3` (the same two-scale division) leaves the
+quasi-specular facets to the geometric-optics term. Geometric optics and Bragg add as in the two-scale
+model: geometric optics dominates near nadir, Bragg at oblique incidence (crossover near 15-20 deg).
 
 The clutter area
 ^^^^^^^^^^^^^^^^
@@ -205,10 +203,8 @@ Module Assumptions and Limitations
 - **Coherent term gated to specular.** The specular reflection is only added where the surface itself is the
   specular reflector; it is zero off-specular, and collapses for any realistic wave height. Its
   spherical-Earth divergence uses the mean Earth radius, not the local curvature of the ellipsoid.
-- **Hard Bragg gating.** Bragg is added only for bistatic angle below 5 deg and incidence at least 20 deg.
-  The incidence floor is divergence protection for the near-nadir blow-up of first-order Bragg (see
-  above), so parameter sweeps show a step at the gate; the smooth facet-local gate that would replace it
-  is a recorded refinement. Out-of-plane polarisation rotation is not included.
+- **Hard Bragg gating.** Bragg is added only for bistatic angle below 5 deg (monostatic Bragg kernel); a
+  bistatic Bragg kernel would replace this gate. Out-of-plane polarisation rotation is not included.
 - **Sea-state ranges.** Wind speed > 0; wave age between 0.84 and 5.0; temperature and salinity in the
   Klein-Swift range. Out-of-range inputs raise.
 - **Area comes from the link budget.** The absolute diffuse power depends on the illuminated area supplied

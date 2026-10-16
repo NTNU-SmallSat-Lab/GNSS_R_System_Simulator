@@ -100,7 +100,8 @@ def dihedral_rcs(
 
     The cross-section is ``sigma = (8 pi (L H)^2 / lambda^2) * sinc^2(u_edge) * wedge_visibility``, with
     edge length ``L = length_edge_m``, leg height ``H = leg_dimension_m``, and ``u_edge = L / lambda *
-    (n_s2rx + n_tx2s) . edge_hat`` (zero at ideal retroreflection, ``n_s2rx == -n_tx2s``, giving the peak).
+    (n_tx2s - n_s2rx) . edge_hat`` (zero when the double bounce preserves the edge-parallel direction
+    component, giving the peak; exact retroreflection only peaks for directions perpendicular to the edge).
     The wedge visibility is 1 only when the directions to both Tx and Rx lie inside the open corner
     quadrant (positive along both leg normals); outside it the dihedral shadows itself. This scalar
     surrogate omits the full angular/polarimetric finite-leg response and sea-surface coupling, so it
@@ -141,7 +142,7 @@ def dihedral_rcs(
     if not vis.any():
         return rcs
 
-    edge_mismatch = np.einsum("ij,ij->i", n_s2rx + n_tx2s, edge_hat)    # 0 at ideal retro
+    edge_mismatch = np.einsum("ij,ij->i", n_tx2s - n_s2rx, edge_hat)    # 0 when the edge component is preserved
     u_edge = length_edge_m / wavelength_m * edge_mismatch
 
     sigma_peak = 8.0 * np.pi * (length_edge_m * leg_dimension_m) ** 2 / wavelength_m**2

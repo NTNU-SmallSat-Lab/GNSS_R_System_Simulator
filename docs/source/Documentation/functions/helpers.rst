@@ -42,8 +42,8 @@ cross-section
    \operatorname{sinc}^2(u_1)\,\operatorname{sinc}^2(u_2),
 
 for plate area :math:`A`, the angle :math:`\alpha` between the plate normal and the bistatic bisector, and
-the edge form-factor arguments :math:`u_i`. The dihedral peaks at retroreflection (signal returned straight
-back),
+the edge form-factor arguments :math:`u_i`. The dihedral peaks when the double bounce preserves the
+edge-parallel direction component, i.e. at retroreflection only for directions perpendicular to the edge,
 
 .. math::
    :label: ship-dihedral

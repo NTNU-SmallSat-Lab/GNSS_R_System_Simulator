@@ -99,9 +99,8 @@ Corrections made by the audit
    * - Two-scale Bragg below ~20 deg incidence is dominated by the near-nadir
        :math:`1/\sin^4\theta` divergence leaking through tilted facets (diagnosed, not yet re-modelled).
      - Lowering the empirical 20 deg gate would inject tens of dB of spurious clutter.
-     - Documented the gate as divergence protection; the facet-local
-       :math:`k_B(\theta_\mathrm{local}) \ge k_\mathrm{radar}/3` gate is the principled refinement,
-       deferred to future work.
+     - Implemented the facet-local :math:`k_B(\theta_\mathrm{local}) \ge k_\mathrm{radar}/3` restriction
+       inside the tilt average and removed the 20 deg incidence gate.
 
 Model maturity and suitable use
 -------------------------------

@@ -272,12 +272,12 @@ def bragg_backscatter_nrcs(theta_inc_rad, wavelength_m, eps_r, wind_speed_m_s, i
     with ``k = 2 pi / wavelength``. This is the return the geometric-optics glistening model misses at
     oblique incidence (no facets tilted enough to retroreflect) and that dominates ocean backscatter
     beyond about 20 deg incidence. The cross-section is
-    ``sigma0_pp = 8 pi k^4 cos^4(theta) |g_pp|^2 W_iso(k_B)`` with the isotropic 2-D spectrum
+    ``sigma0_pp = 16 pi k^4 cos^4(theta) |g_pp|^2 W_iso(k_B)`` with the isotropic 2-D spectrum
     ``W_iso(K) = S(K) / (2 pi K)`` from the Elfouhaily ``S(k)``, and the circular amplitudes
     ``g_RL = (g_HH + g_VV) / 2`` (RHCP to LHCP, handedness flipped) and ``g_RR = (g_HH - g_VV) / 2``
-    (RHCP to RHCP, preserved). The 8-pi prefactor is the textbook SPM constant; with the Elfouhaily
-    normalisation it places ``sigma0_RL`` in a broad L-band plausibility envelope without a fitted scale.
-    This is not a polarisation-matched measurement validation. SPM validity holds for moderate incidence
+    (RHCP to RHCP, preserved). The 16-pi prefactor belongs to a height spectrum normalised to the
+    height variance (``int W_iso d^2K = sigma_h^2``); it is the small-roughness limit of the same
+    Kirchhoff integral whose large-roughness limit is the geometric-optics NRCS. SPM validity holds for moderate incidence
     (about 10 to 70 deg); near nadir
     ``k_B -> 0``, the Bragg return vanishes and the geometric-optics term owns the geometry, so this
     returns 0 there.
@@ -319,7 +319,7 @@ def bragg_backscatter_nrcs(theta_inc_rad, wavelength_m, eps_r, wind_speed_m_s, i
     g_RL = 0.5 * (g_hh + g_vv)                                         # RHCP -> LHCP amplitude (handedness flip)
     g_RR = 0.5 * (g_hh - g_vv)                                         # RHCP -> RHCP amplitude (preserved)
 
-    prefactor = 8.0 * np.pi * k_radar**4 * cos_t**4 * W_iso            # 8 pi k^4 cos^4(theta) W_iso
+    prefactor = 16.0 * np.pi * k_radar**4 * cos_t**4 * W_iso           # 16 pi k^4 cos^4(theta) W_iso
     sigma0_RL = prefactor * np.abs(g_RL) ** 2
     sigma0_RR = prefactor * np.abs(g_RR) ** 2
     return sigma0_RL, sigma0_RR
@@ -370,8 +370,10 @@ def two_scale_backscatter_nrcs(theta_inc_rad, azimuth_rad, wavelength_m, eps_r, 
     facet presents a local incidence angle theta_local, the Bragg return is evaluated there, and the
     result is averaged over the anisotropic large-scale slope PDF. This adds the tilt-modulation lift
     at low incidence and the upwind/crosswind asymmetry that first-order Bragg misses, and reduces to
-    bragg_backscatter_nrcs as the large-scale slope -> 0. The out-of-plane tilt-induced polarisation
-    rotation is not yet included (a smaller correction; documented as a further refinement).
+    bragg_backscatter_nrcs as the large-scale slope -> 0. Facets whose local Bragg wavenumber
+    ``2 k sin(theta_local)`` falls below the two-scale division ``k / 3`` contribute no Bragg return (they are
+    quasi-specular mirrors covered by the GO term) but stay in the slope-PDF normalisation. The out-of-plane
+    tilt-induced polarisation rotation is not yet included (a smaller correction; documented as a further refinement).
 
     Parameters
     ----------
@@ -433,8 +435,10 @@ def two_scale_backscatter_nrcs(theta_inc_rad, azimuth_rad, wavelength_m, eps_r, 
     w = weight[None, :] * facet_visible                              # (N, M) zero weight on shadowed facets
     w_sum = np.sum(w, axis=1)
     w_sum = np.where(w_sum > 0.0, w_sum, np.nan)
-    sigma0_RL = np.sum(sigma0_RL_grid * w, axis=1) / w_sum           # slope-averaged NRCS
-    sigma0_RR = np.sum(sigma0_RR_grid * w, axis=1) / w_sum
+    bragg_regime = 2.0 * np.sin(theta_local) >= 1.0 / _TWO_SCALE_DIVISION_FACTOR   # local k_B >= k_radar / 3
+    w_bragg = w * bragg_regime                                       # quasi-specular facets add no Bragg return
+    sigma0_RL = np.sum(sigma0_RL_grid * w_bragg, axis=1) / w_sum     # slope-averaged NRCS
+    sigma0_RR = np.sum(sigma0_RR_grid * w_bragg, axis=1) / w_sum
 
     if scalar_in:
         return float(sigma0_RL[0]), float(sigma0_RR[0])

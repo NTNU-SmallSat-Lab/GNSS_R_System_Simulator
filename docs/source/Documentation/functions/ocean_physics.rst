@@ -147,9 +147,12 @@ The first-order (small-ripple) backscatter cross-section per unit area is
 .. math::
    :label: op-bragg-nrcs
 
-   \sigma^0_{pp} = 8\pi\,k^4\cos^4\left(\theta\right)\,|g_{pp}|^2\,W_\mathrm{iso}(k_B),
+   \sigma^0_{pp} = 16\pi\,k^4\cos^4\left(\theta\right)\,|g_{pp}|^2\,W_\mathrm{iso}(k_B),
 
-where :math:`W_\mathrm{iso}(K) = S(K)/(2\pi K)` is the roughness at the Bragg wavenumber and
+where :math:`W_\mathrm{iso}(K) = S(K)/(2\pi K)` is the roughness at the Bragg wavenumber (normalised so
+that its integral over the 2-D wavenumber plane is the height variance; with this normalisation
+:math:`16\pi` is the small-roughness limit of the same Kirchhoff integral whose large-roughness limit is
+the geometric-optics NRCS) and
 :math:`g_{pp}` are the Bragg amplitudes for H and V. The circular amplitudes come from those:
 
 .. math::
@@ -169,8 +172,10 @@ the spread of those tilts: for each facet slope it works out the local incidence
 Bragg return there, and averages with the slope probability. This lifts the return a couple of dB at low
 incidence and adds an upwind-vs-crosswind difference that first-order Bragg alone misses. The complete
 anisotropic slope covariance is rotated into the look/cross-look frame; its off-diagonal covariance is
-retained for intermediate wind-relative azimuths. As the swell slope goes to zero it reduces back to
-plain Bragg.
+retained for intermediate wind-relative azimuths. Facets tilted so far toward the radar that their local
+Bragg wavenumber :math:`2k\sin\theta_\mathrm{local}` drops below the two-scale division :math:`k/3` add
+no Bragg return: they are quasi-specular mirrors, already counted by the geometric-optics term. As the
+swell slope goes to zero it reduces back to plain Bragg.
 
 API reference
 ^^^^^^^^^^^^^
@@ -185,9 +190,9 @@ Module Assumptions and Limitations
   clean (slick-free) seas; Bragg holds for moderate incidence (about 10 to 70 deg).
 - **Near-nadir Bragg divergence.** First-order Bragg grows without bound toward nadir
   (:math:`\sigma^0 \sim B/(4\sin^4\theta)` as the resonant wavenumber slides into the energetic long-wave
-  spectrum), and the two-scale tilt average leaks that growth through mirror-ward-tilted facets well above
-  nadir. The consuming ocean target therefore gates the Bragg term to incidence at or above 20 deg
-  (divergence protection); below that the quasi-specular geometric-optics term owns the return.
+  spectrum). Inside the two-scale tilt average this is contained by the facet-local restriction
+  :math:`k_B(\theta_\mathrm{local}) \ge k/3`; toward nadir the geometric-optics term dominates. The
+  restriction is a hard cut at the division wavenumber.
 - **First-order Bragg.** The small-ripple theory is first order; the two-scale model adds the tilt average
   but still leaves out the out-of-plane polarisation rotation (a smaller correction, noted as future work).
 - **Numerical two-scale quadrature.** The large-scale slope average uses a fixed 15 by 15 grid over
