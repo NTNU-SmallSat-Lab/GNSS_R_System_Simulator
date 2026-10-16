@@ -49,6 +49,54 @@ python SRC/main_simulation_movingTarget.py
 
 `main_simulation_movingTarget.py` reads `Configuration_ship.ini`, builds the ship trajectory and antenna model, runs either `specular` or `backscatter` mode from `[REFLECTION].reflection_type`, and writes footprint-overlap maps, link-budget breakdown plots, and optional animations under `OUTPUT/`.
 
+## Monte Carlo moving-target runs
+
+Use a fresh output directory for a new run, or the same directory to resume it:
+
+```powershell
+python SRC/run_monte_carlo.py Configuration_mc_backscatter.ini --output-dir OUTPUT/mc_events_run
+python SRC/run_monte_carlo.py Configuration_mc_specular.ini --output-dir OUTPUT/mc_events_run
+```
+
+An optional trial count goes after the INI filename. Omitting `--output-dir` uses `OUTPUT/`.
+Completed trial indices in `mc_<mode>_trials.jsonl` are skipped on resume, including legacy
+records; use a fresh directory when changing the scenario or starting an independent run.
+
+Each new trial stores `power_events`: constellation, band, ISO timestamp, transmitter/receiver
+IDs, ocean power in watts, and ship power (backscatter) or forward-shadow magnitude (specular).
+The existing best-per-trial SINR/detectability summaries and figures are retained. Four
+additional standalone figures use **all finite, positive paired footprint-overlap powers**,
+including events below the detection threshold:
+
+| Figure | Event-level quantity |
+| --- | --- |
+| `mc_backscatter_received_power.png` | Ship versus ocean power [dBW], with an equal-power line |
+| `mc_backscatter_scr.png` | `10 log10(P_ship / P_ocean)` [dB] |
+| `mc_specular_received_power.png` | Forward-shadow magnitude versus ocean power [dBW] |
+| `mc_specular_shadow_fraction.png` | `10 log10(abs(delta P) / P_ocean)` [dB] |
+
+Colors and marker/line styles distinguish constellations; selected bands are combined.
+Every valid event contributes one sample, so trials with more overlap events contribute
+more samples. These are event distributions, not detection probabilities. Sampling is
+unchanged: sampled coherent integration time still affects delay-Doppler clutter area
+when that model is enabled.
+
+Regenerate summaries and plots from saved JSONL data without running simulation trials:
+
+```powershell
+python SRC/run_monte_carlo.py Configuration_mc_backscatter.ini aggregate --output-dir OUTPUT/mc_events_run
+python SRC/run_monte_carlo.py Configuration_mc_specular.ini aggregate --output-dir OUTPUT/mc_events_run
+```
+
+`aggregate` reads the JSONL without modifying it and regenerates derived outputs in the
+chosen directory. Legacy trials without `power_events` remain in the original summaries
+but are reported as excluded from the new plots. Mixed runs plot only saved valid event
+pairs; best-per-trial SCR is never substituted. If none exist, new plots are skipped
+(existing image files are left unchanged). Complete event plots for an older run require
+a new run in a fresh directory. Keep previous results and let any active run finish;
+aggregation does not launch or rerun trials. Area coverage continues through its separate
+`main_simulation_areaCoverage.py` workflow.
+
 ## Configuration
 
 The two root INI files are the source of truth for scenario setup:
