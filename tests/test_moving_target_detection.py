@@ -128,6 +128,9 @@ class _FakeAxis:
     def set_extent(self, *_args, **_kwargs):
         pass
 
+    def set_aspect(self, *_args, **_kwargs):
+        pass
+
     def set_title(self, *_args, **_kwargs):
         pass
 
