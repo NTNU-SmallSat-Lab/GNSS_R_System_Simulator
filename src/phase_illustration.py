@@ -77,7 +77,7 @@ def main():
     up = ship_eci / np.linalg.norm(ship_eci)
 
     # GPS positions at T0; pick a Tx near 45 deg elevation (=> ~45 deg incidence at the ship).
-    # Target ~63 deg elevation -> incidence ~27 deg: above the 20 deg Bragg gate, and the receiver
+    # Target ~63 deg elevation -> incidence ~27 deg: Bragg-dominated clutter, and the receiver
     # look angle to the BRP stays within the +/-40 deg beam-steering limit.
     gnss = fn.load_gnss_constellation_dict(settings["GNSS_constellations"])
     gps = gnss["GPS"]

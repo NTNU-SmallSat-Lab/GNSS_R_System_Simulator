@@ -22,9 +22,11 @@
       link-budget layer supplies each finite surface patch as its own illuminated area and sums
       the resulting per-patch power with per-patch antenna gain and ranges.
 
-    Bragg (rough-surface resonant backscatter), added only at near-backscatter geometry where the GO
-    term collapses: a first-order small-perturbation NRCS over the Elfouhaily spectrum, gated so the
-    forward-specular path stays unchanged. See functions.ocean_physics.bragg_backscatter_nrcs.
+    Bragg (rough-surface resonant scattering from the short waves, k >= k_radar / 3): the two-scale
+    bistatic first-order small-perturbation NRCS over the Elfouhaily spectrum, for every geometry. It
+    carries the return where the GO term collapses (oblique backscatter, far off-specular) and is small
+    near the specular direction, whose quasi-specular facets belong to GO.
+    See functions.ocean_physics.two_scale_bistatic_nrcs.
 
     Coherent (smooth-surface specular reflection from the mean surface):
     sigma_coherent = 4 * pi * |R_pol|^2 * (R_t R_r / (R_t + R_r))^2 * D^2 * exp(-kappa)
@@ -59,21 +61,13 @@ from functions.ocean_physics import (
     cox_munk_slope_pdf,
     large_scale_slope_variances,
     seawater_permittivity,
-    two_scale_backscatter_nrcs,
+    two_scale_bistatic_nrcs,
 )
 from object_definitions.Constants_def import Constants
 from object_definitions.Target_def import Target, TargetRcs
 
 if TYPE_CHECKING:
     from functions.link_budget import BistaticGeometry, BistaticLinkBudgetSettings
-
-
-# Bragg backscatter is gated to near-backscatter geometry: the BRP retroreflection line is collinear
-# (bistatic ~ 0 deg), while any forward-specular reflection sits at bistatic = 2 * incidence (>= ~10 deg).
-# Gating below this keeps the forward-specular path unchanged. No incidence gate is needed: toward nadir
-# the facet-local restriction k_B(theta_local) >= k_radar / 3 in two_scale_backscatter_nrcs leaves the
-# quasi-specular facets to the GO term, and GO and Bragg add as in the two-scale model.
-_BRAGG_MAX_BISTATIC_DEG = 5.0
 
 
 class OceanTarget(Target):
@@ -232,21 +226,33 @@ class OceanTarget(Target):
         geom_factor[valid_q] = (q_mag[valid_q] / np.abs(q_z[valid_q])) ** 4    # (|q| / q_z)^4
         nrcs = np.pi * R_RL_sq * geom_factor * pdf
 
-        # Two-scale (tilt-modulated) Bragg backscatter NRCS, gated to near-backscatter geometry. At
-        # oblique incidence the GO formula above collapses (no facets tilted enough to retroreflect) and
-        # Bragg carries the return; toward nadir GO dominates and Bragg adds the ripple contribution.
-        # Forward-specular geometries get 0. The look azimuth relative to the upwind axis drives the
-        # upwind/crosswind asymmetry of the tilt average.
-        look_e = np.einsum("ij,ij->i", n_s2rx, n_east)                    # look horizontal projection, east
-        look_n = np.einsum("ij,ij->i", n_s2rx, n_north)                   # look horizontal projection, north
-        azimuth_rel_wind = np.arctan2(look_e, look_n) - theta_w           # look azimuth relative to upwind axis
-        bragg_active = bistatic_deg < _BRAGG_MAX_BISTATIC_DEG
+        # Two-scale (tilt-modulated) bistatic Bragg NRCS over the large-scale facets. Where the GO formula
+        # above collapses (oblique backscatter, far off-specular) Bragg carries the return; near the specular
+        # direction and toward nadir GO dominates and Bragg adds the short-wave contribution. The geometry
+        # enters in the mean-surface frame: Tx and Rx angles from the normal, the Rx azimuth relative to the
+        # Tx azimuth, and the Tx azimuth counterclockwise from the upwind axis (drives the upwind/crosswind
+        # asymmetry of the tilt average).
+        to_tx = -n_tx2s                                                   # surface -> Tx
+        cos_tx = np.einsum("ij,ij->i", to_tx, n_surface)
+        cos_rx = np.einsum("ij,ij->i", n_s2rx, n_surface)
+        tx_h = to_tx - cos_tx[:, None] * n_surface                        # horizontal part of surface -> Tx
+        rx_h = n_s2rx - cos_rx[:, None] * n_surface                       # horizontal part of surface -> Rx
+        tx_h_mag = np.linalg.norm(tx_h, axis=1)
+        rx_h_mag = np.linalg.norm(rx_h, axis=1)
+        ref_h = np.where((tx_h_mag > 1e-12)[:, None], tx_h, np.where((rx_h_mag > 1e-12)[:, None], rx_h, n_north))   # Tx azimuth (Rx or north if overhead)
+        x_h = ref_h / np.linalg.norm(ref_h, axis=1, keepdims=True)
+        y_h = np.cross(n_surface, x_h)                                    # right-handed (x_h, y_h, up)
+        phi_rx = np.arctan2(np.einsum("ij,ij->i", rx_h, y_h), np.einsum("ij,ij->i", rx_h, x_h))   # Rx azimuth from Tx azimuth
+        tx_bearing = np.arctan2(np.einsum("ij,ij->i", x_h, n_east), np.einsum("ij,ij->i", x_h, n_north))   # clockwise from north
+        azimuth_rel_wind = theta_w - tx_bearing                           # counterclockwise from upwind (upwind bearing theta_w)
+        theta_tx = np.arctan2(tx_h_mag, cos_tx)
+        theta_rx = np.arctan2(rx_h_mag, cos_rx)
         nrcs_bragg = np.zeros(n_samples)                                  # RHCP -> LHCP cross-pol (consumed)
         nrcs_bragg_co = np.zeros(n_samples)                               # RHCP -> RHCP co-pol (polarization-hook diagnostic)
-        active = np.where(bragg_active & np.isfinite(azimuth_rel_wind))[0]
+        active = np.where(valid_east & (cos_tx > 0.0) & (cos_rx > 0.0) & np.isfinite(azimuth_rel_wind) & np.isfinite(phi_rx))[0]
         if active.size > 0:
-            nrcs_bragg[active], nrcs_bragg_co[active] = two_scale_backscatter_nrcs(
-                np.radians(incidence_deg[active]), azimuth_rel_wind[active],
+            nrcs_bragg[active], nrcs_bragg_co[active] = two_scale_bistatic_nrcs(
+                theta_tx[active], theta_rx[active], phi_rx[active], azimuth_rel_wind[active],
                 wavelength_m, eps_r, self.wind_speed_m_s, self.inverse_wave_age,
             )
 
@@ -271,8 +277,7 @@ class OceanTarget(Target):
             effective_glistening_area = np.minimum(glistening_area, illuminated_area)
             bragg_area = illuminated_area
 
-        # Incoherent contribution: forward GO over the glistening zone plus Bragg over the backscatter
-        # footprint area.
+        # Incoherent contribution: GO over the glistening zone plus Bragg over the illuminated area.
         sigma_incoherent = nrcs * effective_glistening_area + nrcs_bragg * bragg_area    # rough-surface diffuse return
 
         # Coherent contribution: smooth-surface specular reflection from the mean surface, suppressed

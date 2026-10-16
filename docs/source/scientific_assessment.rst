@@ -96,11 +96,25 @@ Corrections made by the audit
      - Silent deviation from the cited Eq. 34 (up to ~8% in :math:`\alpha_p` at :math:`\Omega_c = 5`).
      - Use :math:`\alpha_p = 6\times10^{-3}\sqrt{\Omega_c}`; the deliberate :math:`L_\mathrm{PM}`
        regularisation of :math:`B_\mathrm{high}` is now documented in-code.
-   * - Two-scale Bragg below ~20 deg incidence is dominated by the near-nadir
-       :math:`1/\sin^4\theta` divergence leaking through tilted facets (diagnosed, not yet re-modelled).
+   * - Two-scale Bragg below ~20 deg incidence was dominated by the near-nadir
+       :math:`1/\sin^4\theta` divergence leaking through tilted facets.
      - Lowering the empirical 20 deg gate would inject tens of dB of spurious clutter.
      - Implemented the facet-local :math:`k_B(\theta_\mathrm{local}) \ge k_\mathrm{radar}/3` restriction
        inside the tilt average and removed the 20 deg incidence gate.
+   * - The Bragg NRCS used the :math:`8\pi` prefactor with a height-variance-normalised spectrum.
+     - The Bragg return was 3 dB low.
+     - Use :math:`16\pi`, the small-roughness limit of the Kirchhoff integral whose large-roughness limit
+       is the geometric-optics NRCS (tested).
+   * - Bragg was gated to bistatic angles below 5 deg with a monostatic kernel.
+     - Off-specular forward and side geometries had no Bragg return; the tilt average ignored the
+       out-of-plane polarisation rotation and the facet area.
+     - Implemented the two-scale bistatic Bragg kernel (facet-local angles and azimuth, circular projection
+       per wave, facet area per unit horizontal area) and removed the gate.
+   * - The ship dihedral edge term used :math:`(\hat{n}_\mathrm{s2rx} + \hat{n}_\mathrm{tx2s})\cdot\hat{e}`.
+     - Every near-backscatter geometry got the dihedral peak for any heading (typical ship RCS about
+       15--18 dB too high).
+     - Use :math:`(\hat{n}_\mathrm{tx2s} - \hat{n}_\mathrm{s2rx})\cdot\hat{e}`: the double bounce preserves
+       the edge-parallel component.
 
 Model maturity and suitable use
 -------------------------------

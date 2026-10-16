@@ -137,9 +137,8 @@ with slant ranges :math:`R_r` (surface to receiver) and :math:`R_t` (surface to 
 track is buffered by the segment-minimum :math:`w` -- the conservative, smaller semi-axis of the
 acceptance ellipse (the in-plane axis is wider by :math:`1/\cos\theta_i`) -- before the cell
 intersection; segmentation, the one-visit-per-segment rule and the finite-power antenna gate are
-identical to the specular path. :math:`\beta_\mathrm{max} = 5^\circ` matches the ocean RCS model's
-near-backscatter Bragg gate, so "covered" then means "sees the geometry the backscatter clutter model
-itself calls backscatter".
+identical to the specular path. :math:`\beta_\mathrm{max}` defines what counts as near-backscatter
+geometry for coverage; the ocean RCS model itself has no such gate.
 
 API reference
 ^^^^^^^^^^^^^

@@ -16,8 +16,8 @@ The model adds two parts:
 - a **coherent** part -- a clean specular reflection off the smooth mean surface (matters only for very calm
   water);
 - an **incoherent** part -- the diffuse scatter from the rough surface, which is what you usually see. At
-  the specular direction this is the bright "glistening zone"; well off the specular direction (backscatter) it
-  is **Bragg** scatter from small wind ripples.
+  the specular direction this is the bright "glistening zone"; well off the specular direction (including
+  backscatter) it is **Bragg** scatter from small wind ripples.
 
 It is driven by sea state (wave height, wind speed and direction, water temperature, salinity, wave age),
 and it uses the building blocks in :doc:`../functions/ocean_physics`.
@@ -162,25 +162,23 @@ Thus :math:`\sigma^0_\mathrm{peak}A_\mathrm{eff}` preserves the complete first-o
 integral. If the supplied footprint is smaller, the scalar fallback caps this effective area; patch
 integration is preferable because it evaluates range, gain and NRCS over the actual footprint.
 
-Bragg backscatter
-^^^^^^^^^^^^^^^^^
+Bragg scattering
+^^^^^^^^^^^^^^^^
 
-In the backscatter direction at oblique incidence the geometric-optics term collapses (almost no facet is
-tilted steeply enough to bounce the signal straight back). There the return comes from **Bragg** resonance
-with small wind ripples, computed by the two-scale model in :doc:`../functions/ocean_physics`. It is
-switched on only near backscatter (bistatic angle below ~5 deg), so the forward/specular path is left
-unchanged:
+Away from the specular direction the geometric-optics term collapses: almost no facet is tilted steeply
+enough to mirror the signal toward the receiver. There the return comes from **Bragg** resonance with
+small wind ripples, computed by the two-scale bistatic model in :doc:`../functions/ocean_physics` for every
+geometry, with no gate. The model receives the transmitter and receiver angles from the local normal, the
+receiver azimuth counterclockwise from the transmitter azimuth, and the transmitter azimuth
+counterclockwise from the upwind bearing.
 
-.. math::
-   :label: ot-bragg-gate
-
-   \text{Bragg active} \iff \beta < 5^\circ.
-
-No incidence gate is needed: first-order Bragg grows without bound toward nadir
-(:math:`\sigma^0 \sim B/(4\sin^4\theta)`), but inside the tilt average the facet-local restriction
-:math:`k_B(\theta_\mathrm{local}) \ge k_\mathrm{radar}/3` (the same two-scale division) leaves the
+First-order Bragg grows without bound toward nadir and toward the specular direction
+(:math:`\sigma^0 \sim B/(4\sin^4\theta)` in backscatter), but inside the tilt average the facet-local
+restriction :math:`K_\mathrm{local} \ge k_\mathrm{radar}/3` (the same two-scale division) leaves the
 quasi-specular facets to the geometric-optics term. Geometric optics and Bragg add as in the two-scale
-model: geometric optics dominates near nadir, Bragg at oblique incidence (crossover near 15-20 deg).
+model: geometric optics dominates near the specular direction and near nadir, Bragg at oblique backscatter
+(crossover near 15-20 deg) and far off-specular. At the specular point Bragg is more than 20 dB below the
+geometric-optics NRCS.
 
 The clutter area
 ^^^^^^^^^^^^^^^^
@@ -203,14 +201,14 @@ Module Assumptions and Limitations
 - **Coherent term gated to specular.** The specular reflection is only added where the surface itself is the
   specular reflector; it is zero off-specular, and collapses for any realistic wave height. Its
   spherical-Earth divergence uses the mean Earth radius, not the local curvature of the ellipsoid.
-- **Hard Bragg gating.** Bragg is added only for bistatic angle below 5 deg (monostatic Bragg kernel); a
-  bistatic Bragg kernel would replace this gate. Out-of-plane polarisation rotation is not included.
+- **Isotropic Bragg spectrum.** The short-wave spectrum at the Bragg wavenumber has no directional
+  spreading; the upwind/crosswind asymmetry enters only through the large-scale facet slopes.
 - **Sea-state ranges.** Wind speed > 0; wave age between 0.84 and 5.0; temperature and salinity in the
   Klein-Swift range. Out-of-range inputs raise.
 - **Area comes from the link budget.** The absolute diffuse power depends on the illuminated area supplied
   from outside (footprint, patch, or DDM cell), not chosen here.
 - **Empirical-model scope.** The implementation combines Klein-Swift, Cox-Munk, Elfouhaily, geometric
-  optics and a gated two-scale Bragg term. It has not been calibrated end-to-end against a particular
+  optics and a two-scale bistatic Bragg term. It has not been calibrated end-to-end against a particular
   GNSS-R instrument or collocated ocean dataset.
 
 Validation and Tests
@@ -231,8 +229,9 @@ Validation and Tests
        loss grows with wave height, using :math:`\sigma_h=H_s/4`; the uncapped peak-equivalent area
        preserves the analytic geometric-optics integral.
    * - ``TestOceanTargetComputeRcs`` (Bragg)
-     - Bragg is zero at forward specular and near nadir, dominates at oblique backscatter, and uses the
-       supplied illuminated area.
+     - Bragg is far below geometric optics at forward specular and near nadir, dominates at oblique
+       backscatter and far off-specular, receives the documented bearing conventions, and uses the supplied
+       illuminated area.
    * - ``TestComputeReflectionLinkBudgetIntegration``
      - The default target matches an explicit ``OceanTarget``; a custom target replaces the ocean RCS.
 

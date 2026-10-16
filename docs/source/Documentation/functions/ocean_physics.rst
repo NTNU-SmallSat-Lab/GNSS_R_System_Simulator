@@ -51,11 +51,20 @@ Interface
    * - ``bragg_backscatter_nrcs``
      - First-order Bragg backscatter (circular).
      - --
+   * - ``bragg_bistatic_coefficients``
+     - Bistatic Bragg amplitudes for HH, HV, VH, VV.
+     - --
+   * - ``bragg_bistatic_nrcs``
+     - First-order bistatic Bragg (circular).
+     - --
    * - ``large_scale_slope_variances``
      - Slope variance of the large tilting waves.
      - --
+   * - ``two_scale_bistatic_nrcs``
+     - Tilt-modulated (two-scale) bistatic Bragg (circular).
+     - --
    * - ``two_scale_backscatter_nrcs``
-     - Tilt-modulated (two-scale) backscatter (circular).
+     - Monostatic case of the two-scale model.
      - --
 
 Detailed Module Description
@@ -163,19 +172,57 @@ the geometric-optics NRCS) and
 Near nadir :math:`k_B \to 0`, the Bragg return vanishes and the quasi-specular (geometric-optics) term takes
 over, so this returns 0 there.
 
+Bistatic Bragg
+^^^^^^^^^^^^^^
+
+For a receiver away from the backscatter direction the resonant ripple is set by the horizontal part of
+the scattering vector,
+
+.. math::
+   :label: op-kbragg-bistatic
+
+   K = k\,\left|\hat{k}_{s,t} - \hat{k}_{i,t}\right|
+     = k\sqrt{\sin^2\theta_i + \sin^2\theta_s - 2\sin\theta_i\sin\theta_s\cos\phi_s},
+
+with :math:`\phi_s` the scattering azimuth from the forward direction. The first-order cross-section is
+
+.. math::
+   :label: op-bragg-bistatic
+
+   \sigma^0 = 16\pi\,k^4\cos^2\theta_i\cos^2\theta_s\,|a|^2\,W_\mathrm{iso}(K),
+
+with the bistatic amplitudes :math:`a_{pq}` (Valenzuela) in forward-aligned linear bases
+(:math:`\hat{h} = \hat{z}\times\hat{k}/|\hat{z}\times\hat{k}|`, :math:`\hat{v} = \hat{h}\times\hat{k}`).
+The circular amplitudes are the projections onto each wave's own circular vectors
+(:math:`(\hat{v} \mp j\hat{h})/\sqrt{2}` for RHCP/LHCP under ``exp(+j omega t)``):
+
+.. math::
+   :label: op-bragg-bistatic-circular
+
+   a_\mathrm{RL} = \tfrac{1}{2}\left[(a_{vv} - a_{hh}) - j(a_{vh} + a_{hv})\right], \qquad
+   a_\mathrm{RR} = \tfrac{1}{2}\left[(a_{vv} + a_{hh}) + j(a_{hv} - a_{vh})\right].
+
+At backscatter (:math:`\theta_s = \theta_i`, :math:`\phi_s = \pi`) the amplitudes are
+:math:`a_{hh} = -g_{HH}` and :math:`a_{vv} = g_{VV}`, so :eq:`op-bragg-bistatic` reduces to
+:eq:`op-bragg-nrcs`. In the specular direction :math:`K = 0` and the first-order return vanishes.
+
 Two-scale (tilt) modulation
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Real waves are small ripples riding on big swells. The big swells **tilt** the patches that carry the
-ripples, which changes the local angle the radar sees. The two-scale model averages the Bragg return over
-the spread of those tilts: for each facet slope it works out the local incidence angle, evaluates the
-Bragg return there, and averages with the slope probability. This lifts the return a couple of dB at low
+ripples, which changes the local angles the radar sees. The two-scale model averages the bistatic Bragg
+return over the spread of those tilts: for each facet slope it works out the local incidence and
+scattering angles and the local scattering azimuth, evaluates the Bragg return in the facet frame, and
+sums it per unit mean-surface area, i.e. weighted by the slope probability and the facet area
+:math:`\sqrt{1 + |\nabla z|^2}` per unit horizontal area. This lifts the return a couple of dB at low
 incidence and adds an upwind-vs-crosswind difference that first-order Bragg alone misses. The complete
-anisotropic slope covariance is rotated into the look/cross-look frame; its off-diagonal covariance is
-retained for intermediate wind-relative azimuths. Facets tilted so far toward the radar that their local
-Bragg wavenumber :math:`2k\sin\theta_\mathrm{local}` drops below the two-scale division :math:`k/3` add
-no Bragg return: they are quasi-specular mirrors, already counted by the geometric-optics term. As the
-swell slope goes to zero it reduces back to plain Bragg.
+anisotropic slope covariance is rotated into the frame of the transmitter azimuth; its off-diagonal
+covariance is retained for intermediate wind-relative azimuths. Facets whose local Bragg wavenumber (the
+tangential scattering vector) drops below the two-scale division :math:`k/3` add no Bragg return: they are
+quasi-specular mirrors, already counted by the geometric-optics term. Facets hidden from the transmitter
+or the receiver add nothing. All facets stay in the normalisation. A tilt rotates the linear polarisation
+bases, which only changes the phase of a circular amplitude, so the tilt-induced polarisation rotation is
+included. As the swell slope goes to zero it reduces back to plain first-order Bragg.
 
 API reference
 ^^^^^^^^^^^^^
@@ -190,14 +237,14 @@ Module Assumptions and Limitations
   clean (slick-free) seas; Bragg holds for moderate incidence (about 10 to 70 deg).
 - **Near-nadir Bragg divergence.** First-order Bragg grows without bound toward nadir
   (:math:`\sigma^0 \sim B/(4\sin^4\theta)` as the resonant wavenumber slides into the energetic long-wave
-  spectrum). Inside the two-scale tilt average this is contained by the facet-local restriction
-  :math:`k_B(\theta_\mathrm{local}) \ge k/3`; toward nadir the geometric-optics term dominates. The
-  restriction is a hard cut at the division wavenumber.
-- **First-order Bragg.** The small-ripple theory is first order; the two-scale model adds the tilt average
-  but still leaves out the out-of-plane polarisation rotation (a smaller correction, noted as future work).
+  spectrum), and the bistatic form diverges likewise toward the specular direction. Inside the two-scale
+  tilt average this is contained by the facet-local restriction :math:`K_\mathrm{local} \ge k/3`; there the
+  geometric-optics term dominates. The restriction is a hard cut at the division wavenumber.
+- **First-order Bragg.** The small-ripple theory is first order; higher-order and multiple scattering are
+  not included.
 - **Numerical two-scale quadrature.** The large-scale slope average uses a fixed 15 by 15 grid over
-  :math:`\pm3` standard deviations and renormalises visible facets. Convergence for extreme wind or
-  grazing incidence is not adaptively controlled.
+  :math:`\pm3` standard deviations, normalised over all facets. Convergence for extreme wind or grazing
+  incidence is not adaptively controlled.
 - **Circular vs linear references.** The model gives circular-polarisation results, while many published
   L-band measurements are linear (V/H); comparisons are envelope-and-trend, not exact dB matches.
 - **Sign convention.** The imaginary part of the permittivity is negative here (``exp(+j omega t)``);
@@ -228,6 +275,13 @@ Validation and Tests
    * - ``TestLargeScaleSlopeVariances`` / ``TestTwoScaleBackscatterNrcs``
      - The tilt average lifts the low-incidence return, adds upwind/crosswind anisotropy, and preserves
        scalar/array consistency at intermediate azimuth.
+   * - ``TestBraggBistatic``
+     - The bistatic amplitudes match a first-principles perfect-conductor boundary perturbation (signs
+       included), the dielectric scattering dyadic is reciprocal, and the bistatic NRCS reduces to the
+       backscatter form.
+   * - ``TestTwoScaleBistaticNrcs``
+     - The facet average matches an independent east/north/up reference with a wind-frame quadrature
+       (pins the azimuth conventions) and is continuous through near-backscatter geometry.
 
 The distinction matters: these tests can expose coding and unit errors, but an absolute NRCS claim still
 requires comparison with polarisation-matched measurements under known wind, wave-age and incidence

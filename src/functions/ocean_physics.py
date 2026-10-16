@@ -325,6 +325,106 @@ def bragg_backscatter_nrcs(theta_inc_rad, wavelength_m, eps_r, wind_speed_m_s, i
     return sigma0_RL, sigma0_RR
 
 
+def bragg_bistatic_coefficients(theta_inc_rad, theta_sca_rad, phi_sca_rad, eps_r):
+    """First-order small-perturbation (Bragg) amplitudes for bistatic scattering.
+
+    The linear bases are forward-scatter aligned for both waves: ``h = z x k / |z x k|`` and ``v = h x k``,
+    with ``k`` the propagation direction. The incident wave travels along azimuth 0; the scattered wave
+    leaves at azimuth ``phi_sca`` (0 = forward, pi = back toward the source). At backscatter
+    ``a_hh = -g_hh`` and ``a_vv = g_vv`` of :func:`bragg_scattering_coefficients` (the sign is the basis flip
+    ``h_s = -h_i``); for ``eps -> inf`` the amplitudes reduce to the perfect-conductor boundary perturbation.
+
+    Reference: Valenzuela (1967); Ulaby, Moore and Fung, "Microwave Remote Sensing" Vol. II.
+
+    Parameters
+    ----------
+    theta_inc_rad, theta_sca_rad : scalar or array
+        Incidence and scattering angles from the surface normal [rad].
+    phi_sca_rad : scalar or array
+        Scattering azimuth relative to the incident propagation azimuth [rad].
+    eps_r : complex
+        Relative permittivity of seawater.
+
+    Returns
+    -------
+    tuple
+        ``(a_hh, a_hv, a_vh, a_vv)`` complex amplitudes; ``a_pq`` maps incident ``q`` to scattered ``p``.
+    """
+    cos_i = np.cos(theta_inc_rad)
+    cos_s = np.cos(theta_sca_rad)
+    sin_i = np.sin(theta_inc_rad)
+    sin_s = np.sin(theta_sca_rad)
+    cos_p = np.cos(phi_sca_rad)
+    sin_p = np.sin(phi_sca_rad)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        root_i = np.sqrt(eps_r - sin_i**2)                             # sqrt(eps_r - sin^2 theta_i)
+        root_s = np.sqrt(eps_r - sin_s**2)                             # sqrt(eps_r - sin^2 theta_s)
+        den_h_i = cos_i + root_i                                       # TE factor, incident
+        den_h_s = cos_s + root_s                                       # TE factor, scattered
+        den_v_i = eps_r * cos_i + root_i                               # TM factor, incident
+        den_v_s = eps_r * cos_s + root_s                               # TM factor, scattered
+        a_hh = (eps_r - 1.0) * cos_p / (den_h_i * den_h_s)
+        a_hv = (eps_r - 1.0) * root_i * sin_p / (den_v_i * den_h_s)   # incident v -> scattered h
+        a_vh = (eps_r - 1.0) * root_s * sin_p / (den_h_i * den_v_s)   # incident h -> scattered v
+        a_vv = (eps_r - 1.0) * (eps_r * sin_i * sin_s - root_i * root_s * cos_p) / (den_v_i * den_v_s)
+    return a_hh, a_hv, a_vh, a_vv
+
+
+def _circular_bragg_amplitudes(a_hh, a_hv, a_vh, a_vv):
+    """RHCP -> LHCP and RHCP -> RHCP amplitudes from the linear forward-aligned Bragg amplitudes.
+
+    Under ``exp(+j omega t)`` a wave along ``k`` has ``RHCP = (v - j h) / sqrt(2)`` and
+    ``LHCP = (v + j h) / sqrt(2)`` (``v x h = k``). The amplitudes are the projections of the scattered
+    field onto the scattered wave's own circular vectors, so a rotation of the linear bases about either
+    propagation direction changes only their phase.
+    """
+    amp_RL = 0.5 * ((a_vv - a_hh) - 1j * (a_vh + a_hv))               # LHCP component for RHCP incidence
+    amp_RR = 0.5 * ((a_vv + a_hh) + 1j * (a_hv - a_vh))               # RHCP component for RHCP incidence
+    return amp_RL, amp_RR
+
+
+def bragg_bistatic_nrcs(theta_inc_rad, theta_sca_rad, phi_sca_rad, wavelength_m, eps_r, wind_speed_m_s, inverse_wave_age):
+    """First-order bistatic Bragg (small-perturbation) ocean NRCS for circular polarisation.
+
+    ``sigma0 = 16 pi k^4 cos^2(theta_i) cos^2(theta_s) |a|^2 W_iso(K)``, where ``K`` is the magnitude of the
+    horizontal scattering wavevector (the resonant ripple) and ``a`` the circular amplitude built from
+    :func:`bragg_bistatic_coefficients`. At ``theta_s = theta_i``, ``phi_sca = pi`` it equals
+    :func:`bragg_backscatter_nrcs`. In the specular direction ``K = 0`` and the return is 0.
+
+    Parameters
+    ----------
+    theta_inc_rad, theta_sca_rad : scalar or array
+        Incidence and scattering angles from the surface normal [rad].
+    phi_sca_rad : scalar or array
+        Scattering azimuth relative to the incident propagation azimuth [rad] (0 = forward).
+    wavelength_m : float
+        Radar wavelength [m].
+    eps_r : complex
+        Seawater relative permittivity.
+    wind_speed_m_s, inverse_wave_age : scalar
+        Sea-state inputs (as in :func:`bragg_backscatter_nrcs`).
+
+    Returns
+    -------
+    tuple
+        ``(sigma0_RL, sigma0_RR)`` cross-pol and co-pol NRCS [dimensionless].
+    """
+    k_radar = 2.0 * np.pi / wavelength_m
+    sin_i = np.sin(theta_inc_rad)
+    sin_s = np.sin(theta_sca_rad)
+    cos_p = np.cos(phi_sca_rad)
+    k_bragg = k_radar * np.sqrt(np.maximum(sin_i**2 + sin_s**2 - 2.0 * sin_i * sin_s * cos_p, 0.0))   # K = k |k_s,t - k_i,t|
+
+    positive_kb = k_bragg > 0.0
+    k_safe = np.where(positive_kb, k_bragg, 1.0)
+    S_bragg = elfouhaily_omnidirectional_spectrum(k_safe, wind_speed_m_s, inverse_wave_age)
+    W_iso = np.where(positive_kb, S_bragg / (2.0 * np.pi * k_safe), 0.0)   # [m^4]
+
+    amp_RL, amp_RR = _circular_bragg_amplitudes(*bragg_bistatic_coefficients(theta_inc_rad, theta_sca_rad, phi_sca_rad, eps_r))
+    prefactor = 16.0 * np.pi * k_radar**4 * np.cos(theta_inc_rad) ** 2 * np.cos(theta_sca_rad) ** 2 * W_iso   # 16 pi k^4 cos^2 cos^2 W_iso
+    return prefactor * np.abs(amp_RL) ** 2, prefactor * np.abs(amp_RR) ** 2
+
+
 # Two-scale division: large-scale "tilting" waves carry k < k_radar / 3; the shorter waves above that
 # are the Bragg ripples. The factor-of-3 split follows Brown (1978). The facet-slope average uses a
 # standardized Gaussian quadrature over +/- 3 sigma.
@@ -363,24 +463,32 @@ def large_scale_slope_variances(wavelength_m, wind_speed_m_s, inverse_wave_age):
     return mss_large * s_u_sq / total, mss_large * s_c_sq / total      # split total by Cox-Munk anisotropy
 
 
-def two_scale_backscatter_nrcs(theta_inc_rad, azimuth_rad, wavelength_m, eps_r, wind_speed_m_s, inverse_wave_age):
-    """Two-scale (tilt-modulated) ocean backscatter NRCS for circular polarisation.
+def two_scale_bistatic_nrcs(theta_inc_rad, theta_sca_rad, phi_rx_rad, azimuth_rad, wavelength_m, eps_r, wind_speed_m_s, inverse_wave_age):
+    """Two-scale (tilt-modulated) bistatic ocean Bragg NRCS for circular polarisation.
 
-    Averages the first-order Bragg NRCS over the large-scale facet-slope distribution: each tilting
-    facet presents a local incidence angle theta_local, the Bragg return is evaluated there, and the
-    result is averaged over the anisotropic large-scale slope PDF. This adds the tilt-modulation lift
-    at low incidence and the upwind/crosswind asymmetry that first-order Bragg misses, and reduces to
-    bragg_backscatter_nrcs as the large-scale slope -> 0. Facets whose local Bragg wavenumber
-    ``2 k sin(theta_local)`` falls below the two-scale division ``k / 3`` contribute no Bragg return (they are
-    quasi-specular mirrors covered by the GO term) but stay in the slope-PDF normalisation. The out-of-plane
-    tilt-induced polarisation rotation is not yet included (a smaller correction; documented as a further refinement).
+    Averages the first-order bistatic Bragg NRCS over the large-scale facet-slope distribution. Each
+    tilting facet has its own local incidence and scattering angles and local scattering azimuth; the
+    Bragg return is evaluated in the facet frame and summed per unit mean-surface area, i.e. weighted by
+    the facet area ``sqrt(1 + |grad z|^2)`` per unit horizontal area. Facets whose local Bragg wavenumber
+    (the tangential scattering wavevector) falls below the two-scale division ``k / 3`` add no Bragg
+    return: they are quasi-specular mirrors covered by the GO term. Facets hidden from the Tx or the Rx
+    add nothing. All facets stay in the slope-PDF normalisation. This adds the tilt-modulation lift and the
+    upwind/crosswind asymmetry that first-order Bragg misses, and reduces to :func:`bragg_bistatic_nrcs` as
+    the large-scale slope -> 0. The circular amplitudes are taken in each facet frame; a tilt rotates the
+    linear bases, which changes only the phase of a circular amplitude, so the tilt-induced polarisation
+    rotation is included.
 
     Parameters
     ----------
     theta_inc_rad : scalar or array
-        Incidence angle from the (mean) surface normal [rad].
+        Incidence angle of the Tx ray at the mean surface [rad].
+    theta_sca_rad : scalar or array
+        Scattering angle of the ray toward the Rx at the mean surface [rad].
+    phi_rx_rad : scalar or array
+        Horizontal azimuth of the Rx direction relative to the Tx direction [rad]; 0 = backscatter,
+        pi = forward-specular plane.
     azimuth_rad : scalar or array
-        Radar look azimuth relative to the upwind axis [rad].
+        Horizontal azimuth of the Tx direction relative to the upwind axis [rad].
     wavelength_m : float
         Radar wavelength [m].
     eps_r : complex
@@ -393,9 +501,9 @@ def two_scale_backscatter_nrcs(theta_inc_rad, azimuth_rad, wavelength_m, eps_r, 
     tuple
         ``(sigma0_RL, sigma0_RR)`` tilt-averaged cross-pol and co-pol NRCS.
     """
-    scalar_in = np.ndim(theta_inc_rad) == 0 and np.ndim(azimuth_rad) == 0
-    theta = np.atleast_1d(np.asarray(theta_inc_rad, dtype=float))
-    phi = np.broadcast_to(np.atleast_1d(np.asarray(azimuth_rad, dtype=float)), theta.shape)
+    angles = (theta_inc_rad, theta_sca_rad, phi_rx_rad, azimuth_rad)
+    scalar_in = all(np.ndim(a) == 0 for a in angles)
+    theta, theta_s, phi_rx, phi = np.broadcast_arrays(*(np.atleast_1d(np.asarray(a, dtype=float)) for a in angles))
 
     s_u_L_sq, s_c_L_sq = large_scale_slope_variances(wavelength_m, wind_speed_m_s, inverse_wave_age)
     cos2 = np.cos(phi) ** 2
@@ -420,26 +528,46 @@ def two_scale_backscatter_nrcs(theta_inc_rad, azimuth_rad, wavelength_m, eps_r, 
     zx = Ux[None, :] * chol_11[:, None]                               # (N, M) in-plane facet slope
     zy = Ux[None, :] * chol_21[:, None] + Uy[None, :] * chol_22[:, None]  # correlated cross-plane slope
 
-    cos_t = np.cos(theta)[:, None]
-    sin_t = np.sin(theta)[:, None]
-    cos_local = (cos_t - zx * sin_t) / np.sqrt(1.0 + zx**2 + zy**2)   # local incidence cosine on the tilted facet
-    facet_visible = cos_local > 1.0e-6                               # facet still faces the radar (not self-shadowed)
-    theta_local = np.arccos(np.clip(cos_local, -1.0, 1.0))
+    # Mean-surface frame: x = horizontal direction toward the Tx, z = up.
+    to_tx = np.stack([np.sin(theta), np.zeros_like(theta), np.cos(theta)], axis=-1)[:, None, :]    # (N, 1, 3) surface -> Tx
+    to_rx = np.stack(
+        [np.sin(theta_s) * np.cos(phi_rx), np.sin(theta_s) * np.sin(phi_rx), np.cos(theta_s)], axis=-1
+    )[:, None, :]                                                     # (N, 1, 3) surface -> Rx
+    area_ratio = np.sqrt(1.0 + zx**2 + zy**2)                         # facet area per unit horizontal area
+    n_facet = np.stack([-zx, -zy, np.ones_like(zx)], axis=-1) / area_ratio[..., None]   # (N, M, 3) facet normal
 
-    sigma0_RL_grid, sigma0_RR_grid = bragg_backscatter_nrcs(
-        theta_local.ravel(), wavelength_m, eps_r, wind_speed_m_s, inverse_wave_age
+    cos_i = np.sum(n_facet * to_tx, axis=-1)                          # local incidence cosine
+    cos_s = np.sum(n_facet * to_rx, axis=-1)                          # local scattering cosine
+    facet_visible = (cos_i > 1.0e-6) & (cos_s > 1.0e-6)               # facet faces both Tx and Rx (not self-shadowed)
+    tx_t = to_tx - cos_i[..., None] * n_facet                         # facet-tangential part of surface -> Tx
+    rx_t = to_rx - cos_s[..., None] * n_facet                         # facet-tangential part of surface -> Rx
+    sin_i = np.linalg.norm(tx_t, axis=-1)
+    sin_s = np.linalg.norm(rx_t, axis=-1)
+    q_t = np.linalg.norm(tx_t + rx_t, axis=-1)                        # tangential scattering vector / k = local K_B / k
+
+    # Facet frame: x_l = incident propagation azimuth (-tx_t); at normal incidence any tangent serves,
+    # since the circular amplitudes are then independent of the azimuth reference.
+    any_tangent = np.cross(n_facet, np.array([0.0, 1.0, 0.0]))        # facet tangent (n_facet is never along y)
+    ref_t = np.where((sin_i > 1.0e-12)[..., None], -tx_t, np.where((sin_s > 1.0e-12)[..., None], rx_t, any_tangent))
+    x_l = ref_t / np.linalg.norm(ref_t, axis=-1, keepdims=True)
+    y_l = np.cross(n_facet, x_l)
+    phi_local = np.arctan2(np.sum(rx_t * y_l, axis=-1), np.sum(rx_t * x_l, axis=-1))   # scattering azimuth, 0 = forward
+
+    sigma0_RL_grid, sigma0_RR_grid = bragg_bistatic_nrcs(
+        np.arctan2(sin_i, cos_i), np.arctan2(sin_s, cos_s), phi_local, wavelength_m, eps_r, wind_speed_m_s, inverse_wave_age
     )
-    sigma0_RL_grid = sigma0_RL_grid.reshape(theta_local.shape)
-    sigma0_RR_grid = sigma0_RR_grid.reshape(theta_local.shape)
 
-    w = weight[None, :] * facet_visible                              # (N, M) zero weight on shadowed facets
-    w_sum = np.sum(w, axis=1)
-    w_sum = np.where(w_sum > 0.0, w_sum, np.nan)
-    bragg_regime = 2.0 * np.sin(theta_local) >= 1.0 / _TWO_SCALE_DIVISION_FACTOR   # local k_B >= k_radar / 3
-    w_bragg = w * bragg_regime                                       # quasi-specular facets add no Bragg return
-    sigma0_RL = np.sum(sigma0_RL_grid * w_bragg, axis=1) / w_sum     # slope-averaged NRCS
-    sigma0_RR = np.sum(sigma0_RR_grid * w_bragg, axis=1) / w_sum
+    bragg_regime = q_t >= 1.0 / _TWO_SCALE_DIVISION_FACTOR            # local K_B >= k_radar / 3
+    w = weight[None, :] * facet_visible * bragg_regime * area_ratio   # (N, M) quasi-specular and hidden facets add nothing
+    w_total = np.sum(weight)                                          # every facet stays in the slope-PDF normalisation
+    sigma0_RL = np.sum(np.where(w > 0.0, sigma0_RL_grid, 0.0) * w, axis=1) / w_total   # slope-averaged NRCS
+    sigma0_RR = np.sum(np.where(w > 0.0, sigma0_RR_grid, 0.0) * w, axis=1) / w_total
 
     if scalar_in:
         return float(sigma0_RL[0]), float(sigma0_RR[0])
     return sigma0_RL, sigma0_RR
+
+
+def two_scale_backscatter_nrcs(theta_inc_rad, azimuth_rad, wavelength_m, eps_r, wind_speed_m_s, inverse_wave_age):
+    """Monostatic two-scale ocean backscatter NRCS: :func:`two_scale_bistatic_nrcs` with the Rx along the Tx direction."""
+    return two_scale_bistatic_nrcs(theta_inc_rad, theta_inc_rad, 0.0, azimuth_rad, wavelength_m, eps_r, wind_speed_m_s, inverse_wave_age)

@@ -6,6 +6,8 @@ from scipy import integrate
 
 from functions.ocean_physics import (
     bragg_backscatter_nrcs,
+    bragg_bistatic_coefficients,
+    bragg_bistatic_nrcs,
     bragg_scattering_coefficients,
     circular_pol_reflectivities,
     cox_munk_slope_pdf,
@@ -15,6 +17,7 @@ from functions.ocean_physics import (
     large_scale_slope_variances,
     seawater_permittivity,
     two_scale_backscatter_nrcs,
+    two_scale_bistatic_nrcs,
 )
 
 
@@ -255,7 +258,9 @@ class TestBraggBackscatterNrcs:
         # with Psi the height spectrum normalised to s^2 (as W_iso). Its large-s limit is the GO NRCS.
         k = 2.0 * np.pi / self.LAMBDA_L1_M
         s, corr_len = 1.0e-4, 5.0
-        integrand = lambda r: (np.exp(-4 * k**2 * s**2 * (1 - np.exp(-(r**2) / corr_len**2))) - np.exp(-4 * k**2 * s**2)) * 2 * np.pi * r
+        def integrand(r):
+            return (np.exp(-4 * k**2 * s**2 * (1 - np.exp(-(r**2) / corr_len**2))) - np.exp(-4 * k**2 * s**2)) * 2 * np.pi * r
+
         sigma0_ka = k**2 / np.pi * integrate.quad(integrand, 0.0, 20.0 * corr_len, limit=400)[0]
         psi_0 = s**2 * corr_len**2 / (4.0 * np.pi)                    # Psi(0) = s^2 / (2 pi)^2 * int rho d^2r
         prefactor_ka = sigma0_ka / (k**4 * psi_0)
@@ -381,7 +386,7 @@ class TestTwoScaleBackscatterNrcs:
         for wind in (4.0, 7.0, 10.0, 13.0, 16.0):
             vals = [self._ts(th, wind=wind) for th in thetas]
             assert max(vals) < 1.0, f"two-scale sigma0_RL above 0 dB at {wind} m/s: {10 * np.log10(max(vals)):.1f} dB"
-            assert all(a > b for a, b in zip(vals, vals[1:])), f"not decreasing with incidence at {wind} m/s"
+            assert np.all(np.diff(vals) < 0.0), f"not decreasing with incidence at {wind} m/s"
 
     def test_array_matches_scalar(self):
         thetas = np.radians(np.array([25.0, 35.0, 45.0]))
@@ -394,3 +399,124 @@ class TestTwoScaleBackscatterNrcs:
             np.testing.assert_allclose(rl_arr[i], rl_s, rtol=1e-12)
             np.testing.assert_allclose(rr_arr[i], rr_s, rtol=1e-12)
         assert rl_arr.shape == thetas.shape
+
+
+class TestBraggBistatic:
+    LAMBDA_L1_M = 299792458.0 / 1.57542e9
+    EPS_SEAWATER_L1 = seawater_permittivity(1.57542e9, 15.0, 35.0)
+
+    @staticmethod
+    def _fsa_basis(k_hat):
+        h = np.cross([0.0, 0.0, 1.0], k_hat)
+        h /= np.linalg.norm(h)
+        return h, np.cross(h, k_hat)
+
+    def test_reduces_to_monostatic_at_backscatter(self):
+        thetas = np.radians(np.linspace(2.0, 75.0, 30))
+        mono = bragg_backscatter_nrcs(thetas, self.LAMBDA_L1_M, self.EPS_SEAWATER_L1, 10.0, 0.84)
+        bi = bragg_bistatic_nrcs(thetas, thetas, np.pi, self.LAMBDA_L1_M, self.EPS_SEAWATER_L1, 10.0, 0.84)
+        np.testing.assert_allclose(bi[0], mono[0], rtol=1e-10)
+        np.testing.assert_allclose(bi[1], mono[1], rtol=1e-10)
+
+    def test_coefficients_match_pec_boundary_perturbation(self):
+        # Perfect conductor, z = F exp(i K.r): the first-order condition E_t(z=f) = -E_z grad f gives the
+        # tangential field T = -2 i F (k_iz e_t + e_z K); transversality fixes E_z = -k_st.T / k_sz. That
+        # field must equal -k cos(theta_i) a_pq (common factor) for every polarisation pair, signs included.
+        rng = np.random.default_rng(7)
+        for _ in range(8):
+            ti, ts = rng.uniform(0.1, 1.2, 2)
+            ps = rng.uniform(-np.pi, np.pi)
+            k_i = np.array([np.sin(ti), 0.0, -np.cos(ti)])
+            k_s = np.array([np.sin(ts) * np.cos(ps), np.sin(ts) * np.sin(ps), np.cos(ts)])
+            K = np.array([k_s[0] - k_i[0], k_s[1] - k_i[1], 0.0])
+            h_i, v_i = self._fsa_basis(k_i)
+            h_s, v_s = self._fsa_basis(k_s)
+            field = np.zeros((2, 2))
+            for col, e in enumerate((h_i, v_i)):
+                T = k_i[2] * np.array([e[0], e[1], 0.0]) + e[2] * K
+                E = np.array([T[0], T[1], -(k_s[0] * T[0] + k_s[1] * T[1]) / k_s[2]])
+                field[:, col] = (h_s @ E, v_s @ E)
+            a_hh, a_hv, a_vh, a_vv = bragg_bistatic_coefficients(ti, ts, ps, 1.0e20)   # eps -> inf, residual O(eps^-1/2)
+            np.testing.assert_allclose(field, -np.cos(ti) * np.real(np.array([[a_hh, a_hv], [a_vh, a_vv]])), atol=1e-9)
+
+    def test_scattering_dyadic_is_reciprocal(self):
+        # S(k_s <- k_i) = S(-k_i <- -k_s)^T for the 3-D dyadic built from the forward-aligned bases.
+        def dyadic(k_i, k_s):
+            x_l = np.array([k_i[0], k_i[1], 0.0]) / np.hypot(k_i[0], k_i[1])
+            y_l = np.cross([0.0, 0.0, 1.0], x_l)
+            a_hh, a_hv, a_vh, a_vv = bragg_bistatic_coefficients(
+                np.arccos(-k_i[2]), np.arccos(k_s[2]), np.arctan2(k_s @ y_l, k_s @ x_l), self.EPS_SEAWATER_L1
+            )
+            h_i, v_i = self._fsa_basis(k_i)
+            h_s, v_s = self._fsa_basis(k_s)
+            return a_hh * np.outer(h_s, h_i) + a_hv * np.outer(h_s, v_i) + a_vh * np.outer(v_s, h_i) + a_vv * np.outer(v_s, v_i)
+
+        rng = np.random.default_rng(11)
+        for _ in range(20):
+            ti, ts = rng.uniform(0.05, 1.3, 2)
+            pi_, ps_ = rng.uniform(-np.pi, np.pi, 2)
+            k_i = np.array([np.sin(ti) * np.cos(pi_), np.sin(ti) * np.sin(pi_), -np.cos(ti)])
+            k_s = np.array([np.sin(ts) * np.cos(ps_), np.sin(ts) * np.sin(ps_), np.cos(ts)])
+            forward = dyadic(k_i, k_s)
+            np.testing.assert_allclose(forward, dyadic(-k_s, -k_i).T, atol=1e-12 * np.abs(forward).max())
+
+    def test_zero_in_specular_direction(self):
+        # The specular direction has no horizontal scattering wavevector: no resonant ripple.
+        rl, rr = bragg_bistatic_nrcs(0.5, 0.5, 0.0, self.LAMBDA_L1_M, self.EPS_SEAWATER_L1, 10.0, 0.84)
+        assert float(rl) == 0.0 and float(rr) == 0.0
+
+
+class TestTwoScaleBistaticNrcs:
+    LAMBDA_L1_M = 299792458.0 / 1.57542e9
+    EPS_SEAWATER_L1 = seawater_permittivity(1.57542e9, 15.0, 35.0)
+
+    def _world_frame_reference(self, theta_i, theta_s, bearing_tx, bearing_rx, bearing_wind, wind):
+        # Facets on a fine wind-frame grid in east/north/up, Tx/Rx placed by clockwise bearings.
+        s_u_sq, s_c_sq = large_scale_slope_variances(self.LAMBDA_L1_M, wind, 0.84)
+        u_hat = np.array([np.sin(bearing_wind), np.cos(bearing_wind), 0.0])
+        c_hat = np.array([np.cos(bearing_wind), -np.sin(bearing_wind), 0.0])
+        grid = np.linspace(-4.0, 4.0, 61)
+        Uu, Uc = np.meshgrid(grid, grid, indexing="ij")
+        weight = np.exp(-0.5 * (Uu**2 + Uc**2)).ravel()
+        slope = Uu.ravel()[:, None] * np.sqrt(s_u_sq) * u_hat + Uc.ravel()[:, None] * np.sqrt(s_c_sq) * c_hat
+        area = np.sqrt(1.0 + np.sum(slope**2, axis=1))
+        normal = np.column_stack([-slope[:, 0], -slope[:, 1], np.ones(weight.size)]) / area[:, None]
+        to_tx = np.array([np.sin(theta_i) * np.sin(bearing_tx), np.sin(theta_i) * np.cos(bearing_tx), np.cos(theta_i)])
+        to_rx = np.array([np.sin(theta_s) * np.sin(bearing_rx), np.sin(theta_s) * np.cos(bearing_rx), np.cos(theta_s)])
+        cos_i, cos_s = normal @ to_tx, normal @ to_rx
+        tx_t = to_tx - cos_i[:, None] * normal
+        rx_t = to_rx - cos_s[:, None] * normal
+        x_l = -tx_t / np.linalg.norm(tx_t, axis=1)[:, None]
+        y_l = np.cross(normal, x_l)
+        phi = np.arctan2(np.sum(rx_t * y_l, axis=1), np.sum(rx_t * x_l, axis=1))
+        rl, _ = bragg_bistatic_nrcs(
+            np.arctan2(np.linalg.norm(tx_t, axis=1), cos_i), np.arctan2(np.linalg.norm(rx_t, axis=1), cos_s), phi,
+            self.LAMBDA_L1_M, self.EPS_SEAWATER_L1, wind, 0.84,
+        )
+        w = weight * (cos_i > 1e-6) * (cos_s > 1e-6) * (np.linalg.norm(tx_t + rx_t, axis=1) >= 1.0 / 3.0) * area
+        return np.sum(np.where(w > 0.0, rl, 0.0) * w) / np.sum(weight)
+
+    def test_matches_world_frame_reference_out_of_plane(self):
+        # Pins the frame conventions: phi_rx is the Rx azimuth counterclockwise from the Tx azimuth and
+        # azimuth_rad the Tx azimuth counterclockwise from upwind (a flipped slope covariance is off by ~0.5 dB).
+        for th_i, th_s, b_tx, b_rx, b_w in ((28.0, 47.2, 113.9, 53.7, 251.5), (35.3, 35.3, 85.0, 5.2, 336.0), (48.8, 30.7, 177.5, 243.6, 21.9)):
+            ref = self._world_frame_reference(*np.radians([th_i, th_s, b_tx, b_rx, b_w]), 12.0)
+            rl, _ = two_scale_bistatic_nrcs(
+                np.radians(th_i), np.radians(th_s), np.radians(b_tx - b_rx), np.radians(b_w - b_tx),
+                self.LAMBDA_L1_M, self.EPS_SEAWATER_L1, 12.0, 0.84,
+            )
+            assert abs(10.0 * np.log10(rl / ref)) < 0.1
+
+    def test_monostatic_wrapper_is_rx_along_tx(self):
+        rl_bi, rr_bi = two_scale_bistatic_nrcs(0.6, 0.6, 0.0, 0.4, self.LAMBDA_L1_M, self.EPS_SEAWATER_L1, 7.0, 0.84)
+        rl_mono, rr_mono = two_scale_backscatter_nrcs(0.6, 0.4, self.LAMBDA_L1_M, self.EPS_SEAWATER_L1, 7.0, 0.84)
+        assert rl_bi == rl_mono and rr_bi == rr_mono
+
+    def test_finite_at_specular_and_continuous_near_backscatter(self):
+        # At the specular point only facets tilted into the Bragg regime contribute: positive, finite, and
+        # continuous across the old 5 deg near-backscatter gate.
+        rl_spec, _ = two_scale_bistatic_nrcs(0.5, 0.5, np.pi, 0.0, self.LAMBDA_L1_M, self.EPS_SEAWATER_L1, 10.0, 0.84)
+        assert 0.0 < rl_spec < 1.0
+        near = [two_scale_bistatic_nrcs(np.radians(30.0), np.radians(30.0 + d), np.radians(d / 2), 0.0,
+                                        self.LAMBDA_L1_M, self.EPS_SEAWATER_L1, 10.0, 0.84)[0] for d in (4.9, 5.1)]
+        assert abs(10.0 * np.log10(near[1] / near[0])) < 0.2

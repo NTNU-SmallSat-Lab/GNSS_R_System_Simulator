@@ -11,6 +11,7 @@ from functions.link_budget import (
     build_bistatic_geometry,
     compute_reflection_link_budget,
 )
+from functions.ocean_physics import seawater_permittivity, two_scale_bistatic_nrcs
 from object_definitions.Constants_def import Constants
 from object_definitions.OceanTarget_def import OceanTarget
 from object_definitions.Target_def import Target, TargetRcs
@@ -46,6 +47,18 @@ def _mirror_geometry(theta_deg: float):
     rx = np.array([[L * np.sin(th)], [0.0], [L * np.cos(th)]])
     geom = build_bistatic_geometry(tx, rx, surf, normal)
     return dataclasses.replace(geom, incidence_angle_deg=np.array([float(theta_deg)]))
+
+
+def _off_specular_forward_geometry(theta_in_deg: float, theta_out_deg: float):
+    """In-plane forward geometry with incidence theta_in_deg and scattering angle theta_out_deg, surface normal +z."""
+    surf = np.array([[0.0, 0.0, 0.0]])
+    normal = np.array([[0.0, 0.0, 1.0]])
+    th_in, th_out = np.radians(theta_in_deg), np.radians(theta_out_deg)
+    L = 1.0e6
+    tx = np.array([[-L * np.sin(th_in)], [0.0], [L * np.cos(th_in)]])
+    rx = np.array([[L * np.sin(th_out)], [0.0], [L * np.cos(th_out)]])
+    geom = build_bistatic_geometry(tx, rx, surf, normal)
+    return dataclasses.replace(geom, incidence_angle_deg=np.array([float(theta_in_deg)]))
 
 
 def _oblique_backscatter_geometry(theta_deg: float):
@@ -300,12 +313,14 @@ class TestOceanTargetComputeRcs:
 
     def test_uncapped_specular_go_integral_matches_flat_mirror_rcs(self):
         # At the specular peak, sigma0_peak * A_eff must integrate the normalized slope PDF:
-        # A_eff = 4 R_red^2 / P(0), hence sigma_incoherent = 4 pi |R_RL|^2 R_red^2.
+        # A_eff = 4 R_red^2 / P(0), hence the GO cross-section is 4 pi |R_RL|^2 R_red^2.
         geom = _mirror_geometry(theta_deg=20.0)
         result = _default_ocean().compute_rcs(geom, 0.19)
         reduced_range = geom.range_tx_m[0] * geom.range_rx_m[0] / (geom.range_tx_m[0] + geom.range_rx_m[0])
         expected = 4.0 * np.pi * result.info["fresnel_reflectivity_RL_sq"][0] * reduced_range**2
-        np.testing.assert_allclose(result.info["rcs_incoherent_m2"][0], expected, rtol=1e-12)
+        rcs_go = result.info["nrcs"][0] * result.info["effective_glistening_area_m2"][0]
+        np.testing.assert_allclose(rcs_go, expected, rtol=1e-12)
+        np.testing.assert_allclose(result.info["rcs_incoherent_m2"][0], rcs_go + result.info["rcs_bragg_m2"][0], rtol=1e-12)
 
     def test_forward_nrcs_stays_in_broad_gnss_r_envelope(self):
         # Broad plausibility/regression interval, not a calibrated CYGNSS comparison.
@@ -348,8 +363,8 @@ class TestOceanTargetComputeRcs:
             res_uncapped.info["glistening_area_m2"],
         )
         np.testing.assert_allclose(
-            res_capped.info["rcs_incoherent_m2"],
-            res_uncapped.info["rcs_incoherent_m2"],
+            res_capped.info["nrcs"] * res_capped.info["effective_glistening_area_m2"],
+            res_uncapped.info["nrcs"] * res_uncapped.info["effective_glistening_area_m2"],
         )
 
     def test_nan_geometry_propagates_to_nan_rcs(self):
@@ -374,12 +389,39 @@ class TestOceanTargetComputeRcs:
         result = OceanTarget(2.0, 5.0, 0.0, 15.0, 35.0).compute_rcs(_mirror_geometry(10.0), 0.19)
         np.testing.assert_allclose(result.info["rms_surface_height_m"], [0.5])
 
-    def test_bragg_zero_at_forward_specular(self):
-        # Forward specular (bistatic = 2 theta) is outside the backscatter gate: Bragg must be exactly
-        # 0, so the specular path (and its golden reference) is unchanged.
+    def test_bragg_small_at_forward_specular(self):
+        # At the specular point the mean-surface q has no tangential part; only tilted facets reach the
+        # Bragg regime, so the bistatic Bragg NRCS is positive but far below the quasi-specular GO NRCS.
         result = _default_ocean().compute_rcs(_mirror_geometry(theta_deg=30.0), 0.19)
-        assert result.info["rcs_bragg_m2"][0] == 0.0
-        assert result.info["nrcs_bragg_RL"][0] == 0.0
+        assert result.info["nrcs_bragg_RL"][0] > 0.0
+        assert result.info["nrcs_bragg_RL"][0] < 1.0e-2 * result.info["nrcs"][0]
+
+    def test_bragg_carries_far_off_specular_forward_return(self):
+        # Far from the specular direction the GO slope PDF collapses while the bistatic Bragg return does
+        # not: no gate, the short waves scatter in every direction.
+        result = _default_ocean().compute_rcs(_off_specular_forward_geometry(theta_in_deg=30.0, theta_out_deg=70.0), 0.19)
+        assert result.info["nrcs_bragg_RL"][0] > result.info["nrcs"][0]
+
+    def test_bragg_geometry_follows_bearing_conventions(self):
+        # Surface on the equator (up = +x, north = +z, east = +y). Tx/Rx are placed by clockwise bearings;
+        # the Bragg kernel must receive the Rx azimuth counterclockwise from the Tx azimuth and the Tx
+        # azimuth counterclockwise from the upwind (wind-from) bearing.
+        R = 6.371e6
+        surf = np.array([[R, 0.0, 0.0]])
+        normal = np.array([[1.0, 0.0, 0.0]])
+        th_tx, th_rx, b_tx, b_rx, b_wind = np.radians([35.0, 50.0, 110.0, 40.0, 300.0])
+
+        def direction(theta, bearing):
+            return np.array([np.cos(theta), np.sin(theta) * np.sin(bearing), np.sin(theta) * np.cos(bearing)])
+
+        tx = (surf[0] + 2.0e7 * direction(th_tx, b_tx)).reshape(3, 1)
+        rx = (surf[0] + 1.0e6 * direction(th_rx, b_rx)).reshape(3, 1)
+        geom = build_bistatic_geometry(tx, rx, surf, normal)
+        ocean = OceanTarget(1.5, 9.0, np.degrees(b_wind), 15.0, 35.0)
+        wavelength_m = 0.19
+        eps_r = seawater_permittivity(Constants.SPEED_OF_LIGHT / wavelength_m, 15.0, 35.0)
+        expected, _ = two_scale_bistatic_nrcs(th_tx, th_rx, b_tx - b_rx, b_wind - b_tx, wavelength_m, eps_r, 9.0, 0.84)
+        np.testing.assert_allclose(ocean.compute_rcs(geom, wavelength_m).info["nrcs_bragg_RL"][0], expected, rtol=1e-9)
 
     def test_go_dominates_bragg_near_nadir_backscatter(self):
         # Two-scale crossover: near nadir the quasi-specular GO term dominates and Bragg adds the ripple
@@ -579,7 +621,7 @@ class TestOceanPatchIntegration:
         info = lb["target_info"]
         assert info["patch_integration_used"][0]
         assert info["patch_count"][0] > 0
-        assert info["patch_bragg_rcs_sum_m2"][0] == 0.0
+        assert 0.0 < info["patch_bragg_rcs_sum_m2"][0] < info["patch_diffuse_rcs_sum_m2"][0]
         np.testing.assert_allclose(lb["received_power_w"][0], info["patch_total_received_power_w"][0], rtol=1e-12)
         assert any(call[1] == 0.0 and call[2] == 0.0 for call in antenna.gain_calls)
 

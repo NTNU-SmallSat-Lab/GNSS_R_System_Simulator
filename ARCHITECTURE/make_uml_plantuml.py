@@ -294,7 +294,7 @@ package "Physics helpers" #F7F7F7 {
         seawater_permittivity() <i>Klein-Swift</i>
         circular_pol_reflectivities() <i>Fresnel</i>
         large_scale_slope_variances() <i>Elfouhaily</i>
-        two_scale_backscatter_nrcs() <i>Bragg</i>
+        two_scale_bistatic_nrcs() <i>Bragg</i>
     }
 
     class "functions.ship_physics" as ship_physics <<module>> {

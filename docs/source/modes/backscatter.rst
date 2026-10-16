@@ -137,8 +137,8 @@ Assumptions and limitations
   is the right point for backscatter, not the forward specular reflection point.
 - **Noise- or clutter-limited by settings.** The detector applies the configured processing gain to the
   detection-equivalent thermal scale before forming SINR; the incoherent-look factor is approximate.
-- **Bragg gating.** The Bragg return is added only near backscatter and at oblique incidence, so the
-  forward path is left unchanged. Out-of-plane polarisation rotation is not yet included.
+- **First-order Bragg.** The ocean clutter uses the first-order two-scale bistatic Bragg model with an
+  isotropic short-wave spectrum.
 - **Coarse spatial match.** A reflection counts as "on the ship" when the point or its footprint overlaps
   the ship position.
 - **No DDM bin association.** Footprint overlap is not proof that ship and ocean reference returns share
