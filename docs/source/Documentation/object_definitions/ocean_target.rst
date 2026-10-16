@@ -177,8 +177,8 @@ First-order Bragg grows without bound toward nadir and toward the specular direc
 restriction :math:`K_\mathrm{local} \ge k_\mathrm{radar}/3` (the same two-scale division) leaves the
 quasi-specular facets to the geometric-optics term. Geometric optics and Bragg add as in the two-scale
 model: geometric optics dominates near the specular direction and near nadir, Bragg at oblique backscatter
-(crossover near 15-20 deg) and far off-specular. At the specular point Bragg is more than 20 dB below the
-geometric-optics NRCS.
+(crossover near 15-20 deg) and far off-specular. At the specular point Bragg is more than 15 dB below the
+geometric-optics NRCS (3-20 m/s).
 
 The clutter area
 ^^^^^^^^^^^^^^^^
