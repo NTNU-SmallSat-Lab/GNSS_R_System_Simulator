@@ -1072,11 +1072,11 @@ class MovingTargetDetection:
         padding = max((hi - lo) * 0.05, 1.0)
         lo -= padding
         hi += padding
-        ax_power.plot([lo, hi], [lo, hi], "k--", alpha=0.5, label="SCR = 0 dB")
+        ax_power.plot([lo, hi], [lo, hi], "k--", alpha=0.5, label=r"$\mathrm{SCR} = 0$ dB")
         ax_power.set_xlim(lo, hi)
         ax_power.set_ylim(lo, hi)
-        ax_power.set_xlabel("Pr ocean clutter [dBm]")
-        ax_power.set_ylabel("Pr ship signal [dBm]")
+        ax_power.set_xlabel(r"$P_\mathrm{ocean}$ clutter [dBm]")
+        ax_power.set_ylabel(r"$P_\mathrm{ship}$ signal [dBm]")
         ax_power.set_title("Received Power per Footprint-Overlap Event")
         ax_power.legend(loc="best")
         ax_power.grid(True, alpha=0.3)
@@ -1101,8 +1101,8 @@ class MovingTargetDetection:
                 scrs, bins=bins, color=const_color[gnss_name], alpha=0.5,
                 label=f"{gnss_name} (n={scrs.size})", edgecolor="black",
             )
-        ax_scr_hist.axvline(0.0, color="k", linestyle="--", alpha=0.5, label="SCR = 0 dB")
-        ax_scr_hist.set_xlabel("SCR = 10 log10(Pr_ship / Pr_ocean) [dB]")
+        ax_scr_hist.axvline(0.0, color="k", linestyle="--", alpha=0.5, label=r"$\mathrm{SCR} = 0$ dB")
+        ax_scr_hist.set_xlabel(r"$\mathrm{SCR} = 10\,\log_{10}(P_\mathrm{ship}\,/\,P_\mathrm{ocean})$  [dB]")
         ax_scr_hist.set_ylabel("Number of footprint-overlap events")
         ax_scr_hist.set_title("Signal-to-Clutter Ratio Distribution")
         ax_scr_hist.legend(loc="best")
@@ -1142,7 +1142,7 @@ class MovingTargetDetection:
             ax_sinr_hist.legend(loc="best")
         else:
             ax_sinr_hist.text(0.5, 0.5, "No finite SINR values", transform=ax_sinr_hist.transAxes, ha="center", va="center")
-        ax_sinr_hist.set_xlabel("Ship SINR = 10 log10(Pr_ship / (Pr_ocean + noise)) [dB]")
+        ax_sinr_hist.set_xlabel(r"$\mathrm{SINR} = 10\,\log_{10}(P_\mathrm{ship}\,/\,(P_\mathrm{ocean} + N))$  [dB]")
         ax_sinr_hist.set_ylabel("Number of footprint-overlap events")
         ax_sinr_hist.set_title("Ship SINR Distribution")
         ax_sinr_hist.grid(True, alpha=0.3)
@@ -1194,11 +1194,11 @@ class MovingTargetDetection:
             plotted_margin_label.add(gnss_name)
             has_margins = True
 
-        ax_margin.axhline(0.0, color="k", linestyle="--", alpha=0.6, label="SINR threshold")
+        ax_margin.axhline(0.0, color="k", linestyle="--", alpha=0.6, label=r"$\mathrm{SINR}$ threshold")
         if not has_margins:
             ax_margin.text(0.5, 0.5, "No finite SINR margins", transform=ax_margin.transAxes, ha="center", va="center")
         ax_margin.set_xlabel("Footprint-overlap event index")
-        ax_margin.set_ylabel("SINR margin [dB]")
+        ax_margin.set_ylabel(r"$\mathrm{SINR}$ margin [dB]")
         ax_margin.set_title("Ship SINR Qualification Margin")
         ax_margin.legend(loc="best")
         ax_margin.grid(True, alpha=0.3)
@@ -1320,7 +1320,7 @@ class MovingTargetDetection:
         for gnss_name, _, fr, _ in rows:
             ax_frac.hist(fr, bins=frac_bins, color=const_color[gnss_name], alpha=0.5,
                          label=f"{gnss_name} (n={fr.size})", edgecolor="black")
-        ax_frac.set_xlabel("delta-Pr / footprint glint = 10 log10(shadow Pr / ocean Pr) [dB]")
+        ax_frac.set_xlabel(r"$\Delta P_\mathrm{r}\,/\,P_\mathrm{glint} = 10\,\log_{10}(P_\mathrm{shadow}\,/\,P_\mathrm{ocean})$  [dB]")
         ax_frac.set_ylabel("Number of footprint-overlap events")
         ax_frac.set_title("Forward-Scatter Shadow vs Glint Distribution")
         ax_frac.legend(loc="best")
@@ -1336,11 +1336,11 @@ class MovingTargetDetection:
             for gnss_name, on in on_rows:
                 ax_on.hist(on, bins=on_bins, color=const_color[gnss_name], alpha=0.5,
                            label=f"{gnss_name} (n={on.size})", edgecolor="black")
-            ax_on.axvline(0.0, color="k", linestyle="--", alpha=0.6, label="Noise floor (0 dB)")
+            ax_on.axvline(0.0, color="k", linestyle="--", alpha=0.6, label=r"Noise floor ($0$ dB)")
             ax_on.legend(loc="best")
         else:
             ax_on.text(0.5, 0.5, "No finite delta-Pr / noise values", transform=ax_on.transAxes, ha="center", va="center")
-        ax_on.set_xlabel("delta-Pr / noise = 10 log10(shadow Pr / noise) [dB]")
+        ax_on.set_xlabel(r"$\Delta P_\mathrm{r}\,/\,N = 10\,\log_{10}(P_\mathrm{shadow}\,/\,N)$  [dB]")
         ax_on.set_ylabel("Number of footprint-overlap events")
         ax_on.set_title("Forward-Scatter Shadow vs Noise Distribution")
         ax_on.grid(True, alpha=0.3)

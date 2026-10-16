@@ -6,6 +6,7 @@ import warnings
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import geopandas as gpd
+from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 import matplotlib.pyplot as plt
 import numpy as np
@@ -613,15 +614,11 @@ class Coverage:
         ax.add_feature(cfeature.BORDERS, linestyle=":")
         ax.set_global()
 
-        # Set extent based on bounding box
-        ax.set_extent(
-            [
-                self.bounding_box[0],
-                self.bounding_box[1],
-                self.bounding_box[2],
-                self.bounding_box[3],
-            ]
-        )
+        # Map extent: the region of interest plus a margin. The counting bounding box is padded by 5 deg,
+        # which would also draw many tracks that never reach the region; lines outside the axes are clipped.
+        pad_deg = 1.5
+        min_x, min_y, max_x, max_y = self.grid_gdf.total_bounds
+        ax.set_extent([min_x - pad_deg, max_x + pad_deg, min_y - pad_deg, max_y + pad_deg])
 
         # Plot the grid background
         self.grid_gdf.plot(
@@ -632,6 +629,7 @@ class Coverage:
             alpha=0.5,
             label="Grid Background",
             aspect=None,
+            zorder=1,
         )
 
         # Group cells by intersection count and plot each group in a single batch call —
@@ -643,17 +641,26 @@ class Coverage:
             (counts > 2, "orange"),
         ]:
             if mask.any():
-                self.grid_gdf[mask].plot(ax=ax, color=fill_color, edgecolor="red", alpha=0.3, aspect=None)
+                self.grid_gdf[mask].plot(ax=ax, color=fill_color, edgecolor="red", alpha=0.3, aspect=None, zorder=3)
 
         # Plot reflection tracks -- only the in-box, contiguous segments that the coverage counting
         # uses, so the drawn tracks correspond to the coloured cells. Plotting the full refl_LL_vec
         # would draw out-of-region and pole-wrapping segments (e.g. a BRP track that lies over the
         # equator or the south pole for this window) clipped onto the map, which are unrelated to the
         # coverage counted here.
+        # Specular point tracks are thin lines and numerous; only the parts within 1 deg of the region can colour a
+        # cell, so the rest (e.g. over land) is not drawn. Backscatter swaths are few and drawn in full.
+        roi_zone = None
+        if self.reflection_type == "specular":
+            cells = self.grid_gdf.geometry
+            roi_zone = (cells.union_all() if hasattr(cells, "union_all") else cells.unary_union).buffer(1.0)
+
+        plotted_consts = []
         for gnss_name in gnss_const:
             if gnss_name not in self.reflection_dict:
                 continue
             color = fn.color_gnss_const(gnss_name)
+            plotted_consts.append(gnss_name)
             for refl in self.reflection_dict[gnss_name]:
                 validity_mask, ref_points_in_box = self.validity_mask(refl, self.bounding_box)
                 for cluster in self._get_reflection_clusters(refl, validity_mask):
@@ -665,14 +672,17 @@ class Coverage:
                     if self.reflection_type == "backscatter":
                         swath = self._cluster_track_geometry(refl, cluster, ref_points_in_box)
                         if swath.geom_type in ("Polygon", "MultiPolygon"):
-                            ax.add_geometries([swath], crs=ccrs.PlateCarree(), facecolor=color, edgecolor="none", alpha=0.1)
-                    ax.plot(
-                        segment[:, 1],
-                        segment[:, 0],
-                        color=color,
-                        linewidth=0.8,
-                        transform=ccrs.PlateCarree(),
-                    )
+                            ax.add_geometries([swath], crs=ccrs.PlateCarree(), facecolor=color, edgecolor="none", alpha=0.1, zorder=2)
+                    if roi_zone is None:
+                        parts = [LineString(segment[:, [1, 0]])]
+                    else:
+                        clipped = LineString(segment[:, [1, 0]]).intersection(roi_zone)
+                        parts = list(clipped.geoms) if hasattr(clipped, "geoms") else [clipped]
+                    for part in parts:
+                        if part.is_empty or part.geom_type != "LineString":
+                            continue
+                        xs, ys = part.xy
+                        ax.plot(xs, ys, color=color, linewidth=0.6, alpha=0.75, transform=ccrs.PlateCarree(), zorder=2)
 
         # Add labels and gridlines
         if title is None:
@@ -687,30 +697,27 @@ class Coverage:
         gl.top_labels = False
         gl.right_labels = False
 
-        ## Add legend
+        # Legend: cell visit counts, uncovered cells, and the track colour of each constellation
+        # (plus the acceptance swath in backscatter mode), placed outside the map so it hides no data.
         legend_elements = [
-            Patch(facecolor="aqua", edgecolor="aqua", alpha=0.3, label="1  intersection"),
-            Patch(
-                facecolor="blue",
-                edgecolor="blue",
-                alpha=0.3,
-                label="2  intersections",
-            ),
-            Patch(
-                facecolor="orange",
-                edgecolor="orange",
-                alpha=0.3,
-                label="3+ intersections",
-            ),
+            Patch(facecolor="lightgray", edgecolor="lightgray", alpha=0.5, label="not visited"),
+            Patch(facecolor="aqua", edgecolor="aqua", alpha=0.3, label="1 visit"),
+            Patch(facecolor="blue", edgecolor="blue", alpha=0.3, label="2 visits"),
+            Patch(facecolor="orange", edgecolor="orange", alpha=0.3, label="3+ visits"),
         ]
-        ax.legend(handles=legend_elements, loc="upper right")
+        track_name = "specular point" if self.reflection_type == "specular" else "BRP"
+        for gnss_name in plotted_consts:
+            legend_elements.append(Line2D([0], [0], color=fn.color_gnss_const(gnss_name), linewidth=1.5, label=f"{gnss_name} {track_name} track"))
+            if self.reflection_type == "backscatter":
+                legend_elements.append(Patch(facecolor=fn.color_gnss_const(gnss_name), alpha=0.25, label=f"{gnss_name} acceptance swath"))
+        ax.legend(handles=legend_elements, loc="upper left", bbox_to_anchor=(1.01, 1.0), fontsize=9, frameon=True)
 
         # Keep Cartopy map proportions independent of the latitude of each coverage group.
         ax.set_aspect("equal", adjustable="box")
         plt.tight_layout()
 
         file_path = os.path.join(Constants.output_folder_path, file_name)
-        plt.savefig(file_path, dpi=200)
+        plt.savefig(file_path, dpi=200, bbox_inches="tight")
 
         print(f"Coverage plot saved to {file_path}")
 
