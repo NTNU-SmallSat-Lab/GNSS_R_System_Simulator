@@ -25,22 +25,22 @@ class Orbit_specification:
         raan : float
             Right ascension of the ascending node [deg].
         p : float
-            Argument of perigee [deg].
-        M : float
-            Mean anomaly [deg].
+            Argument of periapsis [deg].
+        nu : float
+            True anomaly [deg].
         a : float
             Semi-major axis [m].
         epochTime : datetime, optional
             Orbit epoch (UTC); sets the TLE epoch string.
         """
         # Check if enough variables are provided
-        if any(var is None for var in [i, e, raan, p, M, a]):
+        if any(var is None for var in [i, e, raan, p, nu, a]):
             raise ValueError("Orbit_specification undefined, not sufficient variables provided")
         try:
-            i, e, raan, p, M, a = (float(value) for value in (i, e, raan, p, M, a))
+            i, e, raan, p, nu, a = (float(value) for value in (i, e, raan, p, nu, a))
         except (TypeError, ValueError) as exc:
             raise ValueError("Orbital elements must be finite numeric values.") from exc
-        if not np.isfinite([i, e, raan, p, M, a]).all():
+        if not np.isfinite([i, e, raan, p, nu, a]).all():
             raise ValueError("Orbital elements must be finite numeric values.")
         if not (0.0 <= i <= 180.0):
             raise ValueError(f"Inclination must be in [0, 180] deg; got {i}.")
