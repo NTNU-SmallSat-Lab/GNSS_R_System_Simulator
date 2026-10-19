@@ -32,6 +32,7 @@ gnssr_satID_*.tle
 *.FFephem
 *.e
 *.bsp
+!DATA/SKYFIELD_data/de421.bsp
 
 # Generated shapefile sidecars and gridded derivatives
 *.cpg
