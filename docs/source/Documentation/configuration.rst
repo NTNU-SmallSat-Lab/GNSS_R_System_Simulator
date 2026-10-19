@@ -120,7 +120,7 @@ See :doc:`object_definitions/coverage`, :doc:`object_definitions/reflection`, an
      - Meaning
      - Unit
    * - ``[COVERAGE].shapefile_path``
-     - Region / trajectory shapefile.
+     - Region polygon shapefile in geographic longitude/latitude (EPSG:4326).
      - --
    * - ``[COVERAGE].grid_size_meters``
      - Coverage cell size.
@@ -199,3 +199,8 @@ See :doc:`functions/link_budget`, :doc:`functions/delay_doppler`, and
    * - ``create_animation`` / ``animation_filename`` / ``animation_fps``
      - Optional moving-target animation.
      - --
+
+[MONTE CARLO]
+-------------
+
+Read only by ``SRC/run_monte_carlo.py``; the keys are listed in :doc:`../monte_carlo`.

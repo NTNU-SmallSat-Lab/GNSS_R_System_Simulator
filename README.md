@@ -138,7 +138,7 @@ Golden references live in `tests/golden/`. Regenerate them only when the underly
 
 ## Documentation
 
-The documentation is published at <https://ntnu-smallsat-lab.github.io/GNSS_R_System_Simulator/>. Build it locally with:
+The documentation is published at <https://ntnu-smallsat-lab.github.io/GNSS_R_System_Simulator/>; new users start with its Getting started guide. Build it locally with:
 
 ```powershell
 cd docs

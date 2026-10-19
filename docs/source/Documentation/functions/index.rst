@@ -10,6 +10,8 @@ modes:
 - ``rotations`` -- VNC frame construction and ECI-to-antenna rotations.
 - ``functions`` -- the shared geometry / propagation / IO helper module.
 - ``ship_physics`` -- ship-target scattering helpers.
+- ``mc_event_plots`` -- event-level power records and figures of the Monte Carlo harness (documented
+  in :doc:`../../monte_carlo`).
 
 .. toctree::
    :maxdepth: 1
@@ -19,7 +21,3 @@ modes:
    link_budget
    delay_doppler
    helpers
-
-.. note::
-
-   Remaining module pages are added per the documentation rollout.

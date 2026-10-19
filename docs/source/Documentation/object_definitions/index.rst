@@ -24,7 +24,3 @@ The classes that make up a simulation run:
    coverage
    ship_trajectory
    support
-
-.. note::
-
-   Remaining module pages are added per the documentation rollout.

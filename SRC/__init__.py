@@ -124,7 +124,7 @@ def load_simulator_settings(path: str | None = None) -> dict:
     """
     Load engine/numerical simulator settings from the YAML file, kept separate from the per-mission INI.
 
-    Mission scenario lives in Configuration_*.ini; simulator settings (angular resolutions, numerical
+    Mission scenario lives in Configuration.ini; simulator settings (angular resolutions, numerical
     grids, ...) live in simulator_settings.yaml. Strict like the INI loader: the file must exist and any
     requested key must be present -- there are no hidden defaults.
     """
@@ -220,52 +220,26 @@ def _validate_antenna_steering(along_extent, across_extent, yaml_ap) -> None:
 
 
 def initialize(config_file_name="Configuration.ini"):
-    """
-    =========================================================================================================
-    Read a scenario configuration file and initialize the simulation settings.
-    The configuration file acts as the main input for the simulation.
+    """Parse a scenario INI file and the engine settings into the simulation settings.
 
-    INPUTS:
-        config_file_name: [str, optional]   The name of the configuration file to read. Default is 'Configuration.ini'.
+    Parameters
+    ----------
+    config_file_name : str, optional
+        Path of the scenario INI, relative to the working directory (default ``Configuration.ini``).
 
-    OUTPUT:
-        result: [tuple]   (config: ConfigParser, simulation_settings: dict) — the configuration settings read from the file
-                          and a dictionary containing the simulation settings.
+    Returns
+    -------
+    config : configparser.ConfigParser
+        The raw INI contents.
+    settings : dict
+        The validated settings consumed by the entry scripts: orbits, GNSS constellations, band plan,
+        antenna, reflection gates, link budget, ocean, ship and plot settings.
 
-    Configuration File Structure:
-        [SIMULATION SETTINGS]
-        startTime          = dd.MM.YYYY HH:mm:ss
-        simulationDuration = simulation_duration_in_hours                               (only needed for area-coverage analysis)
-        (stepSize is an engine setting -> simulator_settings.yaml: simulation.step_size_s)
-
-        [MOVING TARGET]
-        start_pos = (longitude, latitude)                                               (only needed for moving target analysis)
-        end_pos   = (longitude, latitude)                                               (only needed for moving target analysis)
-        speed     = Speed_in_knots                                                      (only needed for moving target analysis)
-
-        [ANTENNA]
-        (the antenna pattern folder is not an INI key; it is fixed in Constants.antenna_pattern_folder)
-        antenna_beamwidth_3dB  = [x1, y1, x2, y2, ...] (from 0 to 90 degrees rotationally) (only needed for moving target analysis)
-        bands                  = ["L1", "L2", "L2", "L5"]                                        (only needed for moving target analysis)
-
-        [ORBITS]
-        orbit1 = (inclination, eccentricity, raan, arg_periapsis, true_anomaly, semi_major_axis)
-        orbit2 = ...
-
-        [GNSS CONSTELLATIONS]
-        gnss_tle_files = [file1.tle, file2.tle, ...]       (TLE files for GNSS constellations; constellation names are inferred from filenames)
-
-        [LINK BUDGET] (required) and [OCEAN] (required)
-        Receiver-system losses and sea-state inputs for the bistatic ocean RCS. See
-        `BistaticLinkBudgetSettings` in `functions/link_budget.py` for the accepted keys
-        and units. INI-strict: every key must be present, missing keys raise. The dataclass
-        defaults are the programmatic-API default only; the loader never falls back to them.
-
-        [SHIP] (required when [MOVING TARGET] is present)
-        length_m    = above-waterline length [m]   (> 0)
-        beam_m      = above-waterline width [m]    (> 0)
-        freeboard_m = above-waterline height [m]   (> 0)
-    =========================================================================================================
+    Notes
+    -----
+    INI-strict: a required key that is missing raises. Mode-specific sections are optional; the presence
+    of ``[MOVING TARGET]`` makes the ship, plot-animation and noise keys required. Engine settings are
+    read from ``simulator_settings.yaml``.
     """
     _check_python_version()
 
