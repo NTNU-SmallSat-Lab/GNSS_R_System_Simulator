@@ -1,7 +1,0 @@
-/* Custom styles for the GNSS-R System Simulator documentation. */
-
-/* Nudge the floated pipeline figure slightly toward the right margin. */
-.pipeline-shift {
-    margin-right: -2rem;
-    margin-left: 1rem;
-}

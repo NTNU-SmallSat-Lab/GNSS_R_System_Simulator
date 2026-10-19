@@ -1,10 +1,10 @@
 INI configuration reference
 ===========================
 
-Both modes are driven by an INI file at the repo root: ``Configuration_area.ini`` for area coverage and
-``Configuration_ship.ini`` for moving-target detection. The loader (``SRC/__init__.py::initialize``) is
-**strict** -- a required key that is missing raises, rather than falling back to a hidden default. Which
-sections are present is what distinguishes the two modes.
+Both modes are driven by one INI file at the repo root, ``Configuration.ini``. The entry point selects the
+mode, and each mode ignores the sections that only the other mode uses. The loader
+(``SRC/__init__.py::initialize``) is **strict** -- a required key that is missing raises, rather than falling
+back to a hidden default. The presence of ``[MOVING TARGET]`` makes the moving-target keys required.
 
 This page lists the sections and keys. Per-section physics detail lives on the module pages, linked from
 each section.

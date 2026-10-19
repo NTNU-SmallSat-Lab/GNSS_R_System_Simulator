@@ -1,6 +1,6 @@
 """Generate the orbits figure for the satellites/constellations page, straight from the code.
 
-Builds the LEO receiver constellation from Configuration_area.ini, propagates it over one
+Builds the LEO receiver constellation from Configuration.ini, propagates it over one
 orbital period so the rings close, and calls the same Plotting.plot_orbits used by the area-
 coverage run. That writes OUTPUT/Orbits.png (static) and OUTPUT/Orbits.html (a rotatable, self-
 contained plotly view with a textured land/ocean globe); the HTML is copied into
@@ -28,7 +28,7 @@ ORBIT_PERIOD_HOURS = 1.8  # ~ one period at 7300 km semi-major axis, so each orb
 
 
 def main():
-    _, sim = initialize("Configuration_area.ini")  # same parser the area-coverage run uses
+    _, sim = initialize("Configuration.ini")  # same parser the area-coverage run uses
 
     sats = [Satellite(i, orbit_n=sim["orbits"][i]) for i in range(sim["No_satellites"])]
     leo = SatelliteConstellation(satConfigName="LEO GNSS-R constellation", satArray=sats)

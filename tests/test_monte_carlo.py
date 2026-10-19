@@ -18,6 +18,28 @@ import run_monte_carlo as mc
 
 MODES = ["backscatter", "specular"]
 
+MC_SECTION = {
+    "n_trials": "3",
+    "seed": "1",
+    "window_hours": "6",
+    "vary_heading": "true",
+    "vary_position": "false",
+    "roi_bbox": "[0, 18, 62, 71]",
+    "vary_epoch": "false",
+    "epoch_window_hours": "0",
+    "vary_sea_state": "false",
+    "wind_speed_range_m_s": "[3, 15]",
+    "wave_height_range_m": "[0.5, 4]",
+    "wind_direction_range_deg": "[0, 360]",
+    "inverse_wave_age_range": "[0.84, 2]",
+    "vary_coherent_integration": "false",
+    "coherent_integration_time_s_values": "[0.001]",
+    "vary_incoherent_looks": "false",
+    "num_incoherent_looks_values": "[1]",
+    "vary_system_noise_temperature": "false",
+    "system_noise_temperature_k_range": "[200, 400]",
+}
+
 
 def _draw():
     return {
@@ -335,7 +357,7 @@ def test_resume_skips_legacy_and_new_completed_indices(tmp_path, monkeypatch):
     jsonl.write_text("".join(json.dumps(record) + "\n" for record in completed))
     original = jsonl.read_bytes()
     config = configparser.ConfigParser()
-    config.read("Configuration_mc_backscatter.ini")
+    config.read_dict({"MONTE CARLO": MC_SECTION})
     settings = {"reflection_type": "backscatter", "link_budget": {"detection_sinr_threshold_db": 0}}
     monkeypatch.setattr(mc, "initialize", Mock(return_value=(config, settings)))
     draws = [_draw(), _draw(), _draw()]

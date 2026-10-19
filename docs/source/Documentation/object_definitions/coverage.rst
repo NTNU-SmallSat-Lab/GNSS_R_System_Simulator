@@ -200,7 +200,7 @@ User Guide
 ----------
 
 This is the class behind ``python SRC/main_simulation_areaCoverage.py`` (configured by
-``Configuration_area.ini``). The relevant INI pieces:
+``Configuration.ini``). The relevant INI pieces:
 
 - ``[COVERAGE].shapefile_path`` -- the region outline.
 - ``[COVERAGE].grid_size_meters`` (or a degree size) -- the cell size.

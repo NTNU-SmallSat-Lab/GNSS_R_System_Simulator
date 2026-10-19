@@ -201,7 +201,7 @@ User Guide
 ----------
 
 This is the class behind ``python SRC/main_simulation_movingTarget.py`` (configured by
-``Configuration_ship.ini``). The relevant INI pieces:
+``Configuration.ini``). The relevant INI pieces:
 
 - ``[MOVING TARGET]`` -- the ship route (see :doc:`ship_trajectory`).
 - ``[REFLECTION].reflection_type`` -- ``"specular"`` or ``"backscatter"``.

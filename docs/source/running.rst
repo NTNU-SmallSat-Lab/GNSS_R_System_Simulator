@@ -1,28 +1,28 @@
 Running the simulator
 =====================
 
-The simulator has two entry points, one per analysis mode. Both read an INI file and **must be launched
-from the repository root** (the constants resolve all data and output paths from the working directory).
+The simulator has two entry points, one per analysis mode. Both read ``Configuration.ini`` and **must be
+launched from the repository root** (the constants resolve all data and output paths from the working directory).
 
 .. code-block:: bash
 
    # from the repository root
-   python SRC/main_simulation_areaCoverage.py     # reads Configuration_area.ini
-   python SRC/main_simulation_movingTarget.py     # reads Configuration_ship.ini
+   python SRC/main_simulation_areaCoverage.py
+   python SRC/main_simulation_movingTarget.py
 
 Area coverage
 -------------
 
-``SRC/main_simulation_areaCoverage.py`` allows to evaluate *how often* a region is covered by reflections. It reads
-``Configuration_area.ini``, builds the receiver and GNSS constellations, and runs
-:doc:`Documentation/object_definitions/coverage` over a region predefined by a shapefile (path provided in ``Configuration_area.ini``). Outputs are per-constellation
+``SRC/main_simulation_areaCoverage.py`` allows to evaluate *how often* a region is covered by reflections. It
+builds the receiver and GNSS constellations, and runs :doc:`Documentation/object_definitions/coverage` over a
+region predefined by a shapefile (``[COVERAGE].shapefile_path``). Outputs are per-constellation
 track-visit maps in ``OUTPUT/``.
 
 Moving-target detection
 -----------------------
 
-``SRC/main_simulation_movingTarget.py`` allows to evaluate *when* a moving target (e.g. a ship) could be detected by a reflection, and how likely it is to be detected (link budget). 
-It reads ``Configuration_ship.ini``, builds a :doc:`Documentation/object_definitions/ship_trajectory`,
+``SRC/main_simulation_movingTarget.py`` allows to evaluate *when* a moving target (e.g. a ship) could be detected by a reflection, and how likely it is to be detected (link budget).
+It builds a :doc:`Documentation/object_definitions/ship_trajectory` from ``[MOVING TARGET]``,
 propagates the constellations, and runs :doc:`Documentation/object_definitions/moving_target_detection` in
 either ``specular`` or ``backscatter`` mode. Outputs are per-band detection plots (and an optional
 animation) in ``OUTPUT/``.
@@ -67,20 +67,3 @@ Both modes share the same core. The processing flow is:
    allowed to use the installed table even when its predictive portion is stale, which favors
    reproducibility over a hard failure. Update ``astropy-iers-data`` (or provide current IERS data) before
    precision geolocation studies, especially for future dates.
-
-Utility scripts
----------------
-
-``SRC/`` also carries a few standalone developer utilities that are not part of either analysis mode and
-are not covered by the module pages:
-
-- ``sanity_check.py`` -- manual smoke check that the elliptical specular solver agrees with the spherical
-  closed form to a few km at low latitude (catches regressions in the stationary-path solve or frame
-  conversions).
-- ``test_footprint_calculation.py`` -- manual footprint-debugging script (not part of the pytest suite).
-- ``compress_gif.py`` -- shrinks the animation GIFs written to ``OUTPUT/`` (resolution, palette, frame
-  skipping).
-- ``run_simulator_parallel.py`` -- a parameter-sweep harness, currently disabled (raises
-  ``NotImplementedError`` on import; its migration plan is documented at the top of the file).
-- ``constellation_gen.py`` -- dormant Walker-style orbit-set generator, only consumed by the disabled
-  sweep harness (its known defects are listed in the module header).

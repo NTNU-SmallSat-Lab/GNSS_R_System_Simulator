@@ -2,7 +2,7 @@
 
 Preliminary-design simulator for GNSS-Reflectometry (GNSS-R) LEO mission studies. The code currently supports two analysis modes:
 
-- **Area coverage**: counts contiguous specular-reflection track visits over a gridded region.
+- **Area coverage**: counts contiguous reflection track visits (specular points or near-backscatter swaths) over a gridded region.
 - **Moving-target detection**: follows an ocean target and evaluates specular forward-scatter or backscatter events, including link-budget diagnostics.
 
 The geometry and numerical implementation are tested, but the ocean, antenna, ship-RCS, and detection
@@ -22,8 +22,8 @@ tests/                                 Pytest suite and golden-file references
 DATA/                                  Input data, TLEs, coastline/ocean shapefiles, antenna helpers
 OUTPUT/                                Generated plots, animations, and orbit views
 docs/                                  Sphinx documentation
-Configuration_area.ini                 Area-coverage scenario
-Configuration_ship.ini                 Moving-target scenario
+Configuration.ini                      Scenario for both analysis modes
+simulator_settings.yaml                Engine/numerical settings (step size, pattern resolution)
 ```
 
 Run commands from the repository root. Runtime paths are resolved from the current working directory.
@@ -45,17 +45,34 @@ python SRC/main_simulation_areaCoverage.py
 python SRC/main_simulation_movingTarget.py
 ```
 
-`main_simulation_areaCoverage.py` reads `Configuration_area.ini`, builds the receiver and GNSS constellations, computes specular coverage over the configured shapefile, and writes coverage/reflection/orbit plots under `OUTPUT/`.
+Both entry points read `Configuration.ini`; each ignores the sections that only the other mode uses.
 
-`main_simulation_movingTarget.py` reads `Configuration_ship.ini`, builds the ship trajectory and antenna model, runs either `specular` or `backscatter` mode from `[REFLECTION].reflection_type`, and writes footprint-overlap maps, link-budget breakdown plots, and optional animations under `OUTPUT/`.
+`main_simulation_areaCoverage.py` builds the receiver and GNSS constellations, computes specular or backscatter coverage over the configured shapefile, and writes coverage/reflection/orbit plots under `OUTPUT/`.
+
+`main_simulation_movingTarget.py` builds the ship trajectory and antenna model, runs either `specular` or `backscatter` mode from `[REFLECTION].reflection_type`, and writes footprint-overlap maps, link-budget breakdown plots, and optional animations under `OUTPUT/`.
 
 ## Monte Carlo moving-target runs
+
+`run_monte_carlo.py` reads the scenario from an INI file and samples trials around it. The INI must
+contain a `[MONTE CARLO]` section in addition to the sections of `Configuration.ini`. All keys are
+required:
+
+| Key | Meaning |
+| --- | --- |
+| `n_trials`, `seed` | Number of trials; random seed (draws are reproducible) |
+| `window_hours` | Simulated time window per trial [h] |
+| `vary_heading` | Random ship heading (otherwise 90 deg) |
+| `vary_position`, `roi_bbox` | Random start position on water inside `[min_lon, max_lon, min_lat, max_lat]` (otherwise `[MOVING TARGET].start_pos`) |
+| `vary_epoch`, `epoch_window_hours` | Random epoch offset, uniform in +/- `epoch_window_hours` |
+| `vary_sea_state`, `wind_speed_range_m_s`, `wave_height_range_m`, `wind_direction_range_deg`, `inverse_wave_age_range` | Sea state drawn uniformly from the `[min, max]` ranges (otherwise `[OCEAN]`) |
+| `vary_coherent_integration`, `coherent_integration_time_s_values` | T_coh drawn from the list (otherwise `[LINK BUDGET]`) |
+| `vary_incoherent_looks`, `num_incoherent_looks_values` | M drawn from the list (otherwise `[LINK BUDGET]`) |
+| `vary_system_noise_temperature`, `system_noise_temperature_k_range` | T_sys drawn uniformly from the `[min, max]` range (otherwise `[LINK BUDGET]`) |
 
 Use a fresh output directory for a new run, or the same directory to resume it:
 
 ```powershell
-python SRC/run_monte_carlo.py Configuration_mc_backscatter.ini --output-dir OUTPUT/mc_events_run
-python SRC/run_monte_carlo.py Configuration_mc_specular.ini --output-dir OUTPUT/mc_events_run
+python SRC/run_monte_carlo.py <your_mc_config>.ini --output-dir OUTPUT/mc_events_run
 ```
 
 An optional trial count goes after the INI filename. Omitting `--output-dir` uses `OUTPUT/`.
@@ -84,8 +101,7 @@ when that model is enabled.
 Regenerate summaries and plots from saved JSONL data without running simulation trials:
 
 ```powershell
-python SRC/run_monte_carlo.py Configuration_mc_backscatter.ini aggregate --output-dir OUTPUT/mc_events_run
-python SRC/run_monte_carlo.py Configuration_mc_specular.ini aggregate --output-dir OUTPUT/mc_events_run
+python SRC/run_monte_carlo.py <your_mc_config>.ini aggregate --output-dir OUTPUT/mc_events_run
 ```
 
 `aggregate` reads the JSONL without modifying it and regenerates derived outputs in the
@@ -99,10 +115,7 @@ aggregation does not launch or rerun trials. Area coverage continues through its
 
 ## Configuration
 
-The two root INI files are the source of truth for scenario setup:
-
-- `Configuration_area.ini`: area shapefile, grid size, LEO receiver orbits, GNSS TLE files, antenna bands, reflection gate, link-budget/ocean settings.
-- `Configuration_ship.ini`: ship route, antenna pattern generation, LEO receiver orbits, GNSS TLE files, reflection mode, plot/animation settings, link-budget/ocean settings, and ship dimensions.
+`Configuration.ini` is the source of truth for the scenario: LEO receiver orbits, GNSS TLE files, antenna and bands, reflection mode and gates, link-budget and ocean settings, the area-coverage region and grid, and the ship route, dimensions and plot settings. Its comments describe every key. Engine/numerical settings live in `simulator_settings.yaml`.
 
 GNSS transmit power and chip-rate data are stored in `SRC/object_definitions/Constants_def.py`. `[ANTENNA].bands` selects constellation-specific signals such as `L1`, `E1`, or `B1C`.
 

@@ -1,6 +1,6 @@
 # =============================================================================
 # Simulator settings (engine / numerical parameters), separate from the per-mission
-# scenario in Configuration_area.ini / Configuration_ship.ini. Loaded by
+# scenario in Configuration.ini. Loaded by
 # SRC/__init__.py::load_simulator_settings. Strict: required keys must be present
 # (no hidden defaults). Add new engine-setting sections here over time.
 # =============================================================================

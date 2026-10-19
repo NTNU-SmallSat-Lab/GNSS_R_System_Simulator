@@ -141,13 +141,9 @@ combine-as-imports = true
 # the datetime.UTC monkeypatch). E402 is correct for normal files, so suppress it only here.
 "SRC/__init__.py" = ["E402"]
 "SRC/main_simulation_areaCoverage.py" = ["E402"]
-"SRC/test_footprint_calculation.py" = ["E402"]
 "SRC/object_definitions/ShipTrajectory_def.py" = ["E402"]
 "tests/golden/regenerate_gains.py" = ["E402"]
 "tests/golden/regenerate_link_budget.py" = ["E402"]
-# Disabled parameter-sweep harness: references functions deleted in the migration; it raises
-# NotImplementedError on import and is not run.
-"SRC/run_simulator_parallel.py" = ["F821"]
 
 [tool.ruff.lint.pycodestyle]
 max-doc-length = 160
