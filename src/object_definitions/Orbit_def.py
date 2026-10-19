@@ -13,7 +13,7 @@ class Orbit_specification:
     these elements into a TLE and propagate.
     """
 
-    def __init__(self, i, e, raan, p, M, a, epochTime=None) -> None:
+    def __init__(self, i, e, raan, p, nu, a, epochTime=None) -> None:
         """Store the orbital elements and derive the mean motion from the semi-major axis.
 
         Parameters
@@ -61,8 +61,8 @@ class Orbit_specification:
         self.i = i  # Inclination in degrees
         self.e = e  # Eccentricity
         self.RAAN = raan  # Right Ascension of Ascending Node in degrees
-        self.p = p  # Argument of perigee in degrees
-        self.M = M  # Mean anomaly
+        self.p = p  # Argument of periapsis in degrees
+        self.nu = nu  # True anomaly in degrees
         self.a = a  # Semi-major axis in m
         self.epoch_str = self.conv_DateTime_to_Epoch(epochTime) if epochTime else None  # Eopch in YYDDD.DDDDDDDD format (TLE format)
         self.dt_start = epochTime if epochTime else None  # Start time in datetime format

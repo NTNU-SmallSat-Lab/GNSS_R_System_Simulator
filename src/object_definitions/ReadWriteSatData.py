@@ -69,6 +69,11 @@ def _mean_anomaly_to_true_anomaly(M, e):
     return _wrap_rad(2.0 * np.arctan2(np.sqrt(1.0 + e) * np.sin(E / 2.0), np.sqrt(1.0 - e) * np.cos(E / 2.0)))
 
 
+def _true_anomaly_to_mean_anomaly(nu, e):
+    E = 2.0 * np.arctan2(np.sqrt(1.0 - e) * np.sin(nu / 2.0), np.sqrt(1.0 + e) * np.cos(nu / 2.0))  # eccentric anomaly
+    return _wrap_rad(E - e * np.sin(E))  # Kepler's equation M = E - e sin E
+
+
 def _rotation_1(angle):
     c = np.cos(angle)
     s = np.sin(angle)
@@ -87,9 +92,8 @@ def _state_from_classical_elements(elements):
     i = elements["i"]
     raan = elements["raan"]
     arg_perigee = elements["arg_perigee"]
-    mean_anomaly = elements["mean_anomaly"]
+    true_anomaly = elements["true_anomaly"]
 
-    true_anomaly = _mean_anomaly_to_true_anomaly(mean_anomaly, e)
     semi_latus_rectum = a * (1.0 - e**2)
     radius_pf = semi_latus_rectum / (1.0 + e * np.cos(true_anomaly))
     r_pf = np.array([radius_pf * np.cos(true_anomaly), radius_pf * np.sin(true_anomaly), 0.0])
@@ -112,14 +116,14 @@ def _orbit_to_classical_elements(orbit):
         "i": np.deg2rad(float(orbit.i)),
         "raan": np.deg2rad(float(orbit.RAAN)),
         "arg_perigee": np.deg2rad(float(orbit.p)),
-        "mean_anomaly": np.deg2rad(float(orbit.M)),
+        "true_anomaly": np.deg2rad(float(orbit.nu)),
     }
 
 
 def _classical_to_equinoctial_solver_vars(elements):
     e = elements["e"]
     arg_perigee = elements["arg_perigee"]
-    mean_anomaly = elements["mean_anomaly"]
+    mean_anomaly = _true_anomaly_to_mean_anomaly(elements["true_anomaly"], e)  # SGP4 mean elements are seeded from the mean anomaly
     return np.array(
         [
             elements["a"],
@@ -294,6 +298,11 @@ class ReadWriteSatData:
         mean_elements = _solve_sgp4_mean_elements_from_osculating(satellite)
 
         return _generate_tle_from_mean_elements(satellite, mean_elements)
+
+    @staticmethod
+    def mean_to_true_anomaly_deg(mean_anomaly_deg, e) -> float:
+        """Convert mean anomaly to true anomaly, both in degrees (TLE stores mean anomaly; Orbit_specification holds true anomaly)."""
+        return float(np.degrees(_mean_anomaly_to_true_anomaly(np.radians(mean_anomaly_deg), e)))
 
     @staticmethod
     def read_tle_data(tle_file_path) -> list[namedtuple]:

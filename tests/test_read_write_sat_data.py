@@ -9,10 +9,19 @@ from datetime import UTC, datetime
 import math
 import os
 
+import numpy as np
 import pytest
+from skyfield.api import load
 
 from object_definitions.Constants_def import Constants
-from object_definitions.ReadWriteSatData import ReadWriteSatData
+from object_definitions.Orbit_def import Orbit_specification
+from object_definitions.ReadWriteSatData import (
+    ReadWriteSatData,
+    _mean_anomaly_to_true_anomaly,
+    _state_from_classical_elements,
+    _true_anomaly_to_mean_anomaly,
+)
+from object_definitions.Satellite_def import Satellite
 
 GALILEO_PATH = os.path.join(Constants.tle_folderpath, "GALILEO.tle")
 ISS_PATH = os.path.join(Constants.tle_folderpath, "ISS.tle")
@@ -67,3 +76,40 @@ class TestIssTle:
         perigee_above_earth = semi_major_axis * (1 - iss.eccentricity) - Constants.R_EARTH_MEAN
         assert apogee_above_earth == pytest.approx(425.5460901848506e3, abs=1.0)
         assert perigee_above_earth == pytest.approx(414.07776699984353e3, abs=1.0)
+
+
+class TestTrueAnomalyTleGeneration:
+    """The 5th classical element is the TRUE anomaly; the generated TLE must reproduce the
+    osculating state built from it (not from a mean anomaly of the same numeric value)."""
+
+    EPOCH = datetime(2025, 3, 1, 12, 0, 0, tzinfo=UTC)
+    # Eccentric orbit so true and mean anomaly differ by a few degrees (~hundreds of km).
+    I_DEG, E, RAAN_DEG, ARGP_DEG, NU_DEG, A_M = 45.0, 0.05, 30.0, 60.0, 200.0, 7000e3
+
+    def _target_state(self, nu_rad):
+        elements = {
+            "a": self.A_M, "e": self.E, "i": np.radians(self.I_DEG), "raan": np.radians(self.RAAN_DEG),
+            "arg_perigee": np.radians(self.ARGP_DEG), "true_anomaly": nu_rad,
+        }
+        return _state_from_classical_elements(elements)
+
+    def test_generated_tle_reproduces_true_anomaly_state(self):
+        orbit = Orbit_specification(self.I_DEG, self.E, self.RAAN_DEG, self.ARGP_DEG, self.NU_DEG, self.A_M, self.EPOCH)
+        sat = Satellite(12345, orbit)
+
+        r_true, _ = self._target_state(np.radians(self.NU_DEG))  # state defined by the true anomaly
+        r_asmean, _ = self._target_state(_mean_anomaly_to_true_anomaly(np.radians(self.NU_DEG), self.E))  # old interpretation
+
+        geocentric = sat.skf.at(load.timescale().from_datetime(self.EPOCH))
+        r_skf = geocentric.position.m
+
+        # The propagated TLE matches the true-anomaly state to within the SGP4 fit residual,
+        # and is far from the (wrong) mean-anomaly state.
+        assert np.linalg.norm(r_skf - r_true) < 50.0
+        assert np.linalg.norm(r_true - r_asmean) > 1e4
+
+    def test_mean_true_anomaly_roundtrip(self):
+        for mean_anomaly_deg in [0.0, 45.0, 123.4, 359.0]:
+            nu_deg = ReadWriteSatData.mean_to_true_anomaly_deg(mean_anomaly_deg, self.E)
+            mean_back_deg = np.degrees(_true_anomaly_to_mean_anomaly(np.radians(nu_deg), self.E))
+            assert (mean_back_deg - mean_anomaly_deg + 180.0) % 360.0 - 180.0 == pytest.approx(0.0, abs=1e-6)

@@ -132,7 +132,7 @@ class Satellite:
 
         INPUTS:
             orbit_n: [Orbit_specification | list]   Either an Orbit_specification, or a 6-element list
-                                                    [inclination, eccentricity, raan, argPerigee, M, a]
+                                                    [inclination, eccentricity, raan, argPeriapsis, nu, a]
         =========================================================================================================
         """
         if isinstance(orbit_n, Orbit_specification):
@@ -350,12 +350,13 @@ class Satellite:
         self.satName = sat_data.satName
         self.classification = sat_data.classification
         semi_major_axis = (Constants.GM_EARTH_TT / (sat_data.meanMotion * 2 * pi / Constants.SEC_PER_DAY) ** 2) ** (1 / 3)
+        true_anomaly = ReadWriteSatData.mean_to_true_anomaly_deg(sat_data.meanAnomaly, sat_data.eccentricity)  # Orbit_specification holds true anomaly
         self.orbit_n = Orbit_specification(
             sat_data.inclination,
             sat_data.eccentricity,
             sat_data.raan,
             sat_data.argOfPerigee,
-            sat_data.meanAnomaly,
+            true_anomaly,
             semi_major_axis,
             sat_data.epoch,
         )

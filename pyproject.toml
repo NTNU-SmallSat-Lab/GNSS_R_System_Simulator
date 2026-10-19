@@ -101,7 +101,7 @@ extend-exclude = '''
 [tool.ruff]
 line-length = 160  # Match Black's line length
 target-version = "py312" 
-extend-exclude = ["docs", "build", "__pycache__", ".git"]
+extend-exclude = ["docs", "build", "__pycache__", ".git", "tleHandling.py"]  # vendored Basilisk reference, not project source
 
 [tool.ruff.lint]
 select = [
