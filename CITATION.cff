@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata from this file."
+type: software
+title: "GNSS-R System Simulator"
+abstract: >-
+  Preliminary-design simulator for GNSS-Reflectometry (GNSS-R) LEO mission studies. It computes
+  area coverage by specular reflections or near-backscatter swaths over a gridded region, and
+  evaluates specular forward-scatter and bistatic backscatter events for a moving ocean target,
+  including a bistatic link budget with ocean and ship scattering models.
+authors:
+  - family-names: Hasler
+    given-names: Oliver
+    affiliation: "Norwegian University of Science and Technology (NTNU)"
+    orcid: "https://orcid.org/0009-0004-2492-6833"
+  - family-names: Chiatante
+    given-names: Corrado
+    affiliation: "Norwegian University of Science and Technology (NTNU)"
+    orcid: "https://orcid.org/0009-0001-9986-652X"
+version: 1.0.0
+license: MIT
+repository-code: "https://github.com/NTNU-SmallSat-Lab/GNSS_R_System_Simulator"
+url: "https://ntnu-smallsat-lab.github.io/GNSS_R_System_Simulator/"
+keywords:
+  - GNSS-R
+  - GNSS reflectometry
+  - bistatic radar
+  - ship detection
+  - LEO
+  - small satellite
+  - mission design

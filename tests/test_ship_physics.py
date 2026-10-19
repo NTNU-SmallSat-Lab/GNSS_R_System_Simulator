@@ -158,7 +158,7 @@ class TestDihedralRcs:
         n_double_bounce = np.array([[c, +a, +a]])
         n_retro = -n_tx2s
         peak = 8.0 * np.pi * (L * H) ** 2 / WAVELENGTH_M**2
-        kwargs = dict(edge_hat=EX, leg_1_normal=EY, leg_2_normal=EZ, length_edge_m=L, leg_dimension_m=H, wavelength_m=WAVELENGTH_M)
+        kwargs = {"edge_hat": EX, "leg_1_normal": EY, "leg_2_normal": EZ, "length_edge_m": L, "leg_dimension_m": H, "wavelength_m": WAVELENGTH_M}
         sigma_bounce = dihedral_rcs(n_tx2s=n_tx2s, n_s2rx=n_double_bounce, **kwargs)
         sigma_retro = dihedral_rcs(n_tx2s=n_tx2s, n_s2rx=n_retro, **kwargs)
         np.testing.assert_allclose(sigma_bounce, [peak], rtol=1e-12)

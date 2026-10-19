@@ -43,13 +43,13 @@ gnssr_satID_*.tle
 *_gridded_deg.*
 
 # Source shapefiles need their sidecars (attributes, projection, encoding)
-!DATA/eez/eez_norge.dbf
-!DATA/eez/eez_norge.prj
-!DATA/International_hydrographic_organization/iho_norwegian_coast.dbf
-!DATA/International_hydrographic_organization/iho_norwegian_coast.prj
 !DATA/world_costline_data/10m_physical/ne_10m_*.cpg
 !DATA/world_costline_data/10m_physical/ne_10m_*.dbf
 !DATA/world_costline_data/10m_physical/ne_10m_*.prj
+
+# Marine Regions data is not redistributed; users download it themselves (see README.md)
+DATA/eez/
+DATA/International_hydrographic_organization/
 
 # Generated JSON artifacts
 *.json

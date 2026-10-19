@@ -42,7 +42,7 @@ from object_definitions.AntennaPatternGenerator_def import AntennaPatternGenerat
 from object_definitions.Constants_def import Constants
 
 ## UPDATE THE SIMULATIOR VERSION HERE ##
-__version__ = "0.1.0"
+__version__ = "1.0.0"
 
 logger = logging.getLogger(__name__)
 

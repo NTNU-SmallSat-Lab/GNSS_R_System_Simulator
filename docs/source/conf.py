@@ -24,9 +24,9 @@ os.environ.setdefault("MPLBACKEND", "Agg")
 
 project = "GNSS-R System Simulator"
 author = "Oliver Hasler, Corrado Chiatante"
-copyright = f"2026, {author}"  # noqa: A001
-release = "0.1.0"
-version = "0.1.0"
+copyright = "2024-2026, NTNU, Department of Engineering Cybernetics"  # noqa: A001
+release = "1.0.0"
+version = "1.0.0"
 
 # -- General configuration ---------------------------------------------------
 

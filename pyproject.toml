@@ -1,15 +1,17 @@
 [build-system]
-requires = ["setuptools>=64", "wheel"]
+requires = ["setuptools>=77", "wheel"]  # >=77 for the SPDX string form of project.license
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "gnss-r-simulator"
-version = "0.1.0"
+version = "1.0.0"
 description = "GNSS-R Simulator for marine vessel detection"
 authors = [
     {name = "Oliver Hasler", email = "oliver.hasler@ntnu.no"},
     {name = "Corrado Chiatante", email = "corrado.chiatante@ntnu.no"},
 ]
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12.3"  # Updated for Black compatibility
 dependencies = [
     # Core scientific computing
@@ -18,8 +20,7 @@ dependencies = [
     "scipy>=1.14.1",
     "matplotlib>=3.10.1",
     # Pinned >=2.9.0 to silence the utcfromtimestamp DeprecationWarning fixed in that release.
-    # Pulled in transitively by pandas/matplotlib; harmony-py 0.4.15 has a stale ~=2.8.2 pin
-    # but is API-compatible with 2.9.x.
+    # Pulled in transitively by pandas/matplotlib.
     "python-dateutil>=2.9.0",
     
     # Space science and astronomy
@@ -41,12 +42,8 @@ dependencies = [
     # Graph algorithms and path planning
     "networkx>=3.4.2",  # Added for ship trajectory path planning
 
-    # NASA data access
-    "requests>=2.32.3",
+    # Engine settings file (simulator_settings.yaml)
     "PyYAML>=6.0.2",
-    "podaac-data-subscriber>=1.15.2",
-    "harmony-py>=0.4.15",
-    "beautifulsoup4>=4.12.3",
 
     # Performance and utilities
     "imageio>=2.37.0",
@@ -77,6 +74,12 @@ docs = [
 
 [project.urls]
 Repository = "https://github.com/NTNU-SmallSat-Lab/GNSS_R_System_Simulator.git"
+Documentation = "https://ntnu-smallsat-lab.github.io/GNSS_R_System_Simulator/"
+
+[tool.setuptools]
+# The simulator runs from the repository root with SRC/ on sys.path, not as an installed package;
+# installing the project only pulls in its dependencies.
+packages = []
 
 # Code formatting and style configurations
 
@@ -102,6 +105,7 @@ extend-exclude = '''
 line-length = 160  # Match Black's line length
 target-version = "py312" 
 extend-exclude = ["docs", "build", "__pycache__", ".git", "tleHandling.py"]  # vendored Basilisk reference, not project source
+src = [".", "SRC"]  # first-party roots; the default "src" does not match SRC/ on case-sensitive file systems
 
 [tool.ruff.lint]
 select = [

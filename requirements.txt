@@ -27,17 +27,15 @@ pyogrio>=0.10.0
 # Graph algorithms and path planning
 networkx>=3.4.2
 
-# NASA data access
-requests>=2.32.3
+# Engine settings file (simulator_settings.yaml)
 PyYAML>=6.0.2
-podaac-data-subscriber>=1.15.2
-harmony-py>=0.4.15
-beautifulsoup4>=4.12.3
 
 # Performance and utilities
 imageio>=2.37.0
 pillow>=10.4.0
 tqdm>=4.67.1
+# Interactive 3D orbit view (standalone HTML)
+plotly>=5.24.0
 
 # GUI
 PyQt5>=5.15.11

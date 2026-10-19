@@ -16,7 +16,9 @@ Area coverage
 ``SRC/main_simulation_areaCoverage.py`` allows to evaluate *how often* a region is covered by reflections. It
 builds the receiver and GNSS constellations, and runs :doc:`Documentation/object_definitions/coverage` over a
 region predefined by a shapefile (``[COVERAGE].shapefile_path``). Outputs are per-constellation
-track-visit maps in ``OUTPUT/``.
+track-visit maps in ``OUTPUT/``. The default region, the Norwegian exclusive economic zone (EEZ) from
+Marine Regions, is not bundled; the repository ``README.md`` gives the command that downloads it to
+``DATA/eez/eez_norge.shp``.
 
 Moving-target detection
 -----------------------
