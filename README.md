@@ -2,7 +2,7 @@
 
 Preliminary-design simulator for GNSS-Reflectometry (GNSS-R) LEO mission studies. The code currently supports two analysis modes:
 
-- **Area coverage**: counts contiguous reflection track visits (specular points or near-backscatter swaths) over a gridded region.
+- **Area coverage**: counts contiguous reflection track visits (specular points or backscatter reflection points) over a gridded region.
 - **Moving-target detection**: follows an ocean target and evaluates specular forward-scatter or backscatter events, including link-budget diagnostics.
 
 The geometry and numerical implementation are tested, but the ocean, antenna, ship-RCS, and detection

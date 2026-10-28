@@ -94,7 +94,6 @@ def run_area_coverage_simulation(sim_settings):
         selected_signals=sim_settings["selected_signals"],
         reflection_type=sim_settings["reflection_type"],
         max_incidence_angle_deg=sim_settings["max_incidence_angle_deg"],
-        max_bistatic_bksc_angle_deg=sim_settings["max_bistatic_bksc_angle_deg"],
     )
     if not coverage.coverage_constellations:
         raise ValueError("No usable constellations for coverage. Check [ANTENNA].bands and the loaded GNSS constellations.")

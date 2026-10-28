@@ -3,7 +3,7 @@
   <title id="title">GNSS-R processing pipeline</title>
   <desc id="desc">Shared core (parse INI, propagate constellations, reflection geometry). The geometry
     forks into a specular lane and a backscatter lane. Area coverage counts revisits from either lane
-    (the specular track, or the near-backscatter swath around the BRP track) and skips the link budget;
+    (the specular track, or the BRP track) and skips the link budget;
     the moving-target detections share the link budget but produce different metrics: the forward shadow
     for specular and the SCR / SINR for backscatter.</desc>
 

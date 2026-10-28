@@ -17,8 +17,7 @@ key, used by both:
    [REFLECTION]
    reflection_type = "specular"      ; or "backscatter"
 
-Backscatter needs ``[REFLECTION].max_incidence_angle_deg``, and backscatter area coverage also needs
-``[COVERAGE].max_bistatic_bksc_angle_deg`` (the swath half-angle). :doc:`modes/index` explains the two
+Backscatter needs ``[REFLECTION].max_incidence_angle_deg``. :doc:`modes/index` explains the two
 modes.
 
 Change the coverage region or grid

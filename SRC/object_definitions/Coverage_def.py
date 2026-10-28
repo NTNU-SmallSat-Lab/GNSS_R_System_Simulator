@@ -22,35 +22,12 @@ from object_definitions.Reflection_def import Reflection
 from object_definitions.Static_classes_def import Plotting
 
 
-def backscatter_swath_half_width_m(range_rx_m, range_tx_m, max_bistatic_bksc_angle_deg):
-    """Ground half-width of the near-backscatter acceptance region around the BRP [m].
-
-    A surface point displaced by d perpendicular to the shared line of sight opens the bistatic angle
-    by beta ~= d * (1/R_r - 1/R_t) (Tx and Rx sit on the SAME side of the surface, hence the
-    difference of curvatures, not the sum), so the beta <= beta_max region has cross-LOS half-width
-    beta_max / (1/R_r - 1/R_t). This is the conservative (smaller) semi-axis of the acceptance
-    ellipse; the in-plane semi-axis is wider by 1/cos(incidence) and is deliberately not used, so
-    the swath never overstates coverage.
-    """
-    beta_max_deg = float(max_bistatic_bksc_angle_deg)
-    if not math.isfinite(beta_max_deg) or not (0.0 < beta_max_deg < 90.0):
-        raise ValueError(f"max_bistatic_bksc_angle_deg must be finite and in (0, 90) deg; got {beta_max_deg}")
-    range_rx_m = np.asarray(range_rx_m, dtype=float)
-    range_tx_m = np.asarray(range_tx_m, dtype=float)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        curvature_rad_m = 1.0 / range_rx_m - 1.0 / range_tx_m       # d(beta)/d(cross-LOS offset) [rad/m]
-        half_width_m = np.radians(beta_max_deg) / curvature_rad_m   # beta_max / (1/R_r - 1/R_t)
-    return np.where(np.isfinite(half_width_m) & (half_width_m > 0.0), half_width_m, np.nan)
-
-
 class Coverage:
     """Count contiguous reflection-track visits per grid cell over a region (the area-coverage mode).
 
     Builds (or loads) a gridded version of an input shapefile, then -- per GNSS constellation -- connects
     each contiguous run of valid samples into a track and counts one visit per intersected cell and run.
-    In ``specular`` mode the track is the specular-point line; in ``backscatter`` mode it is the BRP
-    track buffered by the near-backscatter swath (all cells whose bistatic angle to some (Tx, Rx) pair
-    stays below ``max_bistatic_bksc_angle_deg``).
+    In ``specular`` mode the track is the specular-point line; in ``backscatter`` mode it is the BRP line.
     Coverage is a **geometric** metric: the band's frequency and EIRP only feed the antenna-field-of-view
     finiteness gate, not a detection threshold, so the result is per constellation, not per band.
 
@@ -80,9 +57,6 @@ class Coverage:
         Reflection geometry the coverage counts (default "specular").
     max_incidence_angle_deg : float or None, keyword-only
         Maximum BRP incidence angle [deg]; required for backscatter.
-    max_bistatic_bksc_angle_deg : float or None, keyword-only
-        Maximum bistatic angle at the surface for a cell to count as near-backscatter-covered [deg];
-        sets the swath half-width around the BRP track. Required for backscatter, unused for specular.
     """
 
     def __init__(
@@ -100,7 +74,6 @@ class Coverage:
         selected_signals: list[dict] | None = None,
         reflection_type: str = "specular",
         max_incidence_angle_deg: float | None = None,
-        max_bistatic_bksc_angle_deg: float | None = None,
     ) -> None:
         """Build (or load) the gridded shapefile and prepare the per-constellation coverage vectors."""
         # Path to the input shapefile (outline of the area of interest)
@@ -154,25 +127,9 @@ class Coverage:
         if reflection_type == "backscatter":
             if max_incidence_angle_deg is None:
                 raise ValueError("max_incidence_angle_deg is required for backscatter area coverage.")
-            if max_bistatic_bksc_angle_deg is None:
-                raise ValueError(
-                    "[COVERAGE].max_bistatic_bksc_angle_deg is required for backscatter area coverage: "
-                    "it sets the near-backscatter acceptance half-angle (the swath width around the BRP track)."
-                )
             self.max_incidence_angle_deg = float(max_incidence_angle_deg)
-            beta_max = float(max_bistatic_bksc_angle_deg)
-            if not math.isfinite(beta_max) or not (0.0 < beta_max < 90.0):
-                raise ValueError(f"max_bistatic_bksc_angle_deg must be finite and in (0, 90) deg; got {beta_max}")
-            self.max_bistatic_bksc_angle_deg = beta_max
         else:
-            if max_bistatic_bksc_angle_deg is not None:
-                warnings.warn(
-                    "max_bistatic_bksc_angle_deg is only used for backscatter area coverage; "
-                    "it is ignored for reflection_type = 'specular'.",
-                    stacklevel=2,
-                )
             self.max_incidence_angle_deg = None
-            self.max_bistatic_bksc_angle_deg = None
 
         self.initialize_coverage(overwrite_shapefile)
 
@@ -260,12 +217,9 @@ class Coverage:
                     if len(cluster) == 0:
                         continue
 
-                    # Extract valid times and positions for this cluster. The track geometry is the
-                    # specular/BRP polyline; in backscatter mode it is buffered by the near-backscatter
-                    # acceptance swath (a cell counts while its bistatic angle to the pair stays below
-                    # max_bistatic_bksc_angle_deg). _cluster_track_geometry is shared with the plotting.
+                    # Extract valid times and positions for this cluster (the specular/BRP polyline)
                     lon_lat = ref_points_in_box[cluster][:, [1, 0]]
-                    track_geometry = self._cluster_track_geometry(refl_vector[i], cluster, ref_points_in_box)
+                    track_geometry = Point(lon_lat[0]) if len(cluster) == 1 else LineString(lon_lat)
                     for idx, polygon in self.grid_gdf.iterrows():
                         intersection = polygon["geometry"].intersection(track_geometry)
                         if not intersection.is_empty:
@@ -298,33 +252,6 @@ class Coverage:
                             self.coverage_dict[gnss_name][rect_idx].rx_satID.append(refl_vector[i].rx_satID)
                             self.coverage_dict[gnss_name][rect_idx].angles.append(angle)
                             self.coverage_dict[gnss_name][rect_idx].power.append(power)
-
-    def _cluster_swath_half_width_deg(self, reflection_obj, cluster, valid_position) -> float:
-        """Near-backscatter swath half-width for one track cluster, in degrees at its mean latitude."""
-        refl_eci = np.asarray(reflection_obj.refl_ECI_vec, dtype=float)[cluster]      # (k, 3)
-        rx_eci = np.asarray(reflection_obj.sat_pos_vec, dtype=float)[:, cluster].T    # (k, 3)
-        tx_eci = np.asarray(reflection_obj.gnss_pos_vec, dtype=float)[:, cluster].T   # (k, 3)
-        range_rx_m = np.linalg.norm(rx_eci - refl_eci, axis=1)                        # surface -> Rx slant range
-        range_tx_m = np.linalg.norm(tx_eci - refl_eci, axis=1)                        # surface -> Tx slant range
-        half_width_m = backscatter_swath_half_width_m(range_rx_m, range_tx_m, self.max_bistatic_bksc_angle_deg)
-        if not np.isfinite(half_width_m).any():
-            return float("nan")
-        half_width_min_m = float(np.nanmin(half_width_m))                             # conservative: narrowest sample
-        mean_lat_deg = float(np.nanmean(valid_position[:, 0]))
-        return float(fn.delta_lat_from_distance(mean_lat_deg, half_width_min_m))      # smaller degree equivalent
-
-    def _cluster_track_geometry(self, reflection_obj, cluster, ref_points_in_box):
-        """Coverage geometry for one in-box track cluster: the specular/BRP polyline, buffered by the
-        near-backscatter swath half-width in backscatter mode. Shared by the coverage counting and the
-        map plotting, so the drawn swath is exactly the region that is counted."""
-        valid_position = ref_points_in_box[cluster]                          # (k, 2) = (lat, lon)
-        lon_lat = valid_position[:, [1, 0]]
-        geom = Point(lon_lat[0]) if len(cluster) == 1 else LineString(lon_lat)
-        if self.reflection_type == "backscatter":
-            swath_deg = self._cluster_swath_half_width_deg(reflection_obj, cluster, valid_position)
-            if np.isfinite(swath_deg) and swath_deg > 0.0:
-                geom = geom.buffer(swath_deg)                                # near-backscatter acceptance swath
-        return geom
 
     def compute_coverage_for_constellation(self, constellation, freq_hz, eirp_dbw, verbose=False):
         """
@@ -546,12 +473,6 @@ class Coverage:
                     if len(cluster) < 2:
                         continue
                     segment = ref_points_in_box[cluster]  # (k, 2) = (lat, lon), finite within the box
-                    # Backscatter: fill the near-backscatter acceptance swath (the counted region) at
-                    # 90% transparency, so the coloured cells line up with the drawn track.
-                    if self.reflection_type == "backscatter":
-                        swath = self._cluster_track_geometry(refl, cluster, ref_points_in_box)
-                        if swath.geom_type in ("Polygon", "MultiPolygon"):
-                            ax.add_geometries([swath], crs=ccrs.PlateCarree(), facecolor=color, edgecolor="none", alpha=0.1)
                     ax.plot(
                         segment[:, 1],
                         segment[:, 0],
@@ -649,7 +570,7 @@ class Coverage:
         # equator or the south pole for this window) clipped onto the map, which are unrelated to the
         # coverage counted here.
         # Specular point tracks are thin lines and numerous; only the parts within 1 deg of the region can colour a
-        # cell, so the rest (e.g. over land) is not drawn. Backscatter swaths are few and drawn in full.
+        # cell, so the rest (e.g. over land) is not drawn. BRP tracks are few and drawn in full.
         roi_zone = None
         if self.reflection_type == "specular":
             cells = self.grid_gdf.geometry
@@ -667,12 +588,6 @@ class Coverage:
                     if len(cluster) < 2:
                         continue
                     segment = ref_points_in_box[cluster]  # (k, 2) = (lat, lon), finite within the box
-                    # Backscatter: fill the near-backscatter acceptance swath (the counted region) at
-                    # 90% transparency, so the coloured cells line up with the drawn track.
-                    if self.reflection_type == "backscatter":
-                        swath = self._cluster_track_geometry(refl, cluster, ref_points_in_box)
-                        if swath.geom_type in ("Polygon", "MultiPolygon"):
-                            ax.add_geometries([swath], crs=ccrs.PlateCarree(), facecolor=color, edgecolor="none", alpha=0.1, zorder=2)
                     if roi_zone is None:
                         parts = [LineString(segment[:, [1, 0]])]
                     else:
@@ -697,8 +612,8 @@ class Coverage:
         gl.top_labels = False
         gl.right_labels = False
 
-        # Legend: cell visit counts, uncovered cells, and the track colour of each constellation
-        # (plus the acceptance swath in backscatter mode), placed outside the map so it hides no data.
+        # Legend: cell visit counts, uncovered cells, and the track colour of each constellation,
+        # placed outside the map so it hides no data.
         legend_elements = [
             Patch(facecolor="lightgray", edgecolor="lightgray", alpha=0.5, label="not visited"),
             Patch(facecolor="aqua", edgecolor="aqua", alpha=0.3, label="1 visit"),
@@ -708,8 +623,6 @@ class Coverage:
         track_name = "specular point" if self.reflection_type == "specular" else "BRP"
         for gnss_name in plotted_consts:
             legend_elements.append(Line2D([0], [0], color=fn.color_gnss_const(gnss_name), linewidth=1.5, label=f"{gnss_name} {track_name} track"))
-            if self.reflection_type == "backscatter":
-                legend_elements.append(Patch(facecolor=fn.color_gnss_const(gnss_name), alpha=0.25, label=f"{gnss_name} acceptance swath"))
         ax.legend(handles=legend_elements, loc="upper left", bbox_to_anchor=(1.01, 1.0), fontsize=9, frameon=True)
 
         # Keep Cartopy map proportions independent of the latitude of each coverage group.

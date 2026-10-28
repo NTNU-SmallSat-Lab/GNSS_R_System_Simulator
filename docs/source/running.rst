@@ -65,8 +65,8 @@ Processing pipeline overview
 
    The processing flow. The core is shared; the two reflection modes share the link budget but
    produce different detection metrics, and area coverage counts contiguous track visits from the
-   selected reflection geometry (the specular point, or the near-backscatter swath around the
-   backscatter reflection point), using the link budget only as a validity gate.
+   selected reflection geometry (the specular point, or the backscatter reflection point), using the
+   link budget only as a validity gate.
 
 Both modes share the same core. The processing flow is:
 

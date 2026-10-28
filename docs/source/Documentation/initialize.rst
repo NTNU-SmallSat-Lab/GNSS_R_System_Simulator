@@ -45,7 +45,7 @@ What it builds
      - The reflection mode and the geometric gates.
    * - ``link_budget``
      - Receiver losses, noise and processing settings, merged with the ``[OCEAN]`` sea state.
-   * - ``shapefile_path`` / ``grid_size_m`` / ``max_bistatic_bksc_angle_deg``
+   * - ``shapefile_path`` / ``grid_size_m``
      - Area-coverage inputs (``None`` when the section is absent).
    * - ``start_coord_ll`` / ``end_coord_ll`` / ``moving_target_speed`` / ``ship``
      - Moving-target inputs (``None`` when ``[MOVING TARGET]`` is absent).

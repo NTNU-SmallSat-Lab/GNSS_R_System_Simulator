@@ -4,7 +4,7 @@ type: software
 title: "GNSS-R System Simulator"
 abstract: >-
   Preliminary-design simulator for GNSS-Reflectometry (GNSS-R) LEO mission studies. It computes
-  area coverage by specular reflections or near-backscatter swaths over a gridded region, and
+  area coverage by specular or backscatter reflection tracks over a gridded region, and
   evaluates specular forward-scatter and bistatic backscatter events for a moving ocean target,
   including a bistatic link budget with ocean and ship scattering models.
 authors:

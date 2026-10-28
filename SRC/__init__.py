@@ -279,16 +279,6 @@ def initialize(config_file_name="Configuration.ini"):
         )  # Path to the coverage shapefile
     except KeyError:
         raise KeyError("The 'grid_size_meters' or 'shapefile_path' key is missing in the 'COVERAGE' section of the configuration file.")  # noqa: B904
-    max_bistatic_bksc_angle_deg = None
-    if "COVERAGE" in config and "max_bistatic_bksc_angle_deg" in config["COVERAGE"]:
-        try:
-            max_bistatic_bksc_angle_deg = float(config["COVERAGE"]["max_bistatic_bksc_angle_deg"])
-        except ValueError:
-            raise ValueError(
-                f"Invalid value for 'max_bistatic_bksc_angle_deg' in [COVERAGE]: {config['COVERAGE']['max_bistatic_bksc_angle_deg']}"
-            ) from None
-        if not math.isfinite(max_bistatic_bksc_angle_deg) or not (0.0 < max_bistatic_bksc_angle_deg < 90.0):
-            raise ValueError("[COVERAGE].max_bistatic_bksc_angle_deg must be finite and in (0, 90) deg.")
 
     # The antenna-pattern folder is a fixed data path (Constants.antenna_pattern_folder), not an INI
     # knob. It is "active" (non-None) only when an antenna is configured, so configs without an antenna
@@ -531,14 +521,6 @@ def initialize(config_file_name="Configuration.ini"):
         if not math.isfinite(max_incidence_angle_deg) or not (0.0 < max_incidence_angle_deg <= 90.0):
             raise ValueError("[REFLECTION].max_incidence_angle_deg must be finite and in (0, 90] deg.")
 
-    # Backscatter AREA COVERAGE (grid_size_meters marks an area-coverage config) additionally needs the
-    # near-backscatter acceptance half-angle that sets the swath width around the BRP track.
-    if reflection_type == "backscatter" and grid_size_m is not None and max_bistatic_bksc_angle_deg is None:
-        raise ValueError(
-            "[COVERAGE].max_bistatic_bksc_angle_deg is required for backscatter area coverage "
-            "(reflection_type = backscatter with a gridded [COVERAGE] region)."
-        )
-
     #[LINK BUDGET] (REQUIRED SECTION)
     # Receiver-system parameters. No fallback defaults; missing keys raise.
     # (Transmit EIRP is per-(constellation, band) and lives in Constants.GNSS_EIRP_DBW.)
@@ -740,7 +722,6 @@ def initialize(config_file_name="Configuration.ini"):
         #[COVERAGE]
         "shapefile_path": coverage_file_path,
         "grid_size_m": grid_size_m,
-        "max_bistatic_bksc_angle_deg": max_bistatic_bksc_angle_deg,
         #[MOVING TARGET]
         "moving_target_speed": moving_tgt_speed,
         "start_coord_ll": start_coord_ll,

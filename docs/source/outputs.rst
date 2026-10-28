@@ -23,7 +23,7 @@ In backscatter mode every coverage map carries the suffix ``_backscatter``; spec
    * - File
      - Content
    * - ``Coverage_<CONST>[_backscatter].png``
-     - The region with the reflection tracks (specular points, or near-backscatter swaths) of one
+     - The region with the reflection tracks (specular points, or backscatter reflection points) of one
        constellation.
    * - ``Coverage_grid_<CONST>[_backscatter].png``
      - The gridded region, each cell coloured by its number of contiguous track visits.

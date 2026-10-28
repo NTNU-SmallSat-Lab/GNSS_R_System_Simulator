@@ -5,7 +5,7 @@ A preliminary-design tool for GNSS-Reflectometry (GNSS-R) LEO satellite missions
 share the same satellite / constellation core:
 
 - **Area coverage** -- how often each cell of a gridded region is visited by reflections in a time
-  window: by specular-point tracks, or by near-backscatter swaths around the backscatter reflection point.
+  window: by specular-point tracks, or by backscatter reflection point tracks.
 - **Moving-target detection** -- whether and how often a moving (or stationary) ocean target is covered
   by the reflections of the LEO x GNSS links, and what the link budget predicts for it, in either
   ``specular`` (forward-scatter) or ``backscatter`` mode.

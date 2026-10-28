@@ -125,11 +125,6 @@ See :doc:`object_definitions/coverage`, :doc:`object_definitions/reflection`, an
    * - ``[COVERAGE].grid_size_meters``
      - Coverage cell size.
      - m
-   * - ``[COVERAGE].max_bistatic_bksc_angle_deg``
-     - Near-backscatter acceptance half-angle for backscatter area coverage (swath half-width around
-       the BRP track). Required when ``reflection_type = backscatter`` with a gridded region; finite
-       and in ``(0, 90)``.
-     - deg
    * - ``[REFLECTION].earth_model``
      - Surface model for the reflection-point solver: ``"spherical"`` (closed-form quartic on a
        mean-radius sphere) or ``"elliptical"`` (WGS-84 stationary-path solve). Required for both

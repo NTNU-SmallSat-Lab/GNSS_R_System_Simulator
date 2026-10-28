@@ -11,7 +11,7 @@ Everything up to the reflection geometry is shared: both modes build and propaga
 constellations and solve the same geometry:
 
 - **Area coverage** counts contiguous reflection-track visits over a grid -- the specular-point line, or
-  the near-backscatter swath around the BRP track. It has no detection threshold; link-budget finiteness
+  the BRP line. It has no detection threshold; link-budget finiteness
   is used only as an antenna/FOV validity gate.
 - **Moving-target detection** follows a ship and scores each reflection, in specular or backscatter mode.
 
