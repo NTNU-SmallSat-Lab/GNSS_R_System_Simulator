@@ -569,13 +569,6 @@ class Coverage:
         # would draw out-of-region and pole-wrapping segments (e.g. a BRP track that lies over the
         # equator or the south pole for this window) clipped onto the map, which are unrelated to the
         # coverage counted here.
-        # Specular point tracks are thin lines and numerous; only the parts within 1 deg of the region can colour a
-        # cell, so the rest (e.g. over land) is not drawn. BRP tracks are few and drawn in full.
-        roi_zone = None
-        if self.reflection_type == "specular":
-            cells = self.grid_gdf.geometry
-            roi_zone = (cells.union_all() if hasattr(cells, "union_all") else cells.unary_union).buffer(1.0)
-
         plotted_consts = []
         for gnss_name in gnss_const:
             if gnss_name not in self.reflection_dict:
@@ -588,16 +581,7 @@ class Coverage:
                     if len(cluster) < 2:
                         continue
                     segment = ref_points_in_box[cluster]  # (k, 2) = (lat, lon), finite within the box
-                    if roi_zone is None:
-                        parts = [LineString(segment[:, [1, 0]])]
-                    else:
-                        clipped = LineString(segment[:, [1, 0]]).intersection(roi_zone)
-                        parts = list(clipped.geoms) if hasattr(clipped, "geoms") else [clipped]
-                    for part in parts:
-                        if part.is_empty or part.geom_type != "LineString":
-                            continue
-                        xs, ys = part.xy
-                        ax.plot(xs, ys, color=color, linewidth=0.6, alpha=0.75, transform=ccrs.PlateCarree(), zorder=2)
+                    ax.plot(segment[:, 1], segment[:, 0], color=color, linewidth=0.6, alpha=0.75, transform=ccrs.PlateCarree(), zorder=2)
 
         # Add labels and gridlines
         if title is None:
@@ -613,7 +597,7 @@ class Coverage:
         gl.right_labels = False
 
         # Legend: cell visit counts, uncovered cells, and the track colour of each constellation,
-        # placed outside the map so it hides no data.
+        # inside the upper-right corner of the map.
         legend_elements = [
             Patch(facecolor="lightgray", edgecolor="lightgray", alpha=0.5, label="not visited"),
             Patch(facecolor="aqua", edgecolor="aqua", alpha=0.3, label="1 visit"),
@@ -623,7 +607,7 @@ class Coverage:
         track_name = "specular point" if self.reflection_type == "specular" else "BRP"
         for gnss_name in plotted_consts:
             legend_elements.append(Line2D([0], [0], color=fn.color_gnss_const(gnss_name), linewidth=1.5, label=f"{gnss_name} {track_name} track"))
-        ax.legend(handles=legend_elements, loc="upper left", bbox_to_anchor=(1.01, 1.0), fontsize=9, frameon=True)
+        ax.legend(handles=legend_elements, loc="upper right", fontsize=9, frameon=True)
 
         # Keep Cartopy map proportions independent of the latitude of each coverage group.
         ax.set_aspect("equal", adjustable="box")
