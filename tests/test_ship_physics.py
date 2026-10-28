@@ -157,7 +157,7 @@ class TestDihedralRcs:
         n_tx2s = np.array([[c, -a, -a]])
         n_double_bounce = np.array([[c, +a, +a]])
         n_retro = -n_tx2s
-        peak = 8.0 * np.pi * (L * H) ** 2 / WAVELENGTH_M**2
+        peak = 16.0 * np.pi * (L * H * a) ** 2 / WAVELENGTH_M**2           # both leg-normal components equal a
         kwargs = {"edge_hat": EX, "leg_1_normal": EY, "leg_2_normal": EZ, "length_edge_m": L, "leg_dimension_m": H, "wavelength_m": WAVELENGTH_M}
         sigma_bounce = dihedral_rcs(n_tx2s=n_tx2s, n_s2rx=n_double_bounce, **kwargs)
         sigma_retro = dihedral_rcs(n_tx2s=n_tx2s, n_s2rx=n_retro, **kwargs)
@@ -165,6 +165,34 @@ class TestDihedralRcs:
         expected_retro = peak * np.sinc(L / WAVELENGTH_M * 2.0 * c) ** 2   # u_edge = L / lambda * 2c
         np.testing.assert_allclose(sigma_retro, [expected_retro], rtol=1e-9)
         assert sigma_retro[0] < 1e-2 * peak
+
+    def test_peak_follows_projected_leg(self):
+        # Monostatic at 20 deg from the leg-2 normal: the projected leg H sin(20 deg) sets the peak.
+        L = 10.0
+        H = 3.0
+        th = np.radians(20.0)
+        n_tx2s = np.array([[0.0, -np.sin(th), -np.cos(th)]])
+        sigma = dihedral_rcs(
+            edge_hat=EX, leg_1_normal=EY, leg_2_normal=EZ,
+            length_edge_m=L, leg_dimension_m=H,
+            n_tx2s=n_tx2s, n_s2rx=-n_tx2s,
+            wavelength_m=WAVELENGTH_M,
+        )
+        expected = 16.0 * np.pi * (L * H * np.sin(th)) ** 2 / WAVELENGTH_M**2
+        np.testing.assert_allclose(sigma, [expected], rtol=1e-12)
+
+    def test_mismatch_across_edge_suppresses_return(self):
+        # Tx at 14.2 deg and Rx at 18.9 deg from the leg-2 normal, both perpendicular to the edge: the edge
+        # condition holds, but the Rx lies outside the lobe across the edge.
+        L = 330.0
+        H = 20.0
+        th_t, th_r = np.radians(14.2), np.radians(18.9)
+        n_tx2s = np.array([[0.0, -np.sin(th_t), -np.cos(th_t)]])
+        n_s2rx = np.array([[0.0, np.sin(th_r), np.cos(th_r)]])
+        kwargs = {"edge_hat": EX, "leg_1_normal": EY, "leg_2_normal": EZ, "length_edge_m": L, "leg_dimension_m": H, "wavelength_m": WAVELENGTH_M}
+        sigma = dihedral_rcs(n_tx2s=n_tx2s, n_s2rx=n_s2rx, **kwargs)
+        sigma_mirror = dihedral_rcs(n_tx2s=n_tx2s, n_s2rx=-n_tx2s, **kwargs)
+        assert 0.0 < sigma[0] < 1e-2 * sigma_mirror[0]
 
     def test_vectorised_over_samples(self):
         n_tx2s = np.vstack([

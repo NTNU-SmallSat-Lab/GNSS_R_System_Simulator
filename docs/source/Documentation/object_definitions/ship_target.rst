@@ -104,9 +104,9 @@ Module Assumptions and Limitations
   curved hulls, and material effects are not modelled.
 - **Ideal PEC and scalar response.** Plates are perfectly conducting and use a scalar physical-optics
   form factor. Polarisation matrices, diffraction, creeping waves and edge interactions are omitted.
-- **Simplified dihedral.** The dihedral uses an ideal peak with an along-edge sinc and binary open-wedge
-  visibility. It omits the full angular/polarimetric response, finite leg diffraction and coupling to a
-  rough moving sea.
+- **Simplified dihedral.** The dihedral uses a scalar two-path double bounce with flat, smooth, perfectly
+  conducting legs and binary open-wedge visibility. It omits the polarimetric response, edge diffraction
+  and coupling to a rough moving sea, so it is an upper bound for the hull-sea corner.
 - **Non-coherent sum.** Components add in power, not amplitude, so interference between facets is not
   captured.
 - **Above-waterline only.** Only the freeboard (above-water) part contributes; the submerged hull does not

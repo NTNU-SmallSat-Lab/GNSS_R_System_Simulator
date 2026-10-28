@@ -42,16 +42,24 @@ cross-section
    \operatorname{sinc}^2(u_1)\,\operatorname{sinc}^2(u_2),
 
 for plate area :math:`A`, the angle :math:`\alpha` between the plate normal and the bistatic bisector, and
-the edge form-factor arguments :math:`u_i`. The dihedral peaks when the double bounce preserves the
-edge-parallel direction component, i.e. at retroreflection only for directions perpendicular to the edge,
+the edge form-factor arguments :math:`u_i`. The dihedral double bounce keeps the edge-parallel direction
+component and reverses both leg-normal components. Each of the two paths (leg 2 then leg 1, and leg 1 then
+leg 2) is a geometric-optics first bounce and a physical-optics last bounce, and the two paths add
+coherently,
 
 .. math::
    :label: ship-dihedral
 
-   \sigma_\mathrm{dihedral} = \frac{8\pi (LH)^2}{\lambda^2}\,\operatorname{sinc}^2(u_\mathrm{edge}),
+   \sigma_\mathrm{dihedral} = \frac{4\pi L^2}{\lambda^2}\,\operatorname{sinc}^2(u_\mathrm{edge})\,
+   \left|S_1 + S_2\right|^2, \qquad
+   S_1 = \frac{a_1 + b_1}{2}\, s_1\, e^{\mathrm{i}\pi v_1}\operatorname{sinc}(v_1),
 
-for edge length :math:`L` and leg height :math:`H`. Both are zero when the shape faces away (back-face /
-wedge visibility).
+with :math:`s_1 = H\min(1, a_2/a_1)`, :math:`v_1 = s_1 (a_2 - b_2)/\lambda`, :math:`S_2` the same with the
+indices 1 and 2 swapped, edge length :math:`L`, leg height :math:`H`, and :math:`a_i` / :math:`b_i` the
+components of the directions to Tx / Rx along leg normal :math:`i`. The return peaks only toward the Tx
+direction mirrored about the plane perpendicular to the edge, with the peak
+:math:`16\pi (LH\min(a_1, a_2))^2/\lambda^2` (:math:`8\pi (LH)^2/\lambda^2` at 45 deg). Both shapes are
+zero when they face away (back-face / wedge visibility).
 
 .. automodule:: functions.ship_physics
    :members:
@@ -104,9 +112,9 @@ Module Assumptions and Limitations
   position perpendicular to velocity. With the configured mounting, antenna :math:`+z` points along
   :math:`-C`; this equals geocentric nadir for a circular orbit, but differs slightly when radial velocity
   is nonzero.
-- **Ship shapes are idealised.** ``ship_physics`` uses perfect conducting plates and a scalar dihedral
-  peak with simple visibility. It omits full polarimetric angular response, component interference and
-  rough-sea coupling; see :doc:`../object_definitions/ship_target`.
+- **Ship shapes are idealised.** ``ship_physics`` uses perfect conducting plates and a scalar double-bounce
+  dihedral with flat, smooth legs and simple visibility. It omits the polarimetric response, interference
+  between components and rough-sea coupling; see :doc:`../object_definitions/ship_target`.
 - **Local ellipsoid approximation.** ``delta_lon/lat_from_distance`` use WGS-84 local radii of curvature.
   They convert a local east/north displacement, not an arbitrary long geodesic.
 

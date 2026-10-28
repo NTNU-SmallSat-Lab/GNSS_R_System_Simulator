@@ -1,7 +1,7 @@
 """Bistatic RCS helpers for ship-as-target modelling.
 
 flat_plate_rcs:  Scalar physical-optics RCS of a rectangular PEC plate with back-face culling.
-dihedral_rcs:    Idealised bistatic RCS surrogate for a 90-deg dihedral with wedge visibility.
+dihedral_rcs:    Two-path double-bounce physical-optics RCS of a 90-deg dihedral with wedge visibility.
 
 Both functions are vectorised over the per-sample axis (n samples per call) and operate on
 direction unit vectors / range scalars; they have no dependence on the simulator's frame
@@ -96,16 +96,22 @@ def dihedral_rcs(
     n_s2rx: np.ndarray,
     wavelength_m: float,
 ) -> np.ndarray:
-    """Idealised bistatic RCS of a 90-degree dihedral corner reflector.
+    """Bistatic double-bounce RCS of a 90-degree dihedral corner reflector with two equal legs.
 
-    The cross-section is ``sigma = (8 pi (L H)^2 / lambda^2) * sinc^2(u_edge) * wedge_visibility``, with
-    edge length ``L = length_edge_m``, leg height ``H = leg_dimension_m``, and ``u_edge = L / lambda *
-    (n_tx2s - n_s2rx) . edge_hat`` (zero when the double bounce preserves the edge-parallel direction
-    component, giving the peak; exact retroreflection only peaks for directions perpendicular to the edge).
-    The wedge visibility is 1 only when the directions to both Tx and Rx lie inside the open corner
-    quadrant (positive along both leg normals); outside it the dihedral shadows itself. This scalar
-    surrogate omits the full angular/polarimetric finite-leg response and sea-surface coupling, so it
-    should not be treated as a calibrated absolute ship RCS.
+    Each double-bounce path (leg 2 then leg 1, and leg 1 then leg 2) is a geometric-optics first bounce
+    followed by a physical-optics last bounce, and the two paths add coherently:
+    ``sigma = (4 pi L^2 / lambda^2) * sinc^2(u_edge) * |S_1 + S_2|^2 * wedge_visibility``, with
+    ``S_1 = (a_1 + b_1) / 2 * s_1 * exp(i pi v_1) * sinc(v_1)``, ``s_1 = H * min(1, a_2 / a_1)``,
+    ``v_1 = s_1 / lambda * (a_2 - b_2)`` (``S_2`` with indices 1 and 2 swapped), and ``u_edge = L / lambda *
+    (n_tx2s - n_s2rx) . edge_hat``. Here ``L = length_edge_m``, ``H = leg_dimension_m``, and ``a_i`` / ``b_i``
+    are the components of the directions to Tx / Rx along leg normal ``i``. The double bounce keeps the
+    edge-parallel direction component and reverses both leg-normal components, so the return peaks only
+    toward the Tx direction mirrored about the plane perpendicular to the edge, with lobe widths of order
+    ``lambda / L`` along and ``lambda / (H min(a_1, a_2))`` across the edge. The peak is
+    ``16 pi (L H min(a_1, a_2))^2 / lambda^2`` (``8 pi (L H)^2 / lambda^2`` at 45 deg). The wedge visibility
+    is 1 only when the directions to both Tx and Rx lie inside the open corner quadrant (positive along both
+    leg normals); outside it the dihedral shadows itself. The legs are flat, smooth and perfectly
+    conducting, so this is not a calibrated absolute ship RCS.
 
     Parameters
     ----------
@@ -132,19 +138,26 @@ def dihedral_rcs(
 
     incoming_outward = -n_tx2s                                          # surface -> Tx
     outgoing_outward = n_s2rx                                           # surface -> Rx
+    a_1 = np.einsum("ij,ij->i", incoming_outward, leg_1_normal)
+    a_2 = np.einsum("ij,ij->i", incoming_outward, leg_2_normal)
+    b_1 = np.einsum("ij,ij->i", outgoing_outward, leg_1_normal)
+    b_2 = np.einsum("ij,ij->i", outgoing_outward, leg_2_normal)
 
-    vis = (
-        (np.einsum("ij,ij->i", incoming_outward, leg_1_normal) > 0.0)
-        & (np.einsum("ij,ij->i", incoming_outward, leg_2_normal) > 0.0)
-        & (np.einsum("ij,ij->i", outgoing_outward, leg_1_normal) > 0.0)
-        & (np.einsum("ij,ij->i", outgoing_outward, leg_2_normal) > 0.0)
-    )
+    vis = (a_1 > 0.0) & (a_2 > 0.0) & (b_1 > 0.0) & (b_2 > 0.0)
     if not vis.any():
         return rcs
+    a_1, a_2, b_1, b_2 = a_1[vis], a_2[vis], b_1[vis], b_2[vis]
 
-    edge_mismatch = np.einsum("ij,ij->i", n_tx2s - n_s2rx, edge_hat)    # 0 when the edge component is preserved
+    edge_mismatch = np.einsum("ij,ij->i", n_tx2s[vis] - n_s2rx[vis], edge_hat[vis])   # 0 when the edge component is preserved
     u_edge = length_edge_m / wavelength_m * edge_mismatch
 
-    sigma_peak = 8.0 * np.pi * (length_edge_m * leg_dimension_m) ** 2 / wavelength_m**2
-    rcs[vis] = sigma_peak * np.sinc(u_edge[vis]) ** 2
+    # Last bounce on leg 1 (after leg 2) and on leg 2 (after leg 1)
+    s_1 = leg_dimension_m * np.minimum(1.0, a_2 / a_1)                  # lit extent of leg 1 across the edge
+    s_2 = leg_dimension_m * np.minimum(1.0, a_1 / a_2)                  # lit extent of leg 2 across the edge
+    v_1 = s_1 / wavelength_m * (a_2 - b_2)                              # 0 when the leg-2 component is reversed back
+    v_2 = s_2 / wavelength_m * (a_1 - b_1)                              # 0 when the leg-1 component is reversed back
+    path_1 = 0.5 * (a_1 + b_1) * s_1 * np.exp(1j * np.pi * v_1) * np.sinc(v_1)   # obliquity * aperture * form factor
+    path_2 = 0.5 * (a_2 + b_2) * s_2 * np.exp(1j * np.pi * v_2) * np.sinc(v_2)
+
+    rcs[vis] = 4.0 * np.pi * length_edge_m**2 / wavelength_m**2 * np.sinc(u_edge) ** 2 * np.abs(path_1 + path_2) ** 2
     return rcs

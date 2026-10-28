@@ -115,6 +115,13 @@ Corrections made by the audit
        15--18 dB too high).
      - Use :math:`(\hat{n}_\mathrm{tx2s} - \hat{n}_\mathrm{s2rx})\cdot\hat{e}`: the double bounce preserves
        the edge-parallel component.
+   * - The ship dihedral had no condition across the edge: the monostatic corner peak was extended to
+       bistatic geometries by the bisector rule.
+     - Every receiver direction in the open quadrant got the full corner peak; a ship far from the BRP
+       could return the dihedral peak, so backscatter ship powers away from the BRP were tens of dB too
+       high.
+     - Two-path double-bounce physical optics: the lobe across the edge and the incidence-dependent
+       aperture :math:`H\min(a_1, a_2)` (checked against a ray-traced integration).
 
 Model maturity and suitable use
 -------------------------------

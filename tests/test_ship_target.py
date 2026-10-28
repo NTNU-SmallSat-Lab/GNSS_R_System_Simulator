@@ -120,10 +120,12 @@ class TestShipTargetComputeRcs:
         np.testing.assert_allclose(result.rcs_m2[0], plate_sum + dihedral_sum, rtol=1e-12)
 
     def test_dihedral_dominates_for_backscatter_at_l_band(self):
-        # At a moderate starboard offset (backscatter-like geometry), the dihedral peak
-        # 8 pi (L H)^2 / lambda^2 vastly exceeds the deck plate; the total should be dominated
-        # by the starboard dihedral.
-        result = _ship().compute_rcs(_oblique_geometry(tx_off_x=1.0e6, rx_off_x=1.0e6), WAVELENGTH_M)
+        # Tx and Rx on one line through the ship on the starboard side (backscatter geometry): the
+        # dihedral peak 16 pi (L H sin(theta))^2 / lambda^2 vastly exceeds the plates; the total should be
+        # dominated by the starboard dihedral.
+        rx_off_x = 5.0e5
+        geom = _oblique_geometry(tx_off_x=rx_off_x * 2.0e7 / 7.0e5, rx_off_x=rx_off_x)
+        result = _ship().compute_rcs(geom, WAVELENGTH_M)
         sigma_total = float(result.rcs_m2[0])
         sigma_stbd = float(result.info["rcs_dihedral_starboard_m2"][0])
         assert sigma_total > 0.0
