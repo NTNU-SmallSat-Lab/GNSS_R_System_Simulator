@@ -137,5 +137,5 @@ def run_area_coverage_simulation(sim_settings):
 
 
 if __name__ == "__main__":
-    config, settings = initialize("Configuration.ini")
+    config, settings = initialize("Configuration_area_600km.ini")
     run_area_coverage_simulation(settings)
