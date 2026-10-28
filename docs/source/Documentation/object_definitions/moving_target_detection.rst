@@ -116,8 +116,9 @@ The detection loop
 ``calculate_moving_target_reflection_intersection`` is the core. For each GNSS constellation it:
 
 1. takes the reflections that fall inside the trajectory bounding box and time window;
-2. for each one, checks whether the reflection point or antenna footprint overlaps the ship's
-   position within ``deltaT`` seconds of the matching trajectory time;
+2. for each one, checks whether the antenna footprint contains the ship's position within ``deltaT``
+   seconds of the matching trajectory time (the test runs in an azimuthal-equidistant frame about the
+   reflection point, so footprints across the 180 deg meridian or around a pole are handled);
 3. on a match, evaluates the link budget per band -- ocean power, ship power (if ``ship_dimensions`` is
    set), and noise -- and records a detection event with its SCR/SINR (backscatter) or shadow change
    (specular).

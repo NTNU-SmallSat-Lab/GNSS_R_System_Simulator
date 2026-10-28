@@ -122,6 +122,10 @@ Corrections made by the audit
        high.
      - Two-path double-bounce physical optics: the lobe across the edge and the incidence-dependent
        aperture :math:`H\min(a_1, a_2)` (checked against a ray-traced integration).
+   * - The footprint gate tested the ship position against a raw longitude/latitude polygon.
+     - A footprint across the 180 deg meridian became a strip over all longitudes and admitted ships
+       thousands of km away.
+     - Test containment in an azimuthal-equidistant frame about the reflection point.
 
 Model maturity and suitable use
 -------------------------------

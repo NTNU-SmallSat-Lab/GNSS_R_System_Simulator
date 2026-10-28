@@ -543,6 +543,30 @@ def propagate_only_visible_satellites(sat_const, sat_visible_times, gnss_constl_
     return visible_sat_objs
 
 
+def azimuthal_equidistant_xy(lat_deg, lon_deg, center_lat_deg, center_lon_deg):
+    """
+    =========================================================================================================
+    Spherical azimuthal-equidistant (east, north) coordinates [m] about a centre point. Continuous across
+    the 180 deg meridian and the poles, so lon/lat footprints can be tested for containment here.
+
+    INPUTS:
+        lat_deg, lon_deg:               [float | np.ndarray]   Point latitude / longitude [deg]
+        center_lat_deg, center_lon_deg: [float]                Projection centre latitude / longitude [deg]
+
+    OUTPUT:
+        (x, y): [tuple]   East / north coordinates [m], same shape as the inputs
+    =========================================================================================================
+    """
+    lat = np.radians(np.asarray(lat_deg, dtype=float))
+    dlon = np.radians(np.asarray(lon_deg, dtype=float) - center_lon_deg)
+    lat_0 = np.radians(center_lat_deg)
+    cos_c = np.sin(lat_0) * np.sin(lat) + np.cos(lat_0) * np.cos(lat) * np.cos(dlon)          # cos of the central angle
+    central_angle = np.arccos(np.clip(cos_c, -1.0, 1.0))
+    azimuth = np.arctan2(np.cos(lat) * np.sin(dlon), np.cos(lat_0) * np.sin(lat) - np.sin(lat_0) * np.cos(lat) * np.cos(dlon))  # from north
+    radius = Constants.R_EARTH_MEAN * central_angle                                              # arc length on the mean sphere
+    return radius * np.sin(azimuth), radius * np.cos(azimuth)
+
+
 def compute_footprint(sat_pos, sat_vel, refl_pos, time_i, antenna, frequency, q_sat=None, earth_model="spherical"):
     """
     =========================================================================================================

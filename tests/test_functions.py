@@ -468,3 +468,47 @@ class TestColorGnssConst:
     def test_case_sensitive(self):
         # Current contract: only the exact upper-case name is mapped.
         assert fn.color_gnss_const("gps") is None
+
+
+# --------------------------------------------------------------------------- #
+# azimuthal_equidistant_xy                                                    #
+# --------------------------------------------------------------------------- #
+
+def _circle_ll(center_lat_deg, center_lon_deg, radius_m, n=72):
+    """Lon/lat ring of a small circle on the mean sphere, longitudes wrapped to [-180, 180)."""
+    lat_0, lon_0 = np.radians(center_lat_deg), np.radians(center_lon_deg)
+    d = radius_m / Constants.R_EARTH_MEAN
+    az = np.linspace(0.0, 2.0 * np.pi, n, endpoint=False)
+    lat = np.arcsin(np.sin(lat_0) * np.cos(d) + np.cos(lat_0) * np.sin(d) * np.cos(az))
+    lon = lon_0 + np.arctan2(np.sin(az) * np.sin(d) * np.cos(lat_0), np.cos(d) - np.sin(lat_0) * np.sin(lat))
+    lon = (np.degrees(lon) + 180.0) % 360.0 - 180.0
+    return np.degrees(lat), lon
+
+
+def _inside_local(ring_lat, ring_lon, center, point_ll):
+    from shapely.geometry import Point, Polygon
+    poly = Polygon(np.column_stack(fn.azimuthal_equidistant_xy(ring_lat, ring_lon, *center)))
+    return poly.contains(Point(*map(float, fn.azimuthal_equidistant_xy(point_ll[0], point_ll[1], *center))))
+
+
+class TestAzimuthalEquidistantXy:
+    def test_distance_and_bearing(self):
+        # 1 deg due north of the centre lies one arc-degree away on the +y axis.
+        x, y = fn.azimuthal_equidistant_xy(11.0, 20.0, 10.0, 20.0)
+        np.testing.assert_allclose([x, y], [0.0, Constants.R_EARTH_MEAN * np.radians(1.0)], atol=1e-6)
+
+    def test_footprint_across_antimeridian(self):
+        # A raw lon/lat polygon of a footprint across 180 deg spans all longitudes and contains a far ship.
+        from shapely.geometry import Point, Polygon
+        center = (77.0, 179.0)
+        ring_lat, ring_lon = _circle_ll(*center, 300e3)
+        far_ship, near_ship = (77.0, 5.0), (77.5, -179.5)
+        assert Polygon(np.column_stack((ring_lon, ring_lat))).contains(Point(far_ship[1], far_ship[0]))
+        assert not _inside_local(ring_lat, ring_lon, center, far_ship)
+        assert _inside_local(ring_lat, ring_lon, center, near_ship)
+
+    def test_footprint_around_pole(self):
+        center = (88.0, 0.0)
+        ring_lat, ring_lon = _circle_ll(*center, 500e3)                # encloses the North Pole
+        assert _inside_local(ring_lat, ring_lon, center, (89.5, 150.0))
+        assert not _inside_local(ring_lat, ring_lon, center, (80.0, 0.0))

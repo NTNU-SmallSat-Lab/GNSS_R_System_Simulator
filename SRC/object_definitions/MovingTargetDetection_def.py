@@ -509,11 +509,13 @@ class MovingTargetDetection:
                                 tx_eirp_dbw = signal["eirp_dbw"]
                                 chip_length_m = Constants.SPEED_OF_LIGHT / signal["chip_rate_hz"]  # delta_L per code chip
                                 freq_mhz = frequency_hz / 1e6
-                                footprint_reflection, reflection_point_ll = self._reflection_point_footprint(refl_obj, reflection_index, freq_mhz, verbose)
+                                footprint_reflection, reflection_point_ll, footprint_local = self._reflection_point_footprint(refl_obj, reflection_index, freq_mhz, verbose)
 
                                 ## DEBUG: Plot the footprint and the moving target position
                                 # show_reflection_and_target_position(pos_tgt_i, footprint_reflection, reflection_point_ll, gnss_name) # TODO this always uses-3db and specular
-                                if footprint_reflection.intersects(pos_tgt_i):
+                                if not footprint_local.is_empty and footprint_local.intersects(
+                                    Point(*map(float, fn.azimuthal_equidistant_xy(pos_tgt_i.y, pos_tgt_i.x, *reflection_point_ll)))
+                                ):
                                     # Per-event ocean-clutter link budget, deferred from the reflection
                                     # propagation. A non-finite Pr means the reflection is out of the antenna
                                     # FOV or has no valid RCS; the eager path dropped these via an empty
@@ -1532,7 +1534,7 @@ class MovingTargetDetection:
                             )
                         for frequency in self.sat_antenna.frequencies:
                             # Create the footprint (ellipse) around the reflection point
-                            footprint_reflection, _ = self._reflection_point_footprint(refl_obj, reflection_index, frequency, verbose)
+                            footprint_reflection, _, _ = self._reflection_point_footprint(refl_obj, reflection_index, frequency, verbose)
 
                             # Safe footprint plotting
                             success = self._plot_footprint(
@@ -1714,11 +1716,12 @@ class MovingTargetDetection:
         # Create a bounding box tuple (min_lon, max_lon, min_lat, max_lat)
         return (min_lon, max_lon, min_lat, max_lat)
 
-    def _reflection_point_footprint(self, refl_obj: Reflection | Backscatter, i: int, frequency: float, verbose: bool = False) -> tuple[Polygon, np.ndarray]:
+    def _reflection_point_footprint(self, refl_obj: Reflection | Backscatter, i: int, frequency: float, verbose: bool = False) -> tuple[Polygon, np.ndarray, Polygon]:
         """
         =========================================================================================================
         Compute the antenna footprint polygon at sample `i` of a reflection object, with cleanup
-        for invalid/multi-polygon results.
+        for invalid/multi-polygon results, and the same footprint in a local azimuthal-equidistant frame
+        about the reflection point for containment tests (valid across 180 deg and the poles).
 
         INPUTS:
             refl_obj:  [Reflection | BRP]   Reflection object
@@ -1727,7 +1730,8 @@ class MovingTargetDetection:
             verbose:   [bool]               Print warnings (default: False)
 
         OUTPUT:
-            result: [tuple]   (footprint_polygon, reflection_point_ll) — empty Polygon on failure
+            result: [tuple]   (footprint_polygon, reflection_point_ll, footprint_local); empty Polygons on failure;
+                              footprint_local is in fn.azimuthal_equidistant_xy coordinates [m]
         =========================================================================================================
         """
 
@@ -1819,9 +1823,19 @@ class MovingTargetDetection:
 
         if np.isnan(refl_obj.refl_ECI_vec[i]).any():
             self.footprint_stats["rejected_empty"] += 1
-            return Polygon(), np.array([])
+            return Polygon(), np.array([]), Polygon()
 
         footprint_points, reflection_point_ll = refl_obj._compute_footprint(i, self.sat_antenna, frequency, earth_model=self.earth_model)
+
+        # Containment polygon from the raw ring in the local frame: the lon/lat polygon below breaks when the
+        # footprint crosses 180 deg or encloses a pole.
+        footprint_local = Polygon()
+        if not footprint_points.is_empty and reflection_point_ll.size == 2:
+            ring_lon, ring_lat = np.asarray(footprint_points.exterior.coords).T
+            footprint_local = Polygon(np.column_stack(fn.azimuthal_equidistant_xy(ring_lat, ring_lon, *reflection_point_ll)))
+            if not footprint_local.is_valid:
+                footprint_local = footprint_local.buffer(0)
+
         if not footprint_points.is_valid:
             if verbose:
                 logger.warning(f"Invalid footprint for reflection index {i}. {explain_validity(footprint_points)}")
@@ -1845,7 +1859,7 @@ class MovingTargetDetection:
             if verbose:
                 logger.warning(f"Ellipse points contain NaN values for reflection index {i} in {refl_obj.gnss_const}. Skipping footprint creation. The satellite might be too far away or the footprint size is too large.")
             self.footprint_stats["rejected_empty"] += 1
-            return Polygon(), reflection_point_ll
+            return Polygon(), reflection_point_ll, Polygon()
 
             ## DEBUG plot footprint_poly
             # show_footprint(footprint_points)
@@ -1853,7 +1867,7 @@ class MovingTargetDetection:
         # Create a shapely polygon from the points
         if footprint_points.is_empty:
             self.footprint_stats["rejected_empty"] += 1
-        return footprint_points, reflection_point_ll
+        return footprint_points, reflection_point_ll, footprint_local
 
     def _fix_longitude_wrapping(self, polygon):
         """
