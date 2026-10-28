@@ -37,8 +37,10 @@
     |det J| -> 0 and A_cell diverges -- the iso-delay rings are physically far apart at the glint.
     The same happens where grad f_D -> 0 (momentary zero range-rate gradient). Both are bounded by
     capping A_cell at the antenna footprint area, the largest surface the receiver can integrate.
-    The exact near-specular cell (first iso-delay ellipse from the curvature of L) is a future
-    refinement; the footprint cap is the conservative bound used here.
+
+    delay_doppler_cell_samples samples the cell that contains a given surface point (a ship) directly on
+    the ellipsoid. It stays exact at the specular point and where grad L || grad f_D, and it includes the
+    ambiguity twin (the second part of the surface with the same delay and Doppler).
 
     Production calls supply the surface position, so ``v_s = omega_E x r`` is included. Omitting
     ``surface_positions_eci`` retains the earlier stationary-in-ECI convention for direct API callers.
@@ -49,11 +51,17 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
+import pymap3d
 
 from object_definitions.Constants_def import Constants
 
 if TYPE_CHECKING:
     from functions.link_budget import BistaticGeometry
+
+_COARSE_RAYS = 360                 # first-pass rays that size the azimuth sampling of the cell integration
+_RADIUS_TOLERANCE_M = 1.0e-3       # bisection end width for the band radii [m]
+_FD_STEP_M = 1.0                   # radial finite-difference step for the area element [m]
+_FD_STEP_RAD = 1.0e-7              # azimuthal finite-difference step for the area element [rad]
 
 
 def delay_doppler_cell_area(
@@ -195,4 +203,174 @@ def delay_doppler_cell_area(
         "doppler_bin_hz": delta_fD,
         "footprint_capped": footprint_capped,
         "surface_rotation_included": include_surface_rotation,
+    }
+
+
+def _surface_from_specular(lat_sp: float, lon_sp: float, radius_m: np.ndarray, azimuth_rad: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """WGS-84 surface points and outward normals (ECEF) at a spherical distance and azimuth from the specular point."""
+    central = radius_m / Constants.R_EARTH_MEAN                                   # central angle [rad]
+    lat = np.arcsin(np.sin(lat_sp) * np.cos(central) + np.cos(lat_sp) * np.sin(central) * np.cos(azimuth_rad))
+    lon = lon_sp + np.arctan2(np.sin(azimuth_rad) * np.sin(central) * np.cos(lat_sp), np.cos(central) - np.sin(lat_sp) * np.sin(lat))
+    x, y, z = pymap3d.geodetic2ecef(lat, lon, 0.0, deg=False)
+    normal = np.stack((np.cos(lat) * np.cos(lon), np.cos(lat) * np.sin(lon), np.sin(lat)), axis=-1)   # geodetic normal
+    return np.stack((x, y, z), axis=-1), normal
+
+
+def delay_doppler_cell_samples(
+    tx_pos_ecef: np.ndarray,
+    tx_vel_ecef: np.ndarray,
+    rx_pos_ecef: np.ndarray,
+    rx_vel_ecef: np.ndarray,
+    specular_ecef: np.ndarray,
+    point_ecef: np.ndarray,
+    wavelength_m: float,
+    chip_length_m: float,
+    coherent_integration_time_s: float,
+    arc_step_m: float,
+    radial_step_m: float,
+) -> dict:
+    """Surface samples of the delay-Doppler cell that contains a surface point, on the WGS-84 ellipsoid.
+
+    The cell is the visible surface where the path length ``L`` and the Doppler ``f_D`` lie within one chip
+    and one Doppler bin centred on the values at ``point_ecef``. Each ray from the specular point crosses an
+    iso-delay contour once, so per ray the delay band runs between the radii where ``L = L0 -/+ delta_L / 2``
+    (a disk when the band contains the specular point). Band samples are kept where ``f_D`` lies in the bin,
+    so the contour curvature and the ambiguity twin are part of the cell. Vectors are Earth-fixed (surface
+    at rest); velocities are relative to the rotating Earth.
+
+    Parameters
+    ----------
+    tx_pos_ecef, tx_vel_ecef, rx_pos_ecef, rx_vel_ecef : numpy.ndarray
+        Transmitter / receiver ECEF position [m] and Earth-relative velocity [m/s], shape ``(3,)``.
+    specular_ecef : numpy.ndarray
+        Specular point of the Tx/Rx pair on the ellipsoid (minimum of ``L``), shape ``(3,)``.
+    point_ecef : numpy.ndarray
+        Surface point that defines the cell (the ship), shape ``(3,)``.
+    wavelength_m : float
+        Carrier wavelength [m].
+    chip_length_m : float
+        One code-chip path length ``delta_L = c / R_chip`` [m].
+    coherent_integration_time_s : float
+        Coherent integration time ``T_coh`` [s]; the Doppler bin is ``1 / T_coh``.
+    arc_step_m : float
+        Target sample spacing along the iso-delay contour [m].
+    radial_step_m : float
+        Maximum sample spacing across the delay band [m].
+
+    Returns
+    -------
+    dict
+        ``positions_ecef`` / ``normals_ecef`` ``(m, 3)`` and ``area_m2`` ``(m,)`` of the cell samples,
+        ``cell_area_m2`` (total), ``segment_areas_m2`` (one entry per disjoint part of the cell along the
+        contour), ``point_segment_area_m2`` (the part that contains ``point_ecef``), ``specular_in_cell``,
+        ``n_azimuth`` and ``n_radial`` (sample counts).
+    """
+    tx = np.asarray(tx_pos_ecef, dtype=float)
+    v_tx = np.asarray(tx_vel_ecef, dtype=float)
+    rx = np.asarray(rx_pos_ecef, dtype=float)
+    v_rx = np.asarray(rx_vel_ecef, dtype=float)
+    sp = np.asarray(specular_ecef, dtype=float)
+    p0 = np.asarray(point_ecef, dtype=float)
+
+    def path_length(p):
+        return np.linalg.norm(p - tx, axis=-1) + np.linalg.norm(rx - p, axis=-1)                  # L = R_t + R_r
+
+    def doppler(p):
+        n_in = (p - tx) / np.linalg.norm(p - tx, axis=-1)[..., None]                               # Tx -> surface
+        n_out = (rx - p) / np.linalg.norm(rx - p, axis=-1)[..., None]                              # surface -> Rx
+        return (n_in @ v_tx - n_out @ v_rx) / wavelength_m                                         # f_D, surface at rest
+
+    def visible(p, n):
+        return (np.sum(n * (tx - p), axis=-1) > 0.0) & (np.sum(n * (rx - p), axis=-1) > 0.0)
+
+    L0 = float(path_length(p0))
+    f0 = float(doppler(p0))
+    L_sp = float(path_length(sp))
+    L_lo, L_hi = L0 - 0.5 * chip_length_m, L0 + 0.5 * chip_length_m
+    half_bin_hz = 0.5 / coherent_integration_time_s
+    lat_sp, lon_sp, _ = pymap3d.ecef2geodetic(sp[0], sp[1], sp[2], deg=False)
+
+    # Any surface point the receiver sees lies within the Rx horizon, so this radius bounds the rays.
+    polar_radius_m = Constants.RADIUS_EARTH_EQUAT * (1.0 - Constants.EARTH_FLATTENING)
+    rx_norm = np.linalg.norm(rx)
+    psi_sp = np.arccos(np.clip(np.dot(rx, sp) / (rx_norm * np.linalg.norm(sp)), -1.0, 1.0))        # SP to Rx sub-point
+    psi_horizon = np.arccos(np.clip(polar_radius_m / rx_norm, -1.0, 1.0))                          # Rx sub-point to horizon
+    r_max = Constants.R_EARTH_MEAN * (psi_sp + psi_horizon)
+    n_iter = int(np.ceil(np.log2(r_max / _RADIUS_TOLERANCE_M)))
+
+    def band_radius(target, azimuth):
+        """Smallest ray radius with L >= target (bisection; L grows along each ray), NaN if not reached."""
+        lo = np.zeros_like(azimuth)
+        hi = np.full_like(azimuth, r_max)
+        reachable = path_length(_surface_from_specular(lat_sp, lon_sp, hi, azimuth)[0]) >= target
+        for _ in range(n_iter):
+            mid = 0.5 * (lo + hi)
+            below = path_length(_surface_from_specular(lat_sp, lon_sp, mid, azimuth)[0]) < target
+            lo = np.where(below, mid, lo)
+            hi = np.where(below, hi, mid)
+        return np.where(reachable, hi, np.nan)
+
+    # Size the azimuth sampling from the outer contour length.
+    az_coarse = 2.0 * np.pi * (np.arange(_COARSE_RAYS) + 0.5) / _COARSE_RAYS
+    contour = _surface_from_specular(lat_sp, lon_sp, band_radius(L_hi, az_coarse), az_coarse)[0]
+    perimeter_m = np.nansum(np.linalg.norm(contour - np.roll(contour, 1, axis=0), axis=1))
+    n_az = max(_COARSE_RAYS, int(np.ceil(perimeter_m / arc_step_m)))
+    d_az = 2.0 * np.pi / n_az
+    azimuth = d_az * (np.arange(n_az) + 0.5)
+
+    r_out = band_radius(L_hi, azimuth)
+    r_in = band_radius(L_lo, azimuth) if L_lo > L_sp else np.zeros(n_az)                          # disk around the SP
+    thickness = r_out - r_in
+    n_rad = max(2, int(np.ceil(np.nanmax(thickness) / radial_step_m)))
+    frac = (np.arange(n_rad) + 0.5) / n_rad
+    radius = r_in[:, None] + frac[None, :] * thickness[:, None]                                    # (n_az, n_rad) midpoints
+    az_grid = np.broadcast_to(azimuth[:, None], radius.shape)
+
+    points, normals = _surface_from_specular(lat_sp, lon_sp, radius, az_grid)
+    dp_dr = (_surface_from_specular(lat_sp, lon_sp, radius + _FD_STEP_M, az_grid)[0]
+             - _surface_from_specular(lat_sp, lon_sp, radius - _FD_STEP_M, az_grid)[0]) / (2.0 * _FD_STEP_M)
+    dp_daz = (_surface_from_specular(lat_sp, lon_sp, radius, az_grid + _FD_STEP_RAD)[0]
+              - _surface_from_specular(lat_sp, lon_sp, radius, az_grid - _FD_STEP_RAD)[0]) / (2.0 * _FD_STEP_RAD)
+    area = np.linalg.norm(np.cross(dp_dr, dp_daz), axis=-1) * (thickness / n_rad)[:, None] * d_az  # |dp/dr x dp/daz| dr daz
+
+    with np.errstate(invalid="ignore"):
+        keep = (
+            np.isfinite(points).all(axis=-1) & np.isfinite(area)
+            & visible(points, normals)
+            & (np.abs(doppler(points) - f0) <= half_bin_hz)
+        )
+
+    # Disjoint parts of the cell along the contour (the point's own part and its ambiguity twin).
+    ray_in = keep.any(axis=1)
+    ray_area = np.where(keep, area, 0.0).sum(axis=1)
+    labels = np.full(n_az, -1)
+    if ray_in.all():
+        labels[:] = 0
+    elif ray_in.any():
+        start = int(np.argmin(ray_in))                                                             # a ray outside the cell
+        rolled = np.roll(ray_in, -start)
+        run_start = rolled & ~np.concatenate(([False], rolled[:-1]))
+        labels = np.roll(np.where(rolled, np.cumsum(run_start) - 1, -1), start)
+    segment_areas = np.bincount(labels[labels >= 0], weights=ray_area[labels >= 0]) if ray_in.any() else np.zeros(0)
+
+    lat_p, lon_p, _ = pymap3d.ecef2geodetic(p0[0], p0[1], p0[2], deg=False)
+    az_point = np.arctan2(np.sin(lon_p - lon_sp) * np.cos(lat_p),
+                          np.cos(lat_sp) * np.sin(lat_p) - np.sin(lat_sp) * np.cos(lat_p) * np.cos(lon_p - lon_sp))
+    k_point = int(np.floor((az_point % (2.0 * np.pi)) / d_az)) % n_az
+    near = labels[(k_point + np.arange(-2, 3)) % n_az]                                            # tolerate an edge ray
+    point_label = int(near[near >= 0][0]) if (near >= 0).any() else -1
+
+    sp_normal = _surface_from_specular(lat_sp, lon_sp, np.array(0.0), np.array(0.0))[1]
+    specular_in_cell = bool(L_sp >= L_lo and abs(float(doppler(sp)) - f0) <= half_bin_hz and visible(sp, sp_normal))
+
+    return {
+        "positions_ecef": points[keep],
+        "normals_ecef": normals[keep],
+        "area_m2": area[keep],
+        "cell_area_m2": float(area[keep].sum()),
+        "segment_areas_m2": segment_areas,
+        "point_segment_area_m2": float(segment_areas[point_label]) if point_label >= 0 else float("nan"),
+        "specular_in_cell": specular_in_cell,
+        "n_azimuth": n_az,
+        "n_radial": n_rad,
     }

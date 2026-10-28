@@ -122,6 +122,12 @@ Corrections made by the audit
        high.
      - Two-path double-bounce physical optics: the lobe across the edge and the incidence-dependent
        aperture :math:`H\min(a_1, a_2)` (checked against a ray-traced integration).
+   * - The backscatter SCR divided the ship power by the clutter of the BRP delay-Doppler cell.
+     - A ship far from the BRP has its own delay and Doppler; the BRP clutter also used the beam-centre gain
+       while the ship used the off-boresight gain.
+     - Sample the ship's own cell on the ellipsoid (delay band per ray from the specular point, Doppler-bin
+       membership per sample) and sum the sea power with per-sample NRCS and gain; includes the ambiguity
+       twin and the curvature where the first-order area diverges. Forward mode uses the same cell.
    * - The footprint gate tested the ship position against a raw longitude/latitude polygon.
      - A footprint across the 180 deg meridian became a strip over all longitudes and admitted ships
        thousands of km away.

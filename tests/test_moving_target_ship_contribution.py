@@ -489,3 +489,104 @@ class TestComputeOceanPrAtEvent:
         assert np.isnan(snr_evt)
         assert noise_evt > 0.0
         assert np.isnan(full["received_power_w"][2])
+
+
+def _backscatter_refl_obj_on_ellipsoid(detection_time):
+    """One-sample BRP on the ellipsoid at (60 N, 5 E), Tx behind Rx on one line at 30 deg incidence."""
+    lat, lon = 60.0, 5.0
+    x, y, z = pymap3d.geodetic2ecef(lat, lon, 0.0)
+    brp_ecef = np.array([[x, y, z]])
+    brp_eci = np.column_stack(pymap3d.ecef2eci(np.array([x]), np.array([y]), np.array([z]), [detection_time]))
+    normal = lb.ellipsoid_surface_normals_eci(brp_ecef, [detection_time])[0]
+    east = np.cross(np.array([0.0, 0.0, 1.0]), normal)
+    east /= np.linalg.norm(east)
+    north = np.cross(normal, east)
+    los = np.cos(np.radians(30.0)) * normal + np.sin(np.radians(30.0)) * east
+    rx_pos = (brp_eci[0] + 7.0e5 * los).reshape(3, 1)
+    tx_pos = (brp_eci[0] + 2.2e7 * los).reshape(3, 1)
+    geometry = lb.build_bistatic_geometry(tx_pos, rx_pos, brp_eci, normal.reshape(1, 3))
+    refl_obj = SimpleNamespace(
+        gnss_pos_vec=tx_pos,
+        gnss_vel_vec=(3_900.0 * north).reshape(3, 1),
+        sat_pos_vec=rx_pos,
+        sat_vel_vec=(7_500.0 * north).reshape(3, 1),
+        refl_ECI_vec=brp_eci,
+        refl_ECEF_vec=brp_ecef,
+        refl_ang_vec=np.asarray(geometry.incidence_angle_deg, dtype=float),
+        time_vec=[detection_time],
+    )
+    return refl_obj, (lat, lon)
+
+
+class _SteeredLossAntenna:
+    """10 dBi when the beam is steered at the look direction, 4 dBi with an explicit steering elsewhere."""
+
+    R_antenna_to_body = np.eye(3)
+
+    def resolve_steering_angles_for_direction(self, direction):
+        return (0.0, 0.0)
+
+    def get_gain_dbi_for_direction(self, direction, frequency_mhz, across_track_deg=None, along_track_deg=None):
+        return 10.0 if across_track_deg is None else 4.0
+
+
+class _ConeAntenna:
+    """10 dBi inside a cone around one antenna-frame direction, no reception (NaN) outside it."""
+
+    R_antenna_to_body = np.eye(3)
+
+    def __init__(self, boresight_a, half_angle_deg):
+        self.boresight_a = np.asarray(boresight_a, dtype=float) / np.linalg.norm(boresight_a)
+        self.cos_half_angle = np.cos(np.radians(half_angle_deg))
+
+    def resolve_steering_angles_for_direction(self, direction):
+        return (0.0, 0.0)
+
+    def get_gain_dbi_for_direction(self, direction, frequency_mhz, across_track_deg=None, along_track_deg=None):
+        d = np.asarray(direction, dtype=float)
+        return 10.0 if np.dot(d / np.linalg.norm(d), self.boresight_a) >= self.cos_half_angle else np.nan
+
+
+class TestComputeShipCellClutterPrAtEvent:
+    CHIP_LENGTH_M = Constants.SPEED_OF_LIGHT / 1.023e6
+
+    def _setup(self, mtd, antenna):
+        mtd.earth_model = "elliptical"
+        mtd.sat_antenna = antenna
+        mtd.link_budget_settings = link_budget_settings(delay_doppler_cell_enabled=True, coherent_integration_time_s=0.001)
+        return mtd
+
+    def test_ship_at_brp_matches_first_order_brp_cell(self, mtd, detection_time):
+        # Away from the delay-Doppler degeneracy the ship's part of the integrated cell equals the first-order
+        # BRP cell; a 3 deg beam on the BRP keeps the ambiguity twin out of view.
+        refl_obj, ship_ll = _backscatter_refl_obj_on_ellipsoid(detection_time)
+        boresight_a = lb.compute_rx_look_direction_antenna_frame(
+            refl_obj.sat_pos_vec[:, 0], refl_obj.sat_vel_vec[:, 0], refl_obj.refl_ECI_vec[0], _constant_gain_antenna(),
+        )
+        self._setup(mtd, _ConeAntenna(boresight_a, 3.0))
+        pr_brp, rcs_brp, _, _ = mtd._compute_ocean_pr_at_event(refl_obj, 0, 1.57542e9, 27.0, self.CHIP_LENGTH_M)
+        pr_cell, rcs_cell, _ = mtd._compute_ship_cell_clutter_pr_at_event(
+            refl_obj, 0, 1.57542e9, 27.0, self.CHIP_LENGTH_M, detection_time, ship_ll,
+        )
+        assert np.isfinite(pr_brp) and pr_brp > 0.0
+        np.testing.assert_allclose(pr_cell, pr_brp, rtol=0.05)
+        np.testing.assert_allclose(rcs_cell, rcs_brp, rtol=0.05)
+
+    def test_steered_gain_scales_the_whole_cell(self, mtd, detection_time):
+        # Every cell sample is received with the beam steered at the BRP: 4 dBi instead of 10 dBi.
+        refl_obj, ship_ll = _backscatter_refl_obj_on_ellipsoid(detection_time)
+        self._setup(mtd, _constant_gain_antenna())
+        pr_10, _, _ = mtd._compute_ship_cell_clutter_pr_at_event(refl_obj, 0, 1.57542e9, 27.0, self.CHIP_LENGTH_M, detection_time, ship_ll)
+        self._setup(mtd, _SteeredLossAntenna())
+        pr_4, _, _ = mtd._compute_ship_cell_clutter_pr_at_event(refl_obj, 0, 1.57542e9, 27.0, self.CHIP_LENGTH_M, detection_time, ship_ll)
+        assert np.isfinite(pr_10) and pr_10 > 0.0
+        np.testing.assert_allclose(pr_4 / pr_10, 10.0 ** (-0.6), rtol=1e-9)
+
+    def test_assign_keeps_reference_cell_power(self, mtd, monkeypatch):
+        event = MovingTargetDetectionStruct(pr_ocean_w=2.0e-15)
+        monkeypatch.setattr(mtd, "_compute_ship_cell_clutter_pr_at_event", lambda *args: (5.0e-17, 30.0, -12.0))
+        mtd._assign_ship_cell_clutter(event, None, 0, 1.57542e9, 27.0, self.CHIP_LENGTH_M, BASE_TIME, (0.0, 0.0))
+        assert event.pr_ocean_ref_w == 2.0e-15
+        assert event.pr_ocean_w == 5.0e-17
+        assert event.rcs_ocean_m2 == 30.0
+        assert event.snr_ocean_rf_db == -12.0

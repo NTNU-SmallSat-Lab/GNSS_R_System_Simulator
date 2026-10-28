@@ -19,7 +19,7 @@ import pytest
 
 # SRC is on sys.path via pyproject.toml's [tool.pytest.ini_options].pythonpath,
 # matching what the entry-point scripts do.
-from __init__ import _antenna_pattern_settings_from_yaml, initialize, load_simulator_settings
+from __init__ import _antenna_pattern_settings_from_yaml, delay_doppler_cell_steps_from_yaml, initialize, load_simulator_settings
 from object_definitions.Constants_def import Constants
 
 # --------------------------------------------------------------------------- #
@@ -853,3 +853,20 @@ class TestSimulatorSettingsYaml:
         monkeypatch.setattr(Constants, "simulator_settings_path", path)
         with pytest.raises(KeyError):
             _antenna_pattern_settings_from_yaml()
+
+    def test_delay_doppler_cell_steps_read_from_yaml(self, tmp_path, monkeypatch):
+        path = self._write_yaml(tmp_path, "delay_doppler_cell:\n  arc_step_m: 400.0\n  radial_step_m: 100.0\n")
+        monkeypatch.setattr(Constants, "simulator_settings_path", path)
+        assert delay_doppler_cell_steps_from_yaml() == (400.0, 100.0)
+
+    def test_delay_doppler_cell_missing_key_raises(self, tmp_path, monkeypatch):
+        path = self._write_yaml(tmp_path, "delay_doppler_cell:\n  arc_step_m: 400.0\n")
+        monkeypatch.setattr(Constants, "simulator_settings_path", path)
+        with pytest.raises(KeyError, match="radial_step_m"):
+            delay_doppler_cell_steps_from_yaml()
+
+    def test_delay_doppler_cell_nonpositive_step_raises(self, tmp_path, monkeypatch):
+        path = self._write_yaml(tmp_path, "delay_doppler_cell:\n  arc_step_m: 0.0\n  radial_step_m: 100.0\n")
+        monkeypatch.setattr(Constants, "simulator_settings_path", path)
+        with pytest.raises(ValueError, match="arc_step_m"):
+            delay_doppler_cell_steps_from_yaml()

@@ -79,8 +79,9 @@ Important interpretation rules
 - A broad ``dB`` envelope catches unit/sign failures but is not a curve-to-data validation.
 - ``noise_power_effective_w`` is a threshold-equivalent sensitivity scale. Incoherent averaging reduces
   estimator variance, not mean thermal noise power.
-- With ``delay_doppler_cell_enabled``, the code changes the assumed ocean clutter area. It does not prove
-  that a ship anywhere in the antenna footprint occupies the reference point's delay-Doppler bin.
+- With ``delay_doppler_cell_enabled``, the ship's clutter is the sampled ship cell (twin and curvature
+  included); away from the degeneracy its ship part matches the first-order cell to 0.1 dB (tested). The
+  cell is an ideal chip-by-bin box, not weighted by the ambiguity function.
 - At the exact specular point the first-order delay gradient vanishes, so the implemented DDM area uses
   the antenna-footprint cap.
 

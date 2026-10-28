@@ -63,6 +63,7 @@ def serialize_power_events(target_detect_dict, mode):
                 "band": event.band,
                 "time": timestamp.isoformat() if timestamp is not None else None,
                 "pr_ocean_w": _finite_float(event.pr_ocean_w),
+                "pr_ocean_ref_w": _finite_float(getattr(event, "pr_ocean_ref_w", None)),
                 field: _finite_float(getattr(event, field, None)),
             }
             for key in ("tx_satID", "rx_satID"):

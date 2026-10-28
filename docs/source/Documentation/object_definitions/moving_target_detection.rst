@@ -48,7 +48,8 @@ has its own carrier frequency and transmit EIRP). The score depends on the mode:
      \Delta P_r = -\,P_\mathrm{ocean}(A_\mathrm{ship}),
 
   the ocean glint power over the ship's waterline area (length x beam). It is reported on its own, as a
-  fraction of the footprint glint, and against the noise floor. This signal is faint by design and is
+  fraction of the ocean power in the ship's own delay-Doppler cell (of the footprint glint without the
+  cell), and against the noise floor. This signal is faint by design and is
   reported honestly, with no flooring.
 
 Interface
@@ -174,10 +175,11 @@ Module Assumptions and Limitations
   :math:`\sqrt{M}` part is heuristic without an explicit detector statistic and false-alarm probability.
 - **Footprint-resolution matching.** A reflection counts as "on the ship" when the point or its footprint
   overlaps the ship position; the footprint is large, so this is a coarse spatial match.
-- **No delay-Doppler coincidence check.** The ocean return is evaluated at the reflection/BRP reference
-  point and the ship at its own position. The code does not verify that both occupy the same delay and
-  Doppler bin. Enabling the DDM-cell area therefore changes the assumed clutter area but does not make the
-  candidate association a complete DDM detector.
+- **Clutter of the ship's own cell.** With ``delay_doppler_cell_enabled``, the backscatter SCR / SINR and
+  the forward shadow fraction use the ocean power of the ship's own delay-Doppler cell, summed over the
+  sampled cell (:doc:`../functions/delay_doppler`) with the Rx gain of the beam steered at the reflection
+  point; it includes the ambiguity twin and the contour curvature. The reflection point's own ocean power
+  is kept as ``pr_ocean_ref_w``. Without the cell, the ship competes with the whole footprint.
 - **No calibrated detection probability.** ``detection_sinr_threshold_db`` is a user threshold on a
   deterministic metric. False-alarm probability, speckle, fading and measurement statistics are absent.
 - **Ship return only when sized.** Without ``ship_dimensions`` the run is ocean-only.

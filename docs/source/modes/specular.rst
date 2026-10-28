@@ -77,7 +77,8 @@ back is removed. So the thing to detect is a small **drop** in received power,
    \Delta P_r = -\,P_\mathrm{ocean}\left(A_\mathrm{ship}\right),
 
 the sea-glint power over the ship's waterline area :math:`A_\mathrm{ship}` (length times beam). This signal
-is faint by design. The simulator reports it on its own, as a fraction of the full-footprint glint, and
+is faint by design. The simulator reports it on its own, as a fraction of the sea power in the ship's own
+delay-Doppler cell (the shadow dims only that cell; without the cell, of the full-footprint glint), and
 against the thermal-noise floor, with no flooring or inflation.
 
 What you get out

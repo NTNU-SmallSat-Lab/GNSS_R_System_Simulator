@@ -170,21 +170,43 @@ area, the largest patch the receiver could integrate. In backscatter mode the re
 away from the delay minimum, so the cell is well-defined; the cap mainly matters in the forward/specular
 direction.
 
+The ship's own cell
+^^^^^^^^^^^^^^^^^^^
+
+A moving target competes with the clutter of the cell that contains the target itself. That cell can lie
+where the first-order formula fails: near the specular point, and near the line where :math:`\nabla L` and
+:math:`\nabla f_D` are parallel (close to the receiver ground track), where the two surface points with
+the same delay and Doppler merge. ``delay_doppler_cell_samples`` therefore samples the cell directly on the
+WGS-84 ellipsoid, in an Earth-fixed frame where the surface is at rest. Every ray from the specular point
+crosses each iso-delay contour once, so per ray the delay band runs between the radii where
+:math:`L = L_0 \mp \delta L / 2` (a disk around the specular point when the band contains it). Band
+samples are kept where :math:`|f_D - f_{D,0}| \le \delta f_D / 2`, with the area element from the
+parametrisation. The result contains the curvature of the contours and the ambiguity twin (a second,
+disjoint part of the same cell). The moving-target pipeline sums the ocean link budget over these samples,
+with the NRCS, the ranges and the Rx gain (beam steered at the reflection point) per sample; the coherent
+term enters once, when the specular point lies in the cell. Away from the degeneracy the ship's part of
+the cell agrees with :eq:`dd-area` (tested). The sampling steps live in ``simulator_settings.yaml``
+(``delay_doppler_cell.arc_step_m`` along the contour, ``delay_doppler_cell.radial_step_m`` across the band).
+
 API reference
 ^^^^^^^^^^^^^
 
 .. autofunction:: functions.delay_doppler.delay_doppler_cell_area
 
+.. autofunction:: functions.delay_doppler.delay_doppler_cell_samples
+
 Module Assumptions and Limitations
 ----------------------------------
 
-- **First-order (linear) cell.** The area uses the first derivatives of the delay and Doppler fields. This
-  is accurate away from the specular point but breaks down at the glint, where it is capped at the
-  footprint. The exact near-specular cell (from the curvature of the path length) is a future refinement.
-- **No target-to-cell membership test.** The moving-target pipeline first checks antenna-footprint
-  overlap. It does not yet compute the ship's own delay and Doppler and prove that the target and the
-  ocean reference point occupy the same DDM bin. Therefore DDM-cell clutter results are a sensitivity
-  approximation, not a complete detector simulation.
+- **First-order (linear) cell at the reflection point.** ``delay_doppler_cell_area`` uses the first
+  derivatives of the delay and Doppler fields. This is accurate away from the specular point but breaks
+  down at the glint, where it is capped at the footprint. It sets the clutter of the reflection point
+  itself; the ship's own cell is sampled directly (``delay_doppler_cell_samples``).
+- **Ideal resolution cell.** The cell is a sharp chip-by-bin box; the code autocorrelation (triangle) and
+  the Doppler response (sinc) of the real ambiguity function are not weighted in.
+- **Spherical ray parametrisation.** Rays from the specular point use a spherical destination formula on
+  the geodetic latitude; points lie exactly on the ellipsoid and the area element comes from the actual
+  parametrisation, so only the sampling pattern, not the area, carries the approximation.
 - **Code chip sets the delay size.** For spread signals (BOC, CBOC, AltBOC) the base code-chip rate is
   used, which is the conservative (coarser delay, larger cell) choice. Chip rates live per
   ``(constellation, band)`` in :data:`Constants.GNSS_CHIP_RATE_HZ`.

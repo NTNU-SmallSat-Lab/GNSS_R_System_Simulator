@@ -193,6 +193,30 @@ def tle_fit_weights_from_yaml() -> tuple[float, float]:
     return position_weight_m, velocity_weight_m_s
 
 
+_DELAY_DOPPLER_CELL_YAML_KEYS = ("arc_step_m", "radial_step_m")
+
+
+def delay_doppler_cell_steps_from_yaml() -> tuple[float, float]:
+    """Read the ship-cell sampling steps (along the iso-delay contour [m], across the delay band [m]) strictly from the simulator YAML."""
+    cell = load_simulator_settings().get("delay_doppler_cell")
+    if not isinstance(cell, dict):
+        raise KeyError(f"Missing 'delay_doppler_cell' mapping in {Constants.simulator_settings_path}.")
+    missing = [key for key in _DELAY_DOPPLER_CELL_YAML_KEYS if key not in cell]
+    if missing:
+        raise KeyError(f"Missing key(s) {missing} under 'delay_doppler_cell' in {Constants.simulator_settings_path}.")
+    try:
+        arc_step_m = float(cell["arc_step_m"])
+        radial_step_m = float(cell["radial_step_m"])
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid delay_doppler_cell setting in {Constants.simulator_settings_path}: {exc}") from None
+    if not (math.isfinite(arc_step_m) and arc_step_m > 0.0 and math.isfinite(radial_step_m) and radial_step_m > 0.0):
+        raise ValueError(
+            f"delay_doppler_cell steps in {Constants.simulator_settings_path} must be finite and > 0; "
+            f"got arc_step_m={arc_step_m}, radial_step_m={radial_step_m}."
+        )
+    return arc_step_m, radial_step_m
+
+
 def _validate_antenna_steering(along_extent, across_extent, yaml_ap) -> None:
     """
     User-facing steering guards named for the config keys (the generator keeps antenna-frame backstops).

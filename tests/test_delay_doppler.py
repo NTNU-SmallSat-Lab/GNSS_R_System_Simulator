@@ -6,11 +6,13 @@ order-of-magnitude, the Constants chip-rate table, and the settings validation t
 """
 
 import numpy as np
+import pymap3d
 import pytest
 
-from functions.delay_doppler import delay_doppler_cell_area
+from functions.delay_doppler import delay_doppler_cell_area, delay_doppler_cell_samples
 from functions.link_budget import BistaticLinkBudgetSettings, build_bistatic_geometry
 from object_definitions.Constants_def import Constants
+from object_definitions.Reflection_def import Reflection
 
 C = Constants.SPEED_OF_LIGHT
 WAVELENGTH_L1 = C / 1.575_42e9          # GPS L1 carrier wavelength [m]
@@ -255,3 +257,75 @@ class TestSettingsValidation:
         s = _settings(delay_doppler_cell_enabled=True, coherent_integration_time_s=1e-3)
         assert s.delay_doppler_cell_enabled is True
         assert s.coherent_integration_time_s == pytest.approx(1e-3)
+
+
+# --------------------------------------------------------------------------- #
+# delay_doppler_cell_samples                                                  #
+# --------------------------------------------------------------------------- #
+
+def _enu(lat_deg, lon_deg):
+    lat, lon = np.radians(lat_deg), np.radians(lon_deg)
+    up = np.array([np.cos(lat) * np.cos(lon), np.cos(lat) * np.sin(lon), np.sin(lat)])
+    east = np.array([-np.sin(lon), np.cos(lon), 0.0])
+    return east, np.cross(up, east), up
+
+
+def _backscatter_scenario(tx_azimuth_deg):
+    """ECEF Tx/Rx at 600 km over (60 N, 5 E), Rx heading north; the ship sits at the BRP of the Tx -> Rx line."""
+    east, north, up = _enu(60.0, 5.0)
+    rx = np.array(pymap3d.geodetic2ecef(60.0, 5.0, 0.0)) + 600e3 * up
+    v_rx = 7.1e3 * north
+    el, az = np.radians(50.0), np.radians(tx_azimuth_deg)
+    dir_tx = np.cos(el) * (np.cos(az) * north + np.sin(az) * east) + np.sin(el) * up
+    tx = rx + 2.2e7 * dir_tx
+    v_tx = 3.0e3 * np.cross(dir_tx, up) / np.linalg.norm(np.cross(dir_tx, up))
+    los = (rx - tx) / np.linalg.norm(rx - tx)
+    pts = rx + np.linspace(0.0, 3.0e6, 300001)[:, None] * los
+    lat, lon, alt = pymap3d.ecef2geodetic(pts[:, 0], pts[:, 1], pts[:, 2])
+    k = int(np.argmax(alt < 0.0))
+    ship = np.array(pymap3d.geodetic2ecef(lat[k], lon[k], 0.0))
+    specular, _, _ = object.__new__(Reflection)._find_specular_point_ellipse_ecef(tx, rx)
+    return tx, v_tx, rx, v_rx, specular, ship
+
+
+def _first_order_area(tx, v_tx, rx, v_rx, point):
+    lat, lon, _ = pymap3d.ecef2geodetic(*point, deg=False)
+    normal = np.array([[np.cos(lat) * np.cos(lon), np.cos(lat) * np.sin(lon), np.sin(lat)]])
+    geom = build_bistatic_geometry(tx.reshape(3, 1), rx.reshape(3, 1), point.reshape(1, 3), normal)
+    return float(delay_doppler_cell_area(geom, v_tx.reshape(3, 1), v_rx.reshape(3, 1), WAVELENGTH_L1, CHIP_LENGTH_CA, T_COH)["uncapped_cell_area_m2"][0])
+
+
+def _cell(tx, v_tx, rx, v_rx, specular, point):
+    return delay_doppler_cell_samples(tx, v_tx, rx, v_rx, specular, point, WAVELENGTH_L1, CHIP_LENGTH_CA, T_COH, 500.0, 250.0)
+
+
+class TestDelayDopplerCellSamples:
+    def test_matches_first_order_area_away_from_degeneracy(self):
+        # Broadside look: the ship's part of the cell is the first-order delta_L delta_f / |grad L x grad f_D|.
+        tx, v_tx, rx, v_rx, specular, ship = _backscatter_scenario(90.0)
+        cell = _cell(tx, v_tx, rx, v_rx, specular, ship)
+        np.testing.assert_allclose(cell["point_segment_area_m2"], _first_order_area(tx, v_tx, rx, v_rx, ship), rtol=0.03)
+
+    def test_ambiguity_twin_is_a_separate_part(self):
+        tx, v_tx, rx, v_rx, specular, ship = _backscatter_scenario(90.0)
+        cell = _cell(tx, v_tx, rx, v_rx, specular, ship)
+        assert len(cell["segment_areas_m2"]) == 2
+        assert cell["cell_area_m2"] > 1.5 * cell["point_segment_area_m2"]
+        np.testing.assert_allclose(cell["area_m2"].sum(), cell["cell_area_m2"], rtol=1e-12)
+
+    def test_bounded_where_first_order_diverges(self):
+        # Ship on the Rx ground track: grad L || grad f_D, so the first-order area blows up; the contour
+        # curvature bounds the integrated cell.
+        tx, v_tx, rx, v_rx, specular, ship = _backscatter_scenario(179.0)
+        cell = _cell(tx, v_tx, rx, v_rx, specular, ship)
+        first_order = _first_order_area(tx, v_tx, rx, v_rx, ship)
+        assert 0.0 < cell["cell_area_m2"] < 0.1 * first_order
+
+    def test_cell_at_specular_point(self):
+        # At the specular point the delay band is a disk (the first chip zone) cut by the Doppler bin.
+        tx, v_tx, rx, v_rx, specular, _ = _backscatter_scenario(90.0)
+        cell = _cell(tx, v_tx, rx, v_rx, specular, specular)
+        assert cell["specular_in_cell"]
+        assert np.isfinite(cell["cell_area_m2"]) and cell["cell_area_m2"] > 0.0
+        first_order = _first_order_area(tx, v_tx, rx, v_rx, specular)
+        assert not np.isfinite(first_order) or first_order > 1e3 * cell["cell_area_m2"]

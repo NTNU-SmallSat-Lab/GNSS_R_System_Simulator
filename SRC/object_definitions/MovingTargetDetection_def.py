@@ -21,6 +21,7 @@ from shapely.ops import unary_union
 from shapely.validation import explain_validity
 from tqdm import tqdm
 
+import functions.delay_doppler as dd
 import functions.functions as fn
 import functions.link_budget as lb
 from object_definitions.BackScattPoint_def import BRP as Backscatter
@@ -31,6 +32,13 @@ from object_definitions.ShipTarget_def import ShipTarget
 from object_definitions.ShipTrajectory_def import ShipTrajectory
 
 logger = logging.getLogger(__name__)
+
+
+def _eci_to_ecef_rotation(time: dt.datetime) -> np.ndarray:
+    """3x3 rotation from ECI to ECEF at one instant; column j is the ECEF image of ECI axis j."""
+    scale = 1.0e7                                                      # basis length [m], well inside the transform's numeric range
+    x, y, z = pymap3d.eci2ecef(np.array([scale, 0.0, 0.0]), np.array([0.0, scale, 0.0]), np.array([0.0, 0.0, scale]), [time] * 3)
+    return np.vstack((x, y, z)) / scale
 
 
 class MovingTargetDetection:
@@ -560,6 +568,12 @@ class MovingTargetDetection:
                                         possible_target_detection.pr_ship_w = pr_ship_w
                                         possible_target_detection.rcs_ship_m2 = rcs_ship_m2
                                         possible_target_detection.snr_ship_rf_db = snr_ship_rf_db
+                                        if self.link_budget_settings.delay_doppler_cell_enabled:
+                                            # The ship echo competes with the clutter of its own delay-Doppler cell.
+                                            self._assign_ship_cell_clutter(
+                                                possible_target_detection, refl_obj, reflection_index, frequency_hz, tx_eirp_dbw,
+                                                chip_length_m, time_tgt_i, ship_position_ll,
+                                            )
                                         if not np.isfinite(noise_power_w) and np.isfinite(ship_noise_power_w):
                                             noise_power_w = ship_noise_power_w
                                             possible_target_detection.noise_power_w = noise_power_w
@@ -572,6 +586,12 @@ class MovingTargetDetection:
                                             refl_obj, reflection_index, frequency_hz, tx_eirp_dbw, time_tgt_i, ship_position_ll,
                                         )
                                         possible_target_detection.forward_shadow_pr_w = pr_shadow_w
+                                        if self.link_budget_settings.delay_doppler_cell_enabled:
+                                            # The shadow dims only the ship's own delay-Doppler cell.
+                                            self._assign_ship_cell_clutter(
+                                                possible_target_detection, refl_obj, reflection_index, frequency_hz, tx_eirp_dbw,
+                                                chip_length_m, time_tgt_i, ship_position_ll,
+                                            )
                                         if not np.isfinite(noise_power_w) and np.isfinite(shadow_noise_power_w):
                                             noise_power_w = shadow_noise_power_w
                                             possible_target_detection.noise_power_w = noise_power_w
@@ -742,6 +762,80 @@ class MovingTargetDetection:
         if heading_eci is None:
             return nan_result
 
+        ship_point = self._ship_point_geometry_and_gain(refl_obj, reflection_index, frequency_hz, detection_time, ship_position_ll)
+        if ship_point is None:
+            return nan_result
+        _ship_pos_eci, _ship_surface_normal_eci, geometry, rx_gain_dbi = ship_point
+        wavelength_m = Constants.SPEED_OF_LIGHT / frequency_hz
+
+        ship_target = ShipTarget.from_dict(self.ship_dimensions, heading_eci=heading_eci[np.newaxis, :])
+        rcs_result = ship_target.compute_rcs(geometry, wavelength_m)
+        rcs_ship_m2 = float(rcs_result.rcs_m2[0])
+        if not np.isfinite(rcs_ship_m2):
+            return nan_result
+
+        link_budget = lb.compute_bistatic_link_budget(
+            range_tx_m=geometry.range_tx_m,
+            range_rx_m=geometry.range_rx_m,
+            rx_gain_dbi=np.array([rx_gain_dbi]),
+            rcs_m2=np.array([rcs_ship_m2]),
+            frequency_hz=frequency_hz,
+            tx_eirp_dbw=tx_eirp_dbw,
+            settings=self.link_budget_settings,
+        )
+        pr_ship_w = float(link_budget["received_power_w"][0])
+        snr_ship_rf_db = float(link_budget["snr_rf_db"][0])
+        noise_power_w = float(link_budget["noise_power_w"])
+        return pr_ship_w, rcs_ship_m2, snr_ship_rf_db, noise_power_w
+
+    def _rx_steering_at_reflection(self, refl_obj: Reflection | Backscatter, reflection_index: int) -> tuple[float, float] | None:
+        """Steering angles (across, along track) [deg] that point the Rx beam at the reflection point; None if out of reach."""
+        look_dir_center_a = lb.compute_rx_look_direction_antenna_frame(
+            refl_obj.sat_pos_vec[:, reflection_index],
+            refl_obj.sat_vel_vec[:, reflection_index],
+            refl_obj.refl_ECI_vec[reflection_index],
+            self.sat_antenna,
+        )
+        return self.sat_antenna.resolve_steering_angles_for_direction(look_dir_center_a)
+
+    def _rx_gain_toward(
+        self,
+        refl_obj: Reflection | Backscatter,
+        reflection_index: int,
+        target_eci: np.ndarray,
+        frequency_hz: float,
+        steering_angles: tuple[float, float],
+    ) -> float:
+        """Rx gain [dBi] toward an ECI point with the beam steered at the reflection point."""
+        look_dir_a = lb.compute_rx_look_direction_antenna_frame(
+            refl_obj.sat_pos_vec[:, reflection_index],
+            refl_obj.sat_vel_vec[:, reflection_index],
+            target_eci,
+            self.sat_antenna,
+        )
+        steering_across_track_deg, steering_along_track_deg = steering_angles
+        return self.sat_antenna.get_gain_dbi_for_direction(
+            look_dir_a,
+            frequency_hz / 1e6,
+            across_track_deg=steering_across_track_deg,
+            along_track_deg=steering_along_track_deg,
+        )
+
+    def _ship_point_geometry_and_gain(
+        self,
+        refl_obj: Reflection | Backscatter,
+        reflection_index: int,
+        frequency_hz: float,
+        detection_time: dt.datetime,
+        ship_position_ll: tuple[float, float],
+    ) -> tuple[np.ndarray, np.ndarray, lb.BistaticGeometry, float] | None:
+        """
+        Ship ECI position, surface normal, bistatic geometry and Rx gain toward the ship at one event.
+
+        The beam stays steered at the reflection point, so the gain is the off-boresight gain toward the
+        ship. Returns (ship_pos_eci (1, 3), ship_surface_normal_eci (1, 3), geometry, rx_gain_dbi), or
+        None if a state is non-finite or the beam cannot be steered at the reflection point.
+        """
         ship_lat, ship_lon = ship_position_ll
         ship_x_ecef, ship_y_ecef, ship_z_ecef = pymap3d.geodetic2ecef(ship_lat, ship_lon, 0.0)
         ship_pos_ecef = np.array([[ship_x_ecef, ship_y_ecef, ship_z_ecef]], dtype=float)
@@ -766,54 +860,134 @@ class MovingTargetDetection:
             and np.isfinite(ship_pos_eci).all()
             and np.isfinite(ship_surface_normal_eci).all()
         ):
-            return nan_result
+            return None
 
         geometry = lb.build_bistatic_geometry(tx_pos, rx_pos, ship_pos_eci, ship_surface_normal_eci)
-        wavelength_m = Constants.SPEED_OF_LIGHT / frequency_hz
 
-        ship_target = ShipTarget.from_dict(self.ship_dimensions, heading_eci=heading_eci[np.newaxis, :])
-        rcs_result = ship_target.compute_rcs(geometry, wavelength_m)
-        rcs_ship_m2 = float(rcs_result.rcs_m2[0])
-        if not np.isfinite(rcs_ship_m2):
-            return nan_result
-
-        look_dir_center_a = lb.compute_rx_look_direction_antenna_frame(
-            rx_pos[:, 0],
-            rx_vel,
-            refl_obj.refl_ECI_vec[reflection_index],
-            self.sat_antenna,
-        )
-        steering_angles = self.sat_antenna.resolve_steering_angles_for_direction(look_dir_center_a)
+        steering_angles = self._rx_steering_at_reflection(refl_obj, reflection_index)
         if steering_angles is None:
-            return nan_result
-        steering_across_track_deg, steering_along_track_deg = steering_angles
+            return None
+        rx_gain_dbi = self._rx_gain_toward(refl_obj, reflection_index, ship_pos_eci[0], frequency_hz, steering_angles)
+        return ship_pos_eci, ship_surface_normal_eci, geometry, rx_gain_dbi
 
-        look_dir_ship_a = lb.compute_rx_look_direction_antenna_frame(
-            rx_pos[:, 0],
-            rx_vel,
-            ship_pos_eci[0],
-            self.sat_antenna,
+    def _delay_doppler_cell_steps(self) -> tuple[float, float]:
+        """Ship-cell sampling steps (contour, band) [m] from the simulator YAML, read once per instance."""
+        steps = getattr(self, "_dd_cell_steps", None)
+        if steps is None:
+            from __init__ import delay_doppler_cell_steps_from_yaml  # Function-local import: avoids an import cycle at module load
+            steps = self._dd_cell_steps = delay_doppler_cell_steps_from_yaml()
+        return steps
+
+    def _compute_ship_cell_clutter_pr_at_event(
+        self,
+        refl_obj: Reflection | Backscatter,
+        reflection_index: int,
+        frequency_hz: float,
+        tx_eirp_dbw: float,
+        chip_length_m: float,
+        detection_time: dt.datetime,
+        ship_position_ll: tuple[float, float],
+    ) -> tuple[float, float, float]:
+        """
+        Ocean clutter of the ship's own delay-Doppler cell at one detection event.
+
+        Sums the ocean link budget over the surface samples of the cell (dd.delay_doppler_cell_samples):
+        NRCS, ranges and Rx gain (beam steered at the reflection point) per sample. The cell includes the
+        contour curvature and the ambiguity twin; the coherent term enters once, when the specular point
+        lies in the cell. Returns (pr_clutter_w, rcs_clutter_m2, snr_clutter_rf_db); all NaN if invalid.
+        """
+        nan_result = (float("nan"), float("nan"), float("nan"))
+        ship_point = self._ship_point_geometry_and_gain(refl_obj, reflection_index, frequency_hz, detection_time, ship_position_ll)
+        if ship_point is None:
+            return nan_result
+        steering_angles = self._rx_steering_at_reflection(refl_obj, reflection_index)
+
+        idx = reflection_index
+        tx_eci = refl_obj.gnss_pos_vec[:, idx]
+        rx_eci = refl_obj.sat_pos_vec[:, idx]
+        tx_vel_eci = refl_obj.gnss_vel_vec[:, idx]
+        if not np.isfinite(tx_vel_eci).all():
+            return nan_result
+
+        # Earth-fixed frame: the surface is at rest and the velocities are relative to the rotating Earth.
+        rotation = _eci_to_ecef_rotation(detection_time)
+        omega_ecef = np.array([0.0, 0.0, Constants.EARTH_ROTATION_RATE_RAD_S])
+        tx_ecef = rotation @ tx_eci
+        rx_ecef = rotation @ rx_eci
+        tx_vel_ecef = rotation @ tx_vel_eci - np.cross(omega_ecef, tx_ecef)               # v_ecef = R v_eci - omega x r_ecef
+        rx_vel_ecef = rotation @ refl_obj.sat_vel_vec[:, idx] - np.cross(omega_ecef, rx_ecef)
+        ship_ecef = np.array(pymap3d.geodetic2ecef(ship_position_ll[0], ship_position_ll[1], 0.0), dtype=float)
+        specular_ecef, _, _ = object.__new__(Reflection)._find_specular_point_ellipse_ecef(tx_ecef, rx_ecef)
+        if not np.isfinite(specular_ecef).all():
+            return nan_result
+
+        wavelength_m = Constants.SPEED_OF_LIGHT / frequency_hz
+        arc_step_m, radial_step_m = self._delay_doppler_cell_steps()
+        cell = dd.delay_doppler_cell_samples(
+            tx_ecef, tx_vel_ecef, rx_ecef, rx_vel_ecef, specular_ecef, ship_ecef,
+            wavelength_m, chip_length_m, self.link_budget_settings.coherent_integration_time_s, arc_step_m, radial_step_m,
         )
-        rx_gain_dbi = self.sat_antenna.get_gain_dbi_for_direction(
-            look_dir_ship_a,
-            frequency_hz / 1e6,
-            across_track_deg=steering_across_track_deg,
-            along_track_deg=steering_along_track_deg,
+        if cell["area_m2"].size == 0:
+            return nan_result
+
+        positions_eci = cell["positions_ecef"] @ rotation                                  # rows: R^T p_ecef
+        normals_eci = cell["normals_ecef"] @ rotation
+        n_samples = positions_eci.shape[0]
+        geometry = lb.build_bistatic_geometry(
+            np.repeat(tx_eci[:, None], n_samples, axis=1), np.repeat(rx_eci[:, None], n_samples, axis=1), positions_eci, normals_eci,
         )
+        ocean = OceanTarget.from_settings(self.link_budget_settings)
+        rcs_m2 = ocean.compute_rcs(geometry, wavelength_m, illuminated_area_m2=cell["area_m2"]).info["rcs_incoherent_m2"]
+        range_tx_m, range_rx_m = geometry.range_tx_m, geometry.range_rx_m
+        gains_dbi = np.array([self._rx_gain_toward(refl_obj, idx, p, frequency_hz, steering_angles) for p in positions_eci], dtype=float)
+
+        if cell["specular_in_cell"]:
+            # The coherent mirror term is a single specular contribution, not a per-area density.
+            specular_eci = rotation.T @ specular_ecef
+            sp_lat, sp_lon, _ = pymap3d.ecef2geodetic(*specular_ecef, deg=False)
+            sp_normal_eci = rotation.T @ np.array([np.cos(sp_lat) * np.cos(sp_lon), np.cos(sp_lat) * np.sin(sp_lon), np.sin(sp_lat)])
+            sp_geometry = lb.build_bistatic_geometry(tx_eci[:, None], rx_eci[:, None], specular_eci[None, :], sp_normal_eci[None, :])
+            rcs_m2 = np.append(rcs_m2, ocean.compute_rcs(sp_geometry, wavelength_m).info["rcs_coherent_m2"])
+            range_tx_m = np.append(range_tx_m, sp_geometry.range_tx_m)
+            range_rx_m = np.append(range_rx_m, sp_geometry.range_rx_m)
+            gains_dbi = np.append(gains_dbi, self._rx_gain_toward(refl_obj, idx, specular_eci, frequency_hz, steering_angles))
 
         link_budget = lb.compute_bistatic_link_budget(
-            range_tx_m=geometry.range_tx_m,
-            range_rx_m=geometry.range_rx_m,
-            rx_gain_dbi=np.array([rx_gain_dbi]),
-            rcs_m2=np.array([rcs_ship_m2]),
+            range_tx_m=range_tx_m,
+            range_rx_m=range_rx_m,
+            rx_gain_dbi=gains_dbi,
+            rcs_m2=rcs_m2,
             frequency_hz=frequency_hz,
             tx_eirp_dbw=tx_eirp_dbw,
             settings=self.link_budget_settings,
         )
-        pr_ship_w = float(link_budget["received_power_w"][0])
-        snr_ship_rf_db = float(link_budget["snr_rf_db"][0])
+        received_w = np.asarray(link_budget["received_power_w"], dtype=float)
+        received = np.isfinite(received_w)                                                 # NaN gain: outside the antenna FOV
+        pr_clutter_w = float(received_w[received].sum())
+        rcs_clutter_m2 = float(np.asarray(rcs_m2)[received].sum())
         noise_power_w = float(link_budget["noise_power_w"])
-        return pr_ship_w, rcs_ship_m2, snr_ship_rf_db, noise_power_w
+        snr_clutter_rf_db = 10.0 * np.log10(pr_clutter_w / noise_power_w) if pr_clutter_w > 0.0 else float("nan")
+        return pr_clutter_w, rcs_clutter_m2, snr_clutter_rf_db
+
+    def _assign_ship_cell_clutter(
+        self,
+        event: "MovingTargetDetectionStruct",
+        refl_obj: Reflection | Backscatter,
+        reflection_index: int,
+        frequency_hz: float,
+        tx_eirp_dbw: float,
+        chip_length_m: float,
+        detection_time: dt.datetime,
+        ship_position_ll: tuple[float, float],
+    ) -> None:
+        """Make the clutter of the ship's own delay-Doppler cell the event's ocean power; keep the reference cell's value."""
+        pr_cell_w, rcs_cell_m2, snr_cell_rf_db = self._compute_ship_cell_clutter_pr_at_event(
+            refl_obj, reflection_index, frequency_hz, tx_eirp_dbw, chip_length_m, detection_time, ship_position_ll,
+        )
+        event.pr_ocean_ref_w = event.pr_ocean_w
+        event.pr_ocean_w = pr_cell_w
+        event.rcs_ocean_m2 = rcs_cell_m2
+        event.snr_ocean_rf_db = snr_cell_rf_db
 
     def _compute_forward_shadow_delta_pr_at_event(
         self,
@@ -902,7 +1076,8 @@ class MovingTargetDetection:
         Derive the forward-scatter shadow metrics from the occulted ocean glint power.
 
         forward_delta_pr_w is the signed change in received power (negative: the ship removes glint);
-        the fraction and over-noise figures express it against the footprint glint and the thermal floor.
+        the fraction and over-noise figures express it against the ocean power pr_ocean_w (the ship's own
+        delay-Doppler cell when that cell is enabled, else the footprint glint) and the thermal floor.
         """
         shadow = event.forward_shadow_pr_w
         if not (shadow is not None and np.isfinite(shadow) and shadow > 0.0):
@@ -2326,7 +2501,8 @@ class MovingTargetDetectionStruct:
     frequency: float = np.nan              # carrier frequency [MHz]
     band: str | None = None                # constellation-specific band name (e.g. L1, E1, B1I)
     # Per-event link budget split (populated when ship_dimensions is supplied to MovingTargetDetection).
-    pr_ocean_w: float | None = None        # ocean clutter received power [W]
+    pr_ocean_w: float | None = None        # ocean clutter received power [W]; with the delay-Doppler cell: the ship's own cell
+    pr_ocean_ref_w: float | None = None    # with the delay-Doppler cell: ocean power of the reflection point (SP or BRP) [W]
     pr_ship_w: float | None = None         # ship signal received power [W]
     pr_total_w: float | None = None        # pr_ocean_w + pr_ship_w [W]
     scr_db: float | None = None            # signal-to-clutter ratio = 10 log10(pr_ship / pr_ocean) [dB]
@@ -2341,10 +2517,10 @@ class MovingTargetDetectionStruct:
     detection_sinr_threshold_db: float | None = None  # configured ship SINR threshold [dB]
     detection_margin_db: float | None = None          # sinr_ship_db - detection_sinr_threshold_db [dB]
     is_sinr_detection: bool | None = None             # True when detection_margin_db >= 0
-    rcs_ocean_m2: float | None = None      # ocean RCS at the reflection point [m^2]
+    rcs_ocean_m2: float | None = None      # ocean RCS of the pr_ocean_w clutter area [m^2]
     rcs_ship_m2: float | None = None       # ship RCS (combined plates + dihedrals) [m^2]
     # Forward-scatter (specular mode): the ship shadows its waterline-area patch of the ocean glint.
     forward_shadow_pr_w: float | None = None             # ocean glint power the ship occults [W]
     forward_delta_pr_w: float | None = None              # signed change in received power = -forward_shadow_pr_w [W]
-    forward_delta_pr_fraction_db: float | None = None    # 10 log10(forward_shadow_pr / pr_ocean footprint) [dB]
+    forward_delta_pr_fraction_db: float | None = None    # 10 log10(forward_shadow_pr / pr_ocean_w) [dB]
     forward_delta_pr_over_noise_db: float | None = None  # 10 log10(forward_shadow_pr / noise) [dB]

@@ -53,10 +53,9 @@ resulting cross-section per unit area (the NRCS) is multiplied by a clutter area
 
 That clutter area matters. The simulator can use the whole antenna footprint, patch-integrate over that
 footprint, or use a first-order **delay-Doppler resolution cell**
-(:doc:`../Documentation/functions/delay_doppler`). A smaller assumed cell can lift the modelled
-ship-to-sea ratio substantially. The detector does not yet verify that a ship anywhere in the footprint
-shares the reference point's delay-Doppler bin, so this option is a sensitivity study rather than complete
-bin-level association.
+(:doc:`../Documentation/functions/delay_doppler`). With the cell, the ship competes with the clutter of
+its own delay-Doppler cell: the simulator samples that cell on the surface (including its ambiguity twin)
+and sums the sea power with the NRCS and the Rx gain (beam steered at the BRP) of every sample.
 
 Finding a ship
 --------------
@@ -140,8 +139,8 @@ Assumptions and limitations
   isotropic short-wave spectrum.
 - **Coarse spatial match.** A reflection counts as "on the ship" when the point or its footprint overlaps
   the ship position.
-- **No DDM bin association.** Footprint overlap is not proof that ship and ocean reference returns share
-  one delay-Doppler bin.
+- **Ideal resolution cell.** The ship's cell is a sharp chip-by-bin box; the shape of the real ambiguity
+  function is not weighted in.
 - **Preliminary absolute RCS.** The box/dihedral ship model is useful for aspect trends but is not
   measurement-calibrated; absolute detection conclusions require an external RCS model or data.
 

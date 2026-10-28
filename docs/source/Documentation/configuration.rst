@@ -15,8 +15,9 @@ each section.
    per-mission INI: the simulation ``step_size_s``, the antenna-pattern angular resolution
    ``theta_resolution`` / ``phi_resolution`` plus the steering step counts ``along_track_steering_steps`` /
    ``across_track_steering_steps``, and the TLE-fit residual weights ``tle_fit.position_weight_m`` /
-   ``tle_fit.velocity_weight_m_s`` (available for tuning the osculating-to-SGP4 mean-element fit). It is
-   loaded strictly -- a missing file or key raises.
+   ``tle_fit.velocity_weight_m_s`` (available for tuning the osculating-to-SGP4 mean-element fit), and the
+   sampling steps of the ship's own delay-Doppler cell ``delay_doppler_cell.arc_step_m`` /
+   ``delay_doppler_cell.radial_step_m``. It is loaded strictly -- a missing file or key raises.
 
 [SIMULATION SETTINGS]
 ---------------------

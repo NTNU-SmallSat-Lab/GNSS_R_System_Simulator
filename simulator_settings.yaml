@@ -24,3 +24,10 @@ antenna_pattern:
   # The min/max extent stays in the INI [ANTENNA PATTERN].along_track_steering / across_track_steering.
   along_track_steering_steps: 21
   across_track_steering_steps: 21
+
+delay_doppler_cell:
+  # Surface sampling of the ship's own delay-Doppler cell (moving target, delay_doppler_cell_enabled).
+  # Sample spacing along the iso-delay contour [m] (> 0); well below the ~17 km Doppler-bin width at T_coh = 1 ms.
+  arc_step_m: 500.0
+  # Maximum sample spacing across the delay band [m] (> 0); at least 2 samples per band.
+  radial_step_m: 250.0
