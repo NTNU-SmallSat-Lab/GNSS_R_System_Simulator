@@ -178,8 +178,10 @@ Module Assumptions and Limitations
 - **Clutter of the ship's own cell.** With ``delay_doppler_cell_enabled``, the backscatter SCR / SINR and
   the forward shadow fraction use the ocean power of the ship's own delay-Doppler cell, summed over the
   sampled cell (:doc:`../functions/delay_doppler`) with the Rx gain of the beam steered at the reflection
-  point; it includes the ambiguity twin and the contour curvature. The reflection point's own ocean power
-  is kept as ``pr_ocean_ref_w``. Without the cell, the ship competes with the whole footprint.
+  point; it includes the ambiguity twin and the contour curvature. The ocean power of the cell at the
+  reflection point is kept as ``pr_ocean_ref_w``: the sampled cell centred on the specular point in specular
+  mode, the first-order cell at the BRP in backscatter mode. Without the cell, the ship competes with the
+  whole footprint.
 - **No calibrated detection probability.** ``detection_sinr_threshold_db`` is a user threshold on a
   deterministic metric. False-alarm probability, speckle, fading and measurement statistics are absent.
 - **Ship return only when sized.** Without ``ship_dimensions`` the run is ocean-only.

@@ -980,11 +980,18 @@ class MovingTargetDetection:
         detection_time: dt.datetime,
         ship_position_ll: tuple[float, float],
     ) -> None:
-        """Make the clutter of the ship's own delay-Doppler cell the event's ocean power; keep the reference cell's value."""
+        """Make the clutter of the ship's own delay-Doppler cell the event's ocean power; keep the reflection point's cell as reference."""
         pr_cell_w, rcs_cell_m2, snr_cell_rf_db = self._compute_ship_cell_clutter_pr_at_event(
             refl_obj, reflection_index, frequency_hz, tx_eirp_dbw, chip_length_m, detection_time, ship_position_ll,
         )
-        event.pr_ocean_ref_w = event.pr_ocean_w
+        if self.reflection_mode == "specular":
+            # The first-order cell is singular at the specular point: sample the cell centred on it.
+            sp_ll = (float(refl_obj.refl_LL_vec[reflection_index][0]), float(refl_obj.refl_LL_vec[reflection_index][1]))
+            event.pr_ocean_ref_w = self._compute_ship_cell_clutter_pr_at_event(
+                refl_obj, reflection_index, frequency_hz, tx_eirp_dbw, chip_length_m, detection_time, sp_ll,
+            )[0]
+        else:
+            event.pr_ocean_ref_w = event.pr_ocean_w                        # first-order cell at the BRP
         event.pr_ocean_w = pr_cell_w
         event.rcs_ocean_m2 = rcs_cell_m2
         event.snr_ocean_rf_db = snr_cell_rf_db
@@ -2502,7 +2509,7 @@ class MovingTargetDetectionStruct:
     band: str | None = None                # constellation-specific band name (e.g. L1, E1, B1I)
     # Per-event link budget split (populated when ship_dimensions is supplied to MovingTargetDetection).
     pr_ocean_w: float | None = None        # ocean clutter received power [W]; with the delay-Doppler cell: the ship's own cell
-    pr_ocean_ref_w: float | None = None    # with the delay-Doppler cell: ocean power of the reflection point (SP or BRP) [W]
+    pr_ocean_ref_w: float | None = None    # with the delay-Doppler cell: ocean power of the cell at the reflection point (SP or BRP) [W]
     pr_ship_w: float | None = None         # ship signal received power [W]
     pr_total_w: float | None = None        # pr_ocean_w + pr_ship_w [W]
     scr_db: float | None = None            # signal-to-clutter ratio = 10 log10(pr_ship / pr_ocean) [dB]

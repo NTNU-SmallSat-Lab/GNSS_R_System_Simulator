@@ -583,6 +583,7 @@ class TestComputeShipCellClutterPrAtEvent:
         np.testing.assert_allclose(pr_4 / pr_10, 10.0 ** (-0.6), rtol=1e-9)
 
     def test_assign_keeps_reference_cell_power(self, mtd, monkeypatch):
+        mtd.reflection_mode = "backscatter"
         event = MovingTargetDetectionStruct(pr_ocean_w=2.0e-15)
         monkeypatch.setattr(mtd, "_compute_ship_cell_clutter_pr_at_event", lambda *args: (5.0e-17, 30.0, -12.0))
         mtd._assign_ship_cell_clutter(event, None, 0, 1.57542e9, 27.0, self.CHIP_LENGTH_M, BASE_TIME, (0.0, 0.0))
@@ -590,3 +591,15 @@ class TestComputeShipCellClutterPrAtEvent:
         assert event.pr_ocean_w == 5.0e-17
         assert event.rcs_ocean_m2 == 30.0
         assert event.snr_ocean_rf_db == -12.0
+
+    def test_assign_specular_reference_is_cell_centred_on_specular_point(self, mtd, monkeypatch):
+        # The first-order cell is singular at the SP, so the reference is the sampled cell centred on the SP.
+        mtd.reflection_mode = "specular"
+        refl_obj = SimpleNamespace(refl_LL_vec=np.array([[58.3, 10.1]]))
+        event = MovingTargetDetectionStruct(pr_ocean_w=2.0e-15)
+        cells = {(58.3, 10.1): (7.0e-16, 40.0, -8.0), (58.0, 10.0): (5.0e-17, 30.0, -12.0)}
+        monkeypatch.setattr(mtd, "_compute_ship_cell_clutter_pr_at_event", lambda *args: cells[args[-1]])
+        mtd._assign_ship_cell_clutter(event, refl_obj, 0, 1.57542e9, 27.0, self.CHIP_LENGTH_M, BASE_TIME, (58.0, 10.0))
+        assert event.pr_ocean_ref_w == 7.0e-16
+        assert event.pr_ocean_w == 5.0e-17
+        assert event.rcs_ocean_m2 == 30.0
