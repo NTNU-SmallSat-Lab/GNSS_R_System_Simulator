@@ -132,6 +132,12 @@ Corrections made by the audit
      - A footprint across the 180 deg meridian became a strip over all longitudes and admitted ships
        thousands of km away.
      - Test containment in an azimuthal-equidistant frame about the reflection point.
+   * - The forward ocean reference used the footprint-capped glistening area, because the first-order
+       delay-Doppler cell is singular at the specular point.
+     - The forward and backscatter references were different quantities: the forward reference held
+       23--33 dB more ocean power than one cell.
+     - Sample the delay-Doppler cell centred on the specular point with the ship-cell sampler; backscatter
+       keeps the first-order cell at the BRP.
 
 Model maturity and suitable use
 -------------------------------
