@@ -37,7 +37,7 @@ Summary
 hull is broken into **five flat plates** (deck, port side, starboard side, bow, stern) and **two
 hull-water dihedrals** (the right-angle corner where each side meets the sea). Each plate uses the
 flat-plate formula and each dihedral the corner formula from :doc:`../functions/helpers`, with a seawater
-sea leg. The pieces add up without phase (non-coherently), and the ``info`` dict keeps the per-piece
+sea leg and a diffuse part from the sea scatter that the hull mirrors. The pieces add up without phase (non-coherently), and the ``info`` dict keeps the per-piece
 breakdown. This is an ideal-conductor engineering surrogate for aspect studies, not a validated absolute
 ship-RCS model.
 
@@ -99,23 +99,47 @@ The dihedral formula :math:`\sigma_\mathrm{dihedral}` has two metal legs. The hu
 other leg is the sea. A metal bounce reverses the sense of circular polarisation. The transmitted RHCP signal
 therefore meets the sea as RHCP on one path and as LHCP after the hull bounce on the other. After both bounces,
 only the part that the sea reflects in the same sense arrives as LHCP at the receiver. Sea roughness removes the
-coherent corner, as it removes the coherent glint (:doc:`ocean_target`). Each corner is therefore
+coherent corner, as it removes the coherent glint (:doc:`ocean_target`). The coherent corner is therefore
 
 .. math::
    :label: ship-sea-leg
 
-   \sigma_\mathrm{corner} = |R_\mathrm{RR}(\theta_\mathrm{sea})|^2\, e^{-\kappa}\, \sigma_\mathrm{dihedral}, \qquad
+   \sigma_\mathrm{coh} = |R_\mathrm{RR}(\theta_\mathrm{sea})|^2\, e^{-\kappa}\, \sigma_\mathrm{dihedral}, \qquad
    \kappa = \left(\frac{4\pi\,\sigma_h\cos\theta_\mathrm{sea}}{\lambda}\right)^2,
 
 with :math:`\theta_\mathrm{sea}` the incidence angle of the transmitter ray on the sea, :math:`|R_\mathrm{RR}|^2`
 the same-sense (RHCP-to-RHCP) power reflectivity of seawater, and :math:`\sigma_h \simeq H_s/4` the RMS surface
 height. The hull bounce keeps the vertical component of the ray, so :math:`\theta_\mathrm{sea}` is the same on
-both paths. The pieces add up as
+both paths.
+
+The diffuse corner
+^^^^^^^^^^^^^^^^^^
+
+A rough sea also scatters in all directions, and the hull mirrors part of this scatter to the receiver. This
+diffuse part of the corner survives the roughness. On the sea-first path, the sea scatters toward the image of
+the receiver in the hull plane. On the hull-first path, the sea is lit by the image of the transmitter. Each
+path sees the sea strip that the hull rectangle mirrors: the length :math:`L` times the width
+:math:`H\tan\theta_v\cos\phi_v`, with :math:`\theta_v` the angle of the receiver (:math:`v = \mathrm{Rx}`) or of
+the transmitter (:math:`v = \mathrm{Tx}`) from the vertical and :math:`\phi_v` its azimuth from the hull normal.
+Only the same-sense sea scatter ends as LHCP, so
+
+.. math::
+   :label: ship-diffuse-corner
+
+   \sigma_\mathrm{diff} = L H \sum_{v\,\in\,\{\mathrm{Rx},\,\mathrm{Tx}\}} \tan\theta_v \cos\phi_v\;
+   \sigma^0_\mathrm{RR}(v),
+
+with :math:`\sigma^0_\mathrm{RR}(v)` the same-sense ocean NRCS of :doc:`ocean_target` (geometric optics with
+:math:`|R_\mathrm{RR}|^2` in place of :math:`|R_\mathrm{RL}|^2`, plus the two-scale Bragg term) for the
+transmitter and the receiver image (:math:`v = \mathrm{Rx}`) or the transmitter image and the receiver
+(:math:`v = \mathrm{Tx}`). The two paths add in power. Like the coherent corner, the diffuse corner needs the
+transmitter and the receiver on the outward side of the hull. The pieces add up as
 
 .. math::
    :label: ship-sum
 
-   \sigma_\mathrm{ship} = \sum_{\text{5 plates}} \sigma_\mathrm{plate} + \sum_{\text{2 corners}} \sigma_\mathrm{corner}.
+   \sigma_\mathrm{ship} = \sum_{\text{5 plates}} \sigma_\mathrm{plate}
+   + \sum_{\text{2 corners}} \left(\sigma_\mathrm{coh} + \sigma_\mathrm{diff}\right).
 
 .. autoclass:: object_definitions.ShipTarget_def.ShipTarget
    :members:
@@ -128,8 +152,9 @@ Module Assumptions and Limitations
 - **Ideal PEC and scalar response.** Plates are perfectly conducting and use a scalar physical-optics
   form factor. Polarisation matrices, diffraction, creeping waves and edge interactions are omitted.
 - **Simplified corner.** The corner uses a scalar two-path double bounce with a flat metal hull leg and
-  binary open-wedge visibility; the sea leg keeps only its coherent same-sense reflection. It omits edge
-  diffraction and the diffuse sea scatter that the hull reflects back.
+  binary open-wedge visibility. Its diffuse part uses the ocean NRCS over the mirrored strip, and its two
+  paths add in power. Edge diffraction and the part of the strip that stays lit when the transmitter and the
+  receiver are on opposite sides of the hull are omitted.
 - **Non-coherent sum.** Components add in power, not amplitude, so interference between facets is not
   captured.
 - **Above-waterline only.** Only the freeboard (above-water) part contributes; the submerged hull does not
@@ -151,7 +176,8 @@ Validation and Tests
      - What it pins
    * - ``tests/test_ship_target.py``
      - Construction and validation; the body-frame build; the per-plate / per-dihedral RCS and their sum;
-       back-face and wedge visibility behaviour; the seawater sea leg and its roughness loss.
+       back-face and wedge visibility behaviour; the seawater sea leg and its roughness loss; the diffuse
+       corner (mirrored strip, same-sense ocean NRCS) and its visibility.
 
 User Guide
 ----------

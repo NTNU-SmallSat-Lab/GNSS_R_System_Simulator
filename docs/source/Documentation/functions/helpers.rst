@@ -116,7 +116,8 @@ Module Assumptions and Limitations
   is nonzero.
 - **Ship shapes are idealised.** ``ship_physics`` uses perfect conducting plates and a scalar double-bounce
   dihedral with flat, smooth legs and simple visibility. It omits the polarimetric response and interference
-  between components; :doc:`../object_definitions/ship_target` applies the seawater sea leg of the hull-sea corner.
+  between components; :doc:`../object_definitions/ship_target` applies the seawater sea leg and the diffuse part of the hull-sea
+  corner.
 - **Local ellipsoid approximation.** ``delta_lon/lat_from_distance`` use WGS-84 local radii of curvature.
   They convert a local east/north displacement, not an arbitrary long geodesic.
 

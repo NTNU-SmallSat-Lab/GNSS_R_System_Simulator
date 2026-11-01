@@ -73,6 +73,7 @@ class TestShipTargetComputeRcs:
         for key in (
             "rcs_plates_total_m2",
             "rcs_dihedrals_total_m2",
+            "rcs_dihedrals_diffuse_m2",
             "rcs_dihedral_starboard_m2",
             "rcs_dihedral_port_m2",
             "rcs_per_plate_m2",
@@ -146,14 +147,35 @@ class TestShipTargetComputeRcs:
         metal = dihedral_rcs(bow, stbd, up, 100.0, 5.0, geom.n_tx2s, geom.n_s2rx, WAVELENGTH_M)[0]
         eps_r = seawater_permittivity(Constants.SPEED_OF_LIGHT / WAVELENGTH_M, 15.0, 35.0)
         _, R_RR_sq = circular_pol_reflectivities(np.arccos(cos_sea), eps_r)
-        calm = float(_ship().compute_rcs(geom, WAVELENGTH_M).info["rcs_dihedral_starboard_m2"][0])
-        np.testing.assert_allclose(calm, metal * R_RR_sq, rtol=1e-12)
+        coherent = lambda info: float(info["rcs_dihedral_starboard_m2"][0] - info["rcs_dihedrals_diffuse_m2"][0])  # noqa: E731
+        calm = coherent(_ship().compute_rcs(geom, WAVELENGTH_M).info)
+        np.testing.assert_allclose(calm, metal * R_RR_sq, rtol=1e-9)
 
         wave_height_m = 0.05
         rough_sea = OceanTarget(wave_height_m=wave_height_m, wind_speed_m_s=5.0, wind_direction_deg=0.0, sea_temperature_c=15.0, salinity_psu=35.0)
         ship = ShipTarget(length_m=100.0, beam_m=15.0, freeboard_m=5.0, heading_eci=_default_heading_along_y(), ocean=rough_sea)
-        rough = float(ship.compute_rcs(geom, WAVELENGTH_M).info["rcs_dihedral_starboard_m2"][0])
-        np.testing.assert_allclose(rough / calm, np.exp(-((np.pi * wave_height_m * cos_sea / WAVELENGTH_M) ** 2)), rtol=1e-12)
+        rough = coherent(ship.compute_rcs(geom, WAVELENGTH_M).info)
+        np.testing.assert_allclose(rough / calm, np.exp(-((np.pi * wave_height_m * cos_sea / WAVELENGTH_M) ** 2)), rtol=1e-9)
+
+    def test_diffuse_corner_is_same_sense_sea_scatter_mirrored_by_the_hull(self):
+        # Each path order sees the sea strip the hull mirrors (area L H tan(theta) cos(phi)) with the ocean's same-sense
+        # NRCS for the hull image of Rx (sea first) or of Tx (hull first); the images are built here from mirrored positions.
+        surf, up, hull = np.zeros((1, 3)), np.array([[0.0, 0.0, 1.0]]), np.array([1.0, 0.0, 0.0])   # starboard = +x
+        tx, rx = np.array([1.2e7, 0.4e7, 2.0e7]), np.array([3.0e5, -2.0e5, 7.0e5])                  # both on the starboard side
+        mirror = lambda p: p - 2.0 * (p @ hull) * hull  # noqa: E731
+        expected = 0.0
+        for tx_path, rx_path, to_v in ((tx, mirror(rx), rx), (mirror(tx), rx, tx)):
+            info = CALM_SEA.compute_rcs(build_bistatic_geometry(tx_path[:, None], rx_path[:, None], surf, up), WAVELENGTH_M).info
+            nrcs_rr = info["nrcs"] * info["fresnel_reflectivity_RR_sq"] / info["fresnel_reflectivity_RL_sq"] + info["nrcs_bragg_RR"]
+            expected += float(nrcs_rr[0]) * 100.0 * 5.0 * (to_v @ hull) / to_v[2]
+        result = _ship().compute_rcs(build_bistatic_geometry(tx[:, None], rx[:, None], surf, up), WAVELENGTH_M)
+        np.testing.assert_allclose(result.info["rcs_dihedrals_diffuse_m2"][0], expected, rtol=1e-9)
+        assert expected > 0.0
+
+    def test_diffuse_corner_needs_tx_and_rx_on_the_hull_side(self):
+        # Tx on the starboard side, Rx on the port side: neither hull side faces both (open corner quadrant).
+        result = _ship().compute_rcs(_oblique_geometry(tx_off_x=1.0e7, rx_off_x=-1.0e5), WAVELENGTH_M)
+        assert float(result.info["rcs_dihedrals_diffuse_m2"][0]) == 0.0
 
     def test_heading_length_mismatch_raises(self):
         ship = _ship()                                                   # heading has 1 sample

@@ -162,6 +162,12 @@ Corrections made by the audit
        trials the median ship RCS was 12 dB too high.
      - Scale each corner by :math:`|R_\mathrm{RR}(\theta_\mathrm{sea})|^2 e^{-\kappa}`, the seawater
        same-sense reflectivity and the Rayleigh roughness loss at the incidence on the sea.
+   * - The hull-sea corner had no diffuse part.
+     - A rough sea scatters in all directions, and the hull mirrors part of this scatter to the receiver.
+       Without it, the ship RCS fell to the plates alone. In the same three-trial rerun the diffuse corner
+       was 0--28 dBsm (median 8 dBsm) and above the plates in every geometry where it applies.
+     - Add the same-sense ocean NRCS (geometric optics and two-scale Bragg) of the sea strip the hull
+       mirrors, area :math:`L H\tan\theta\cos\phi`, for both path orders.
 
 Model maturity and suitable use
 -------------------------------
