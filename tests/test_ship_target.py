@@ -4,10 +4,15 @@ import numpy as np
 import pytest
 
 from functions.link_budget import build_bistatic_geometry
+from functions.ocean_physics import circular_pol_reflectivities, seawater_permittivity
+from functions.ship_physics import dihedral_rcs
+from object_definitions.Constants_def import Constants
+from object_definitions.OceanTarget_def import OceanTarget
 from object_definitions.ShipTarget_def import ShipTarget
 from object_definitions.Target_def import TargetRcs
 
 WAVELENGTH_M = 0.19
+CALM_SEA = OceanTarget(wave_height_m=0.0, wind_speed_m_s=5.0, wind_direction_deg=0.0, sea_temperature_c=15.0, salinity_psu=35.0)
 
 
 def _zenith_geometry():
@@ -34,25 +39,25 @@ def _default_heading_along_y() -> np.ndarray:
 
 
 def _ship() -> ShipTarget:
-    return ShipTarget(length_m=100.0, beam_m=15.0, freeboard_m=5.0, heading_eci=_default_heading_along_y())
+    return ShipTarget(length_m=100.0, beam_m=15.0, freeboard_m=5.0, heading_eci=_default_heading_along_y(), ocean=CALM_SEA)
 
 
 class TestShipTargetConstruction:
     def test_negative_length_raises(self):
         with pytest.raises(ValueError, match="length_m must be > 0"):
-            ShipTarget(length_m=-1.0, beam_m=15.0, freeboard_m=5.0, heading_eci=_default_heading_along_y())
+            ShipTarget(length_m=-1.0, beam_m=15.0, freeboard_m=5.0, heading_eci=_default_heading_along_y(), ocean=CALM_SEA)
 
     def test_zero_beam_raises(self):
         with pytest.raises(ValueError, match="beam_m must be > 0"):
-            ShipTarget(length_m=100.0, beam_m=0.0, freeboard_m=5.0, heading_eci=_default_heading_along_y())
+            ShipTarget(length_m=100.0, beam_m=0.0, freeboard_m=5.0, heading_eci=_default_heading_along_y(), ocean=CALM_SEA)
 
     def test_bad_heading_shape_raises(self):
         with pytest.raises(ValueError, match="heading_eci must have shape"):
-            ShipTarget(length_m=100.0, beam_m=15.0, freeboard_m=5.0, heading_eci=np.array([1.0, 0.0, 0.0]))
+            ShipTarget(length_m=100.0, beam_m=15.0, freeboard_m=5.0, heading_eci=np.array([1.0, 0.0, 0.0]), ocean=CALM_SEA)
 
     def test_from_dict_classmethod(self):
         ship_dict = {"length_m": 80.0, "beam_m": 12.0, "freeboard_m": 4.0}
-        target = ShipTarget.from_dict(ship_dict, heading_eci=_default_heading_along_y())
+        target = ShipTarget.from_dict(ship_dict, heading_eci=_default_heading_along_y(), ocean=CALM_SEA)
         assert target.length_m == 80.0
         assert target.beam_m == 12.0
         assert target.freeboard_m == 4.0
@@ -120,9 +125,9 @@ class TestShipTargetComputeRcs:
         np.testing.assert_allclose(result.rcs_m2[0], plate_sum + dihedral_sum, rtol=1e-12)
 
     def test_dihedral_dominates_for_backscatter_at_l_band(self):
-        # Tx and Rx on one line through the ship on the starboard side (backscatter geometry): the
-        # dihedral peak 16 pi (L H sin(theta))^2 / lambda^2 vastly exceeds the plates; the total should be
-        # dominated by the starboard dihedral.
+        # Tx and Rx on one line through the ship on the starboard side (backscatter geometry): on a calm sea the
+        # dihedral peak 16 pi (L H sin(theta))^2 / lambda^2 times |R_RR|^2 still exceeds the plates; the total should
+        # be dominated by the starboard dihedral.
         rx_off_x = 5.0e5
         geom = _oblique_geometry(tx_off_x=rx_off_x * 2.0e7 / 7.0e5, rx_off_x=rx_off_x)
         result = _ship().compute_rcs(geom, WAVELENGTH_M)
@@ -130,6 +135,25 @@ class TestShipTargetComputeRcs:
         sigma_stbd = float(result.info["rcs_dihedral_starboard_m2"][0])
         assert sigma_total > 0.0
         assert sigma_stbd > 0.5 * sigma_total
+
+    def test_dihedral_sea_leg_is_seawater_same_sense_with_roughness_loss(self):
+        # The sea leg scales the metal corner by the seawater same-sense reflectivity |R_RR|^2 at the incidence on the
+        # sea; a rough sea removes the coherent corner by exp(-kappa), kappa = (pi H_s cos(theta) / lambda)^2.
+        rx_off_x = 5.0e5
+        geom = _oblique_geometry(tx_off_x=rx_off_x * 2.0e7 / 7.0e5, rx_off_x=rx_off_x)
+        cos_sea = float(-geom.n_tx2s[0, 2])                                           # surface normal +z
+        bow, stbd, up = np.array([[0.0, 1.0, 0.0]]), np.array([[1.0, 0.0, 0.0]]), np.array([[0.0, 0.0, 1.0]])
+        metal = dihedral_rcs(bow, stbd, up, 100.0, 5.0, geom.n_tx2s, geom.n_s2rx, WAVELENGTH_M)[0]
+        eps_r = seawater_permittivity(Constants.SPEED_OF_LIGHT / WAVELENGTH_M, 15.0, 35.0)
+        _, R_RR_sq = circular_pol_reflectivities(np.arccos(cos_sea), eps_r)
+        calm = float(_ship().compute_rcs(geom, WAVELENGTH_M).info["rcs_dihedral_starboard_m2"][0])
+        np.testing.assert_allclose(calm, metal * R_RR_sq, rtol=1e-12)
+
+        wave_height_m = 0.05
+        rough_sea = OceanTarget(wave_height_m=wave_height_m, wind_speed_m_s=5.0, wind_direction_deg=0.0, sea_temperature_c=15.0, salinity_psu=35.0)
+        ship = ShipTarget(length_m=100.0, beam_m=15.0, freeboard_m=5.0, heading_eci=_default_heading_along_y(), ocean=rough_sea)
+        rough = float(ship.compute_rcs(geom, WAVELENGTH_M).info["rcs_dihedral_starboard_m2"][0])
+        np.testing.assert_allclose(rough / calm, np.exp(-((np.pi * wave_height_m * cos_sea / WAVELENGTH_M) ** 2)), rtol=1e-12)
 
     def test_heading_length_mismatch_raises(self):
         ship = _ship()                                                   # heading has 1 sample
@@ -145,6 +169,6 @@ class TestShipTargetComputeRcs:
     def test_invalid_heading_propagates_nan(self):
         # Heading parallel to surface normal -> bow re-orthogonalisation fails -> NaN RCS.
         bad_heading = np.array([[0.0, 0.0, 1.0]])
-        ship = ShipTarget(length_m=100.0, beam_m=15.0, freeboard_m=5.0, heading_eci=bad_heading)
+        ship = ShipTarget(length_m=100.0, beam_m=15.0, freeboard_m=5.0, heading_eci=bad_heading, ocean=CALM_SEA)
         result = ship.compute_rcs(_zenith_geometry(), WAVELENGTH_M)
         assert np.isnan(result.rcs_m2[0])

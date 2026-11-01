@@ -155,6 +155,13 @@ Corrections made by the audit
        angles seen far from the reflection point.
      - Use the union of the waterline rectangle swept :math:`H\tan\theta` away from the transmitter and
        away from the receiver, oriented by the ship heading.
+   * - The hull-sea corner used a smooth metal sea.
+     - Two metal bounces return the transmitted circular sense, which the LHCP receiver rejects, yet the
+       full corner was counted. Seawater returns only its same-sense part (-35 to -27 dB at 25--40 deg
+       incidence), and sea roughness removes the coherent corner. In a rerun of three Ch11 backscatter
+       trials the median ship RCS was 12 dB too high.
+     - Scale each corner by :math:`|R_\mathrm{RR}(\theta_\mathrm{sea})|^2 e^{-\kappa}`, the seawater
+       same-sense reflectivity and the Rayleigh roughness loss at the incidence on the sea.
 
 Model maturity and suitable use
 -------------------------------

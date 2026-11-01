@@ -35,11 +35,11 @@ Summary
 
 ``ShipTarget`` models a ship as a simple box of metal surfaces and returns its radar cross-section. The
 hull is broken into **five flat plates** (deck, port side, starboard side, bow, stern) and **two
-hull-water dihedrals** (the right-angle corner where each side meets the sea, which are strong
-retroreflectors). Each plate uses the flat-plate formula and each dihedral the corner formula from
-:doc:`../functions/helpers`. The pieces add up without phase (non-coherently), and the ``info`` dict keeps
-the per-piece breakdown. This is an ideal-conductor engineering surrogate for aspect studies, not a
-validated absolute ship-RCS model.
+hull-water dihedrals** (the right-angle corner where each side meets the sea). Each plate uses the
+flat-plate formula and each dihedral the corner formula from :doc:`../functions/helpers`, with a seawater
+sea leg. The pieces add up without phase (non-coherently), and the ``info`` dict keeps the per-piece
+breakdown. This is an ideal-conductor engineering surrogate for aspect studies, not a validated absolute
+ship-RCS model.
 
 Interface
 ^^^^^^^^^
@@ -59,6 +59,10 @@ Interface
    * -
      - ``heading_eci``
      - Per-sample heading direction ``(n, 3)`` (sets the bow axis).
+     - --
+   * -
+     - ``ocean``
+     - The ``OceanTarget`` sea state (wave height, temperature, salinity) for the sea leg of the corners.
      - --
    * - **Inputs** (``compute_rcs``)
      - ``geometry`` / ``wavelength_m``
@@ -86,13 +90,32 @@ Each sample builds a ship frame from the heading and the local up direction:
    \hat{s} = \hat{b} \times \hat{m},
 
 i.e. bow :math:`\hat{b}` (forward), mast :math:`\hat{m}` (up), and starboard :math:`\hat{s}` (right). The
-five plates and two dihedrals are placed in this frame, each evaluated with its own bistatic visibility, and
-summed:
+five plates and two dihedrals are placed in this frame, each evaluated with its own bistatic visibility.
+
+The sea leg of the corner
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The dihedral formula :math:`\sigma_\mathrm{dihedral}` has two metal legs. The hull leg is metal, but the
+other leg is the sea. A metal bounce reverses the sense of circular polarisation. The transmitted RHCP signal
+therefore meets the sea as RHCP on one path and as LHCP after the hull bounce on the other. After both bounces,
+only the part that the sea reflects in the same sense arrives as LHCP at the receiver. Sea roughness removes the
+coherent corner, as it removes the coherent glint (:doc:`ocean_target`). Each corner is therefore
+
+.. math::
+   :label: ship-sea-leg
+
+   \sigma_\mathrm{corner} = |R_\mathrm{RR}(\theta_\mathrm{sea})|^2\, e^{-\kappa}\, \sigma_\mathrm{dihedral}, \qquad
+   \kappa = \left(\frac{4\pi\,\sigma_h\cos\theta_\mathrm{sea}}{\lambda}\right)^2,
+
+with :math:`\theta_\mathrm{sea}` the incidence angle of the transmitter ray on the sea, :math:`|R_\mathrm{RR}|^2`
+the same-sense (RHCP-to-RHCP) power reflectivity of seawater, and :math:`\sigma_h \simeq H_s/4` the RMS surface
+height. The hull bounce keeps the vertical component of the ray, so :math:`\theta_\mathrm{sea}` is the same on
+both paths. The pieces add up as
 
 .. math::
    :label: ship-sum
 
-   \sigma_\mathrm{ship} = \sum_{\text{5 plates}} \sigma_\mathrm{plate} + \sum_{\text{2 dihedrals}} \sigma_\mathrm{dihedral}.
+   \sigma_\mathrm{ship} = \sum_{\text{5 plates}} \sigma_\mathrm{plate} + \sum_{\text{2 corners}} \sigma_\mathrm{corner}.
 
 .. autoclass:: object_definitions.ShipTarget_def.ShipTarget
    :members:
@@ -104,9 +127,9 @@ Module Assumptions and Limitations
   curved hulls, and material effects are not modelled.
 - **Ideal PEC and scalar response.** Plates are perfectly conducting and use a scalar physical-optics
   form factor. Polarisation matrices, diffraction, creeping waves and edge interactions are omitted.
-- **Simplified dihedral.** The dihedral uses a scalar two-path double bounce with flat, smooth, perfectly
-  conducting legs and binary open-wedge visibility. It omits the polarimetric response, edge diffraction
-  and coupling to a rough moving sea, so it is an upper bound for the hull-sea corner.
+- **Simplified corner.** The corner uses a scalar two-path double bounce with a flat metal hull leg and
+  binary open-wedge visibility; the sea leg keeps only its coherent same-sense reflection. It omits edge
+  diffraction and the diffuse sea scatter that the hull reflects back.
 - **Non-coherent sum.** Components add in power, not amplitude, so interference between facets is not
   captured.
 - **Above-waterline only.** Only the freeboard (above-water) part contributes; the submerged hull does not
@@ -128,7 +151,7 @@ Validation and Tests
      - What it pins
    * - ``tests/test_ship_target.py``
      - Construction and validation; the body-frame build; the per-plate / per-dihedral RCS and their sum;
-       back-face and wedge visibility behaviour.
+       back-face and wedge visibility behaviour; the seawater sea leg and its roughness loss.
 
 User Guide
 ----------

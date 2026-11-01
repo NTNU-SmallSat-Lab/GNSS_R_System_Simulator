@@ -768,7 +768,7 @@ class MovingTargetDetection:
         _ship_pos_eci, _ship_surface_normal_eci, geometry, rx_gain_dbi = ship_point
         wavelength_m = Constants.SPEED_OF_LIGHT / frequency_hz
 
-        ship_target = ShipTarget.from_dict(self.ship_dimensions, heading_eci=heading_eci[np.newaxis, :])
+        ship_target = ShipTarget.from_dict(self.ship_dimensions, heading_eci=heading_eci[np.newaxis, :], ocean=OceanTarget.from_settings(self.link_budget_settings))
         rcs_result = ship_target.compute_rcs(geometry, wavelength_m)
         rcs_ship_m2 = float(rcs_result.rcs_m2[0])
         if not np.isfinite(rcs_ship_m2):

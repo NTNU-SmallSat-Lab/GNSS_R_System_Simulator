@@ -4,7 +4,8 @@ Plates:    deck, port hull, starboard hull, bow, stern
 Dihedrals: port hull-water, starboard hull-water (along the waterline on each side)
 
 Each plate uses the PO bistatic RCS in `functions.ship_physics.flat_plate_rcs` with back-face culling.
-Each dihedral uses the 90-deg corner RCS in `functions.ship_physics.dihedral_rcs` with wedge visibility.
+Each dihedral uses the 90-deg corner RCS in `functions.ship_physics.dihedral_rcs` with wedge visibility,
+times the seawater sea-leg factor |R_RR|^2 exp(-kappa).
 Contributions sum non-coherently; the `info` dict breaks the total down per component.
 
 The ship body frame is built per sample:
@@ -18,15 +19,18 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from functions.ocean_physics import circular_pol_reflectivities, seawater_permittivity
 from functions.ship_physics import dihedral_rcs, flat_plate_rcs
+from object_definitions.Constants_def import Constants
 from object_definitions.Target_def import Target, TargetRcs
 
 if TYPE_CHECKING:
     from functions.link_budget import BistaticGeometry
+    from object_definitions.OceanTarget_def import OceanTarget
 
 
 class ShipTarget(Target):
-    """Ship RCS parameterised by length, beam, freeboard, and per-sample heading vectors."""
+    """Ship RCS parameterised by length, beam, freeboard, per-sample heading vectors, and the sea it floats on."""
 
     def __init__(
         self,
@@ -34,6 +38,7 @@ class ShipTarget(Target):
         beam_m: float,
         freeboard_m: float,
         heading_eci: np.ndarray,
+        ocean: OceanTarget,
     ) -> None:
         if length_m <= 0.0:
             raise ValueError(f"length_m must be > 0; got {length_m}")
@@ -50,15 +55,17 @@ class ShipTarget(Target):
         self.beam_m = float(beam_m)
         self.freeboard_m = float(freeboard_m)
         self.heading_eci = heading_eci
+        self.ocean = ocean
 
     @classmethod
-    def from_dict(cls, ship_dict: dict, heading_eci: np.ndarray) -> ShipTarget:
-        """Build a ShipTarget from the INI-parsed dimensions dict and a heading array."""
+    def from_dict(cls, ship_dict: dict, heading_eci: np.ndarray, ocean: OceanTarget) -> ShipTarget:
+        """Build a ShipTarget from the INI-parsed dimensions dict, a heading array and the sea state."""
         return cls(
             length_m=ship_dict["length_m"],
             beam_m=ship_dict["beam_m"],
             freeboard_m=ship_dict["freeboard_m"],
             heading_eci=heading_eci,
+            ocean=ocean,
         )
 
     def compute_rcs(self, geometry: BistaticGeometry, wavelength_m: float, illuminated_area_m2: np.ndarray | None = None) -> TargetRcs:
@@ -124,8 +131,16 @@ class ShipTarget(Target):
             per_plate_rcs[name] = sigma
             rcs_plates_total = rcs_plates_total + np.where(np.isfinite(sigma), sigma, 0.0)
 
+        # Sea leg of the corner: seawater, not metal. The double bounce keeps the circular sense, so only the
+        # sea's same-sense amplitude R_RR reaches the LHCP receiver; roughness removes the coherent part by exp(-kappa).
+        cos_sea = np.clip(np.einsum("ij,ij->i", -n_tx2s, mast_hat), 0.0, 1.0)     # incidence cosine on the sea leg, both path orders
+        eps_r = seawater_permittivity(Constants.SPEED_OF_LIGHT / wavelength_m, self.ocean.sea_temperature_c, self.ocean.salinity_psu)
+        _, R_RR_sq = circular_pol_reflectivities(np.arccos(cos_sea), eps_r)
+        kappa = (4.0 * np.pi * (self.ocean.wave_height_m / 4.0) * cos_sea / wavelength_m) ** 2   # Rayleigh roughness, sigma_h = H_s / 4
+        sea_leg = R_RR_sq * np.exp(-kappa)
+
         # Hull-water dihedrals: edge along bow, legs are hull-side outward and the local water surface up.
-        rcs_dihedral_stbd = dihedral_rcs(
+        rcs_dihedral_stbd = sea_leg * dihedral_rcs(
             edge_hat=bow_hat,
             leg_1_normal=starboard_hat,
             leg_2_normal=mast_hat,
@@ -137,7 +152,7 @@ class ShipTarget(Target):
         )
         rcs_dihedral_stbd = np.where(valid_axes, rcs_dihedral_stbd, np.nan)
 
-        rcs_dihedral_port = dihedral_rcs(
+        rcs_dihedral_port = sea_leg * dihedral_rcs(
             edge_hat=bow_hat,
             leg_1_normal=port_hat,
             leg_2_normal=mast_hat,
