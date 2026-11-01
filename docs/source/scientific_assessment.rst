@@ -138,6 +138,12 @@ Corrections made by the audit
        23--33 dB more ocean power than one cell.
      - Sample the delay-Doppler cell centred on the specular point with the ship-cell sampler; backscatter
        keeps the first-order cell at the BRP.
+   * - The flat-plate RCS used the obliquity :math:`\cos\alpha` (plate normal to bistatic bisector).
+     - Bistatic mirror flashes kept the monostatic peak :math:`4\pi A^2/\lambda^2`: the plate RCS was high
+       by :math:`1/\cos^2(\beta/2)`, 1.2 dB at :math:`\beta = 60` deg.
+     - Use the physical-optics projected aperture
+       :math:`(\cos\theta_i + \cos\theta_s)/2 = \cos\alpha\cos(\beta/2)`, the same obliquity as the
+       dihedral paths (tested for a bistatic mirror flash).
 
 Model maturity and suitable use
 -------------------------------

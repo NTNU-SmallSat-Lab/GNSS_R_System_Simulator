@@ -38,11 +38,13 @@ cross-section
 .. math::
    :label: ship-plate
 
-   \sigma_\mathrm{plate} = \frac{4\pi A^2}{\lambda^2}\cos^2\left(\alpha\right)\;
+   \sigma_\mathrm{plate} = \frac{4\pi A^2}{\lambda^2}\left(\frac{\cos\theta_i + \cos\theta_s}{2}\right)^2\;
    \operatorname{sinc}^2(u_1)\,\operatorname{sinc}^2(u_2),
 
-for plate area :math:`A`, the angle :math:`\alpha` between the plate normal and the bistatic bisector, and
-the edge form-factor arguments :math:`u_i`. The dihedral double bounce keeps the edge-parallel direction
+for plate area :math:`A`, the angles :math:`\theta_i` / :math:`\theta_s` of the directions to Tx / Rx from the
+plate normal, and the edge form-factor arguments :math:`u_i`. The obliquity factor is the projected aperture,
+:math:`(\cos\theta_i + \cos\theta_s)/2 = \cos\alpha\,\cos(\beta/2)`, with :math:`\alpha` the angle between the
+plate normal and the bistatic bisector and :math:`\beta` the bistatic angle. The dihedral double bounce keeps the edge-parallel direction
 component and reverses both leg-normal components. Each of the two paths (leg 2 then leg 1, and leg 1 then
 leg 2) is a geometric-optics first bounce and a physical-optics last bounce, and the two paths add
 coherently,

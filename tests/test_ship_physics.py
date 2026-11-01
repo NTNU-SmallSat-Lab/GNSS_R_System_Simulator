@@ -69,6 +69,22 @@ class TestFlatPlateRcs:
         expected = peak * np.cos(theta) ** 2 * np.sinc(2.0 * L * np.sin(theta) / WAVELENGTH_M) ** 2
         np.testing.assert_allclose(sigma, [expected], rtol=1e-10)
 
+    def test_bistatic_specular_flash_has_projected_aperture(self):
+        # Mirror geometry at 30 deg incidence: the normal is the bisector (alpha = 0), but the plate is seen
+        # at 30 deg from both sides, so the peak is 4 pi (A cos theta)^2 / lambda^2.
+        theta = np.deg2rad(30.0)
+        n_tx2s = np.array([[np.sin(theta), 0.0, -np.cos(theta)]])
+        n_s2rx = np.array([[np.sin(theta), 0.0, np.cos(theta)]])
+        L = 1.0
+        sigma = flat_plate_rcs(
+            n_plate=EZ, edge_1=EX, edge_2=EY,
+            length_edge_1_m=L, length_edge_2_m=L,
+            n_tx2s=n_tx2s, n_s2rx=n_s2rx,
+            wavelength_m=WAVELENGTH_M,
+        )
+        expected = 4.0 * np.pi * (L * L * np.cos(theta)) ** 2 / WAVELENGTH_M**2
+        np.testing.assert_allclose(sigma, [expected], rtol=1e-12)
+
     def test_vectorised_over_samples(self):
         # Two samples: one normal-incidence, one back-face. Returns are independent.
         n_plate = np.vstack([EZ, EZ])

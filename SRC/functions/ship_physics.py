@@ -24,11 +24,12 @@ def flat_plate_rcs(
 ) -> np.ndarray:
     """Bistatic RCS of a rectangular PEC flat plate via physical optics.
 
-    The cross-section is ``sigma = (4 pi A^2 / lambda^2) * cos^2(alpha) * sinc^2(u_1) * sinc^2(u_2) *
-    visibility``, with plate area ``A = length_edge_1_m * length_edge_2_m``, ``alpha`` the angle between the
-    plate normal and the bistatic bisector of ``n_s2rx - n_tx2s``, ``u_i = length_edge_i_m / lambda *
-    (n_tx2s - n_s2rx) . edge_i``, and a back-face visibility that is 1 only when the plate normal faces both
-    Tx and Rx.
+    The cross-section is ``sigma = (4 pi A^2 / lambda^2) * ((cos theta_i + cos theta_s) / 2)^2 * sinc^2(u_1) *
+    sinc^2(u_2) * visibility``, with plate area ``A = length_edge_1_m * length_edge_2_m``, ``theta_i`` / ``theta_s``
+    the angles of the directions to Tx / Rx from the plate normal (the obliquity equals ``cos(alpha) cos(beta / 2)``,
+    ``alpha`` the angle between the plate normal and the bistatic bisector, ``beta`` the bistatic angle),
+    ``u_i = length_edge_i_m / lambda * (n_tx2s - n_s2rx) . edge_i``, and a back-face visibility that is 1 only when
+    the plate normal faces both Tx and Rx.
 
     Parameters
     ----------
@@ -58,16 +59,8 @@ def flat_plate_rcs(
     if not visible.any():
         return rcs
 
-    # Bistatic bisector direction (specular "mirror normal" for this geometry).
-    bisector = n_s2rx - n_tx2s                              # (n, 3)
-    bisector_mag = np.linalg.norm(bisector, axis=1)
-    have_bisector = visible & (bisector_mag > 1e-12)
-    if not have_bisector.any():
-        return rcs
-
-    bisector_hat = np.zeros_like(bisector)
-    bisector_hat[have_bisector] = bisector[have_bisector] / bisector_mag[have_bisector, None]
-    cos_alpha = np.einsum("ij,ij->i", n_plate, bisector_hat)   # plate normal . bisector direction
+    # Physical-optics obliquity: projected aperture (cos theta_i + cos theta_s) / 2 = cos(alpha) cos(beta / 2).
+    obliquity = 0.5 * (cos_to_tx + cos_to_rx)
 
     # Form factor: bistatic path mismatch projected onto plate edges.
     delta = n_tx2s - n_s2rx                                 # (n, 3); -bisector*|...|
@@ -77,11 +70,11 @@ def flat_plate_rcs(
     area = length_edge_1_m * length_edge_2_m
     sigma_peak = 4.0 * np.pi * area**2 / wavelength_m**2
 
-    rcs[have_bisector] = (
+    rcs[visible] = (
         sigma_peak
-        * cos_alpha[have_bisector] ** 2
-        * np.sinc(u_1[have_bisector]) ** 2     # np.sinc(x) = sin(pi x)/(pi x), matches PO form factor
-        * np.sinc(u_2[have_bisector]) ** 2
+        * obliquity[visible] ** 2
+        * np.sinc(u_1[visible]) ** 2           # np.sinc(x) = sin(pi x)/(pi x), matches PO form factor
+        * np.sinc(u_2[visible]) ** 2
     )
     return rcs
 
