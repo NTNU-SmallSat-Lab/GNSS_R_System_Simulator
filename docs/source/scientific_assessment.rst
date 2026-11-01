@@ -144,6 +144,11 @@ Corrections made by the audit
      - Use the physical-optics projected aperture
        :math:`(\cos\theta_i + \cos\theta_s)/2 = \cos\alpha\cos(\beta/2)`, the same obliquity as the
        dihedral paths (tested for a bistatic mirror flash).
+   * - The scalar glistening area used the flat-Earth slope-to-surface Jacobian.
+     - Where the glistening area sets the clutter area (no antenna, footprint mode), the diffuse forward
+       power was 1.6--2.9 dB above the surface integral of the same NRCS on a sphere.
+     - Apply the spherical-Earth divergence :math:`D^2` of the coherent term to the glistening area; the
+       scalar term is then within 0.1--0.8 dB of that integral (3--15 m/s, 10--50 deg incidence).
 
 Model maturity and suitable use
 -------------------------------

@@ -154,12 +154,15 @@ a peak-equivalent area derived from the local slope-to-surface Jacobian. With re
 .. math::
    :label: ot-glistening-area
 
-   dA=4R_\mathrm{red}^2\,ds_x\,ds_y,\qquad
-   A_\mathrm{eff}=\frac{4R_\mathrm{red}^2}{P(0,0)}
-   =8\pi R_\mathrm{red}^2\sqrt{\sigma_u^2\sigma_c^2}.
+   dA=4R_\mathrm{red}^2 D^2\,ds_x\,ds_y,\qquad
+   A_\mathrm{eff}=\frac{4R_\mathrm{red}^2 D^2}{P(0,0)}
+   =8\pi R_\mathrm{red}^2 D^2\sqrt{\sigma_u^2\sigma_c^2}.
 
-Thus :math:`\sigma^0_\mathrm{peak}A_\mathrm{eff}` preserves the complete first-order geometric-optics
-integral. If the supplied footprint is smaller, the scalar fallback caps this effective area; patch
+On the curved Earth the mean-surface normal turns as the point moves away from the specular point, so the
+required facet slope grows faster than on a flat surface. This is the same divergence :math:`D^2` as in
+:eq:`ot-divergence`. Thus :math:`\sigma^0_\mathrm{peak}A_\mathrm{eff}` preserves the complete first-order
+geometric-optics integral, and in the smooth-surface limit it equals the coherent cross-section without
+the roughness loss. If the supplied footprint is smaller, the scalar fallback caps this effective area; patch
 integration is preferable because it evaluates range, gain and NRCS over the actual footprint.
 
 Bragg scattering
@@ -200,7 +203,8 @@ Module Assumptions and Limitations
 
 - **Coherent term gated to specular.** The specular reflection is only added where the surface itself is the
   specular reflector; it is zero off-specular, and collapses for any realistic wave height. Its
-  spherical-Earth divergence uses the mean Earth radius, not the local curvature of the ellipsoid.
+  spherical-Earth divergence, also applied to the glistening area, uses the mean Earth radius, not the
+  local curvature of the ellipsoid.
 - **Isotropic Bragg spectrum.** The short-wave spectrum at the Bragg wavenumber has no directional
   spreading; the upwind/crosswind asymmetry enters only through the large-scale facet slopes.
 - **Sea-state ranges.** Wind speed > 0; wave age between 0.84 and 5.0; temperature and salinity in the

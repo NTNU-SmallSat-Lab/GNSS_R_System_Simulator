@@ -311,13 +311,14 @@ class TestOceanTargetComputeRcs:
         a_rough = OceanTarget(1.0, 15.0, 0.0, 15.0, 35.0).compute_rcs(geom, 0.19).info["glistening_area_m2"][0]
         assert a_rough > a_calm
 
-    def test_uncapped_specular_go_integral_matches_flat_mirror_rcs(self):
+    def test_uncapped_specular_go_integral_matches_coherent_mirror_rcs(self):
         # At the specular peak, sigma0_peak * A_eff must integrate the normalized slope PDF:
-        # A_eff = 4 R_red^2 / P(0), hence the GO cross-section is 4 pi |R_RL|^2 R_red^2.
+        # A_eff = 4 R_red^2 D^2 / P(0), hence the GO cross-section is the coherent mirror 4 pi |R_RL|^2 R_red^2 D^2.
         geom = _mirror_geometry(theta_deg=20.0)
         result = _default_ocean().compute_rcs(geom, 0.19)
         reduced_range = geom.range_tx_m[0] * geom.range_rx_m[0] / (geom.range_tx_m[0] + geom.range_rx_m[0])
-        expected = 4.0 * np.pi * result.info["fresnel_reflectivity_RL_sq"][0] * reduced_range**2
+        d_sq = result.info["divergence_factor_sq"][0]          # 0.75 for this geometry
+        expected = 4.0 * np.pi * result.info["fresnel_reflectivity_RL_sq"][0] * reduced_range**2 * d_sq
         rcs_go = result.info["nrcs"][0] * result.info["effective_glistening_area_m2"][0]
         np.testing.assert_allclose(rcs_go, expected, rtol=1e-12)
         np.testing.assert_allclose(result.info["rcs_incoherent_m2"][0], rcs_go + result.info["rcs_bragg_m2"][0], rtol=1e-12)

@@ -16,7 +16,8 @@
       the facet slopes at L band
     - |R_pol|^2 is the RHCP -> LHCP power reflectivity at the carrier frequency, from a
       Klein-Swift seawater permittivity at the configured temperature and salinity
-    - A_glistening is the effective glistening-zone area at the specular peak. In scalar fallback
+    - A_glistening is the effective glistening-zone area at the specular peak, reduced by the same
+      spherical-Earth divergence D^2 as the coherent term. In scalar fallback
       mode this is capped by the receiver illuminated area when supplied so a narrow antenna beam
       does not collect the full analytic glistening zone. In LB-2b patch-integration mode, the
       link-budget layer supplies each finite surface patch as its own illuminated area and sums
@@ -212,14 +213,22 @@ class OceanTarget(Target):
         fresnel_radius_sq = wavelength_m * reduced_range                 # r_F^2 = lambda * R_t * R_r / (R_t + R_r)
         fresnel_area = np.pi * fresnel_radius_sq                         # A_F: first Fresnel zone footprint (diagnostic)
 
+        # Spherical-Earth divergence D^2: the convex surface defocuses the specular bundle (Coddington
+        # astigmatic mirror radii a_e cos(theta) in-plane, a_e / cos(theta) cross-plane; flat Earth
+        # a_e -> inf recovers D = 1).
+        cos_local = np.cos(theta_local_rad)
+        curvature_ratio = 2.0 * reduced_range / Constants.R_EARTH_MEAN    # 2 R_red / a_e
+        with np.errstate(divide="ignore", invalid="ignore"):              # cos -> 0 at grazing gives D^2 -> 0 cleanly
+            divergence_factor_sq = 1.0 / ((1.0 + curvature_ratio / cos_local) * (1.0 + curvature_ratio * cos_local))  # D^2
+
         # Peak-equivalent glistening area for the incoherent specular regime. Linearising the required
-        # facet slopes around the specular point gives dA = 4 R_red^2 ds_x ds_y. Therefore replacing
-        # the full GO surface integral by sigma0_peak * A_eff requires
-        # A_eff = 4 R_red^2 / P_slope(0) = 8 pi R_red^2 sqrt(var_u var_c).
+        # facet slopes around the specular point gives dA = 4 R_red^2 D^2 ds_x ds_y (the mean-surface
+        # normal turns with the curved Earth). Therefore replacing the full GO surface integral by
+        # sigma0_peak * A_eff requires A_eff = 4 R_red^2 D^2 / P_slope(0) = 8 pi R_red^2 D^2 sqrt(var_u var_c).
         cos_inc = np.cos(np.radians(incidence_deg))
         cos_inc_safe = np.clip(cos_inc, 0.05, 1.0)                        # cap below ~87 deg
         peak_slope_pdf = cox_munk_slope_pdf(0.0, 0.0, sigma_u_sq, sigma_c_sq)
-        glistening_area = 4.0 * reduced_range**2 / peak_slope_pdf
+        glistening_area = 4.0 * reduced_range**2 * divergence_factor_sq / peak_slope_pdf
 
         # NRCS from the Z-V geometric-optics formula (per-unit-area, dimensionless)
         geom_factor = np.full(n_samples, np.nan)
@@ -285,9 +294,7 @@ class OceanTarget(Target):
         # zero (the macroscopic surface IS the mirror). Off-specular geometries get sigma_coh = 0.
         # sigma_coh is the flat-mirror cross-section that reproduces the two-ray coherent power
         # Pr = Pt Gt Gr (lambda / (4 pi (R_t + R_r)))^2 |R|^2 through the bistatic radar equation,
-        # reduced by the spherical-Earth divergence D^2: the convex surface defocuses the specular
-        # bundle (Coddington astigmatic mirror radii a_e cos(theta) in-plane, a_e / cos(theta)
-        # cross-plane; flat Earth a_e -> inf recovers D = 1).
+        # reduced by the spherical-Earth divergence D^2.
         # The public sea-state input is significant wave height H_s. For a Gaussian sea,
         # H_s ~= 4 sigma_h, where sigma_h is the RMS height required by the Rayleigh factor.
         rms_surface_height_m = self.wave_height_m / 4.0
@@ -295,10 +302,6 @@ class OceanTarget(Target):
             4.0 * np.pi * rms_surface_height_m * np.cos(theta_local_rad) / wavelength_m
         ) ** 2                                                            # kappa = (4 pi sigma_h cos theta_local / lambda)^2
         coherent_mirror_rcs = 4.0 * np.pi * reduced_range ** 2           # 4 pi (R_t R_r / (R_t + R_r))^2
-        cos_local = np.cos(theta_local_rad)
-        curvature_ratio = 2.0 * reduced_range / Constants.R_EARTH_MEAN    # 2 R_red / a_e
-        with np.errstate(divide="ignore", invalid="ignore"):              # cos -> 0 at grazing gives D^2 -> 0 cleanly
-            divergence_factor_sq = 1.0 / ((1.0 + curvature_ratio / cos_local) * (1.0 + curvature_ratio * cos_local))  # D^2
         slope_mag_sq = s_u ** 2 + s_c ** 2
         at_specular = np.isfinite(slope_mag_sq) & (slope_mag_sq < 1.0e-6) # required facet slope ~ 0
         sigma_coherent = np.where(
