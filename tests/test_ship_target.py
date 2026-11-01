@@ -76,6 +76,8 @@ class TestShipTargetComputeRcs:
             "rcs_dihedrals_diffuse_m2",
             "rcs_dihedral_starboard_m2",
             "rcs_dihedral_port_m2",
+            "rcs_dihedral_bow_m2",
+            "rcs_dihedral_stern_m2",
             "rcs_per_plate_m2",
         ):
             assert key in result.info
@@ -119,11 +121,19 @@ class TestShipTargetComputeRcs:
         result = _ship().compute_rcs(_oblique_geometry(tx_off_x=1.0e7, rx_off_x=1.0e7), WAVELENGTH_M)
         per_plate = result.info["rcs_per_plate_m2"]
         plate_sum = sum(np.nan_to_num(per_plate[name][0]) for name in ("deck", "starboard", "port", "bow", "stern"))
-        dihedral_sum = (
-            np.nan_to_num(result.info["rcs_dihedral_starboard_m2"][0])
-            + np.nan_to_num(result.info["rcs_dihedral_port_m2"][0])
-        )
+        dihedral_sum = sum(np.nan_to_num(result.info[f"rcs_dihedral_{name}_m2"][0]) for name in ("starboard", "port", "bow", "stern"))
         np.testing.assert_allclose(result.rcs_m2[0], plate_sum + dihedral_sum, rtol=1e-12)
+
+    def test_bow_corner_is_a_side_corner_with_the_beam_as_edge(self):
+        # Tx and Rx ahead and to starboard. Swapping length and beam and turning the heading to -x makes the
+        # starboard face point along +y, where the first ship's bow points: both corners must be identical.
+        surf, up = np.zeros((1, 3)), np.array([[0.0, 0.0, 1.0]])
+        geom = build_bistatic_geometry(np.array([[0.3e7], [1.2e7], [2.0e7]]), np.array([[1.0e5], [4.0e5], [7.0e5]]), surf, up)
+        info = _ship().compute_rcs(geom, WAVELENGTH_M).info
+        turned = ShipTarget(length_m=15.0, beam_m=100.0, freeboard_m=5.0, heading_eci=np.array([[-1.0, 0.0, 0.0]]), ocean=CALM_SEA)
+        np.testing.assert_allclose(info["rcs_dihedral_bow_m2"][0], turned.compute_rcs(geom, WAVELENGTH_M).info["rcs_dihedral_starboard_m2"][0], rtol=1e-12)
+        assert float(info["rcs_dihedral_bow_m2"][0]) > 0.0
+        assert float(info["rcs_dihedral_stern_m2"][0]) == 0.0
 
     def test_dihedral_dominates_for_backscatter_at_l_band(self):
         # Tx and Rx on one line through the ship on the starboard side (backscatter geometry): on a calm sea the

@@ -168,6 +168,13 @@ Corrections made by the audit
        was 0--28 dBsm (median 8 dBsm) and above the plates in every geometry where it applies.
      - Add the same-sense ocean NRCS (geometric optics and two-scale Bragg) of the sea strip the hull
        mirrors, area :math:`L H\tan\theta\cos\phi`, for both path orders.
+   * - Only the two side corners of the box met the sea.
+     - The bow and the stern meet the sea in the same way. Seen from within about 30 deg of ahead or
+       astern, the box RCS was up to 25 dB too low at 35 deg incidence. In the same three-trial rerun the
+       bow or stern corner was stronger than the side corners in 50 of 122 ship evaluations, and the median
+       ship RCS was 7 dB too low.
+     - Add the bow and stern corners, with the beam as edge length and the same coherent and diffuse
+       terms as the side corners.
 
 Model maturity and suitable use
 -------------------------------

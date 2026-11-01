@@ -34,12 +34,12 @@ Summary
 ^^^^^^^
 
 ``ShipTarget`` models a ship as a simple box of metal surfaces and returns its radar cross-section. The
-hull is broken into **five flat plates** (deck, port side, starboard side, bow, stern) and **two
-hull-water dihedrals** (the right-angle corner where each side meets the sea). Each plate uses the
-flat-plate formula and each dihedral the corner formula from :doc:`../functions/helpers`, with a seawater
-sea leg and a diffuse part from the sea scatter that the hull mirrors. The pieces add up without phase (non-coherently), and the ``info`` dict keeps the per-piece
-breakdown. This is an ideal-conductor engineering surrogate for aspect studies, not a validated absolute
-ship-RCS model.
+hull is broken into **five flat plates** (deck, port side, starboard side, bow, stern) and **four
+hull-water dihedrals** (the right-angle corner where each side, the bow and the stern meet the sea). Each
+plate uses the flat-plate formula and each dihedral the corner formula from :doc:`../functions/helpers`, with
+a seawater sea leg and a diffuse part from the sea scatter that the hull mirrors. The pieces add up without
+phase (non-coherently), and the ``info`` dict keeps the per-piece breakdown. This is an ideal-conductor
+engineering surrogate for aspect studies, not a validated absolute ship-RCS model.
 
 Interface
 ^^^^^^^^^
@@ -90,7 +90,9 @@ Each sample builds a ship frame from the heading and the local up direction:
    \hat{s} = \hat{b} \times \hat{m},
 
 i.e. bow :math:`\hat{b}` (forward), mast :math:`\hat{m}` (up), and starboard :math:`\hat{s}` (right). The
-five plates and two dihedrals are placed in this frame, each evaluated with its own bistatic visibility.
+five plates and four dihedrals are placed in this frame, each evaluated with its own bistatic visibility. The
+side corners run along the ship length :math:`L` and the bow and stern corners along the beam :math:`B`; this
+edge length is :math:`L_\mathrm{e}`, and every corner is as high as the freeboard :math:`H`.
 
 The sea leg of the corner
 ^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -118,7 +120,7 @@ The diffuse corner
 A rough sea also scatters in all directions, and the hull mirrors part of this scatter to the receiver. This
 diffuse part of the corner survives the roughness. On the sea-first path, the sea scatters toward the image of
 the receiver in the hull plane. On the hull-first path, the sea is lit by the image of the transmitter. Each
-path sees the sea strip that the hull rectangle mirrors: the length :math:`L` times the width
+path sees the sea strip that the hull rectangle mirrors: the edge length :math:`L_\mathrm{e}` times the width
 :math:`H\tan\theta_v\cos\phi_v`, with :math:`\theta_v` the angle of the receiver (:math:`v = \mathrm{Rx}`) or of
 the transmitter (:math:`v = \mathrm{Tx}`) from the vertical and :math:`\phi_v` its azimuth from the hull normal.
 Only the same-sense sea scatter ends as LHCP, so
@@ -126,7 +128,7 @@ Only the same-sense sea scatter ends as LHCP, so
 .. math::
    :label: ship-diffuse-corner
 
-   \sigma_\mathrm{diff} = L H \sum_{v\,\in\,\{\mathrm{Rx},\,\mathrm{Tx}\}} \tan\theta_v \cos\phi_v\;
+   \sigma_\mathrm{diff} = L_\mathrm{e} H \sum_{v\,\in\,\{\mathrm{Rx},\,\mathrm{Tx}\}} \tan\theta_v \cos\phi_v\;
    \sigma^0_\mathrm{RR}(v),
 
 with :math:`\sigma^0_\mathrm{RR}(v)` the same-sense ocean NRCS of :doc:`ocean_target` (geometric optics with
@@ -139,7 +141,7 @@ transmitter and the receiver on the outward side of the hull. The pieces add up 
    :label: ship-sum
 
    \sigma_\mathrm{ship} = \sum_{\text{5 plates}} \sigma_\mathrm{plate}
-   + \sum_{\text{2 corners}} \left(\sigma_\mathrm{coh} + \sigma_\mathrm{diff}\right).
+   + \sum_{\text{4 corners}} \left(\sigma_\mathrm{coh} + \sigma_\mathrm{diff}\right).
 
 .. autoclass:: object_definitions.ShipTarget_def.ShipTarget
    :members:
@@ -177,7 +179,8 @@ Validation and Tests
    * - ``tests/test_ship_target.py``
      - Construction and validation; the body-frame build; the per-plate / per-dihedral RCS and their sum;
        back-face and wedge visibility behaviour; the seawater sea leg and its roughness loss; the diffuse
-       corner (mirrored strip, same-sense ocean NRCS) and its visibility.
+       corner (mirrored strip, same-sense ocean NRCS) and its visibility; the bow corner as a side corner
+       of beam length.
 
 User Guide
 ----------

@@ -1,7 +1,7 @@
-"""Ship RCS model: rectangular hull broken into five flat plates plus two hull-water dihedrals.
+"""Ship RCS model: rectangular hull broken into five flat plates plus four hull-water dihedrals.
 
 Plates:    deck, port hull, starboard hull, bow, stern
-Dihedrals: port hull-water, starboard hull-water (along the waterline on each side)
+Dihedrals: starboard, port, bow and stern hull-water (along the waterline of each hull face)
 
 Each plate uses the PO bistatic RCS in `functions.ship_physics.flat_plate_rcs` with back-face culling.
 Each dihedral uses the 90-deg corner RCS in `functions.ship_physics.dihedral_rcs` with wedge visibility,
@@ -71,7 +71,7 @@ class ShipTarget(Target):
         )
 
     def compute_rcs(self, geometry: BistaticGeometry, wavelength_m: float, illuminated_area_m2: np.ndarray | None = None) -> TargetRcs:
-        """Per-sample ship RCS as the non-coherent sum of five plates and two hull-water dihedrals.
+        """Per-sample ship RCS as the non-coherent sum of five plates and four hull-water dihedrals.
 
         ``illuminated_area_m2`` is ignored: a ship is a point target with an absolute RCS. The ``info``
         dict breaks the total down per plate and per dihedral.
@@ -141,37 +141,33 @@ class ShipTarget(Target):
         kappa = (4.0 * np.pi * (self.ocean.wave_height_m / 4.0) * cos_sea / wavelength_m) ** 2   # Rayleigh roughness, sigma_h = H_s / 4
         sea_leg = R_RR_sq * np.exp(-kappa)
 
-        # Hull-water dihedrals: edge along bow, legs are hull-side outward and the local water surface up.
-        diffuse_stbd = self._diffuse_corner_rcs(geometry, starboard_hat, wavelength_m)
-        diffuse_port = self._diffuse_corner_rcs(geometry, port_hat, wavelength_m)
-        rcs_dihedral_stbd = diffuse_stbd + sea_leg * dihedral_rcs(
-            edge_hat=bow_hat,
-            leg_1_normal=starboard_hat,
-            leg_2_normal=mast_hat,
-            length_edge_m=self.length_m,
-            leg_dimension_m=self.freeboard_m,
-            n_tx2s=n_tx2s,
-            n_s2rx=n_s2rx,
-            wavelength_m=wavelength_m,
-        )
-        rcs_dihedral_stbd = np.where(valid_axes, rcs_dihedral_stbd, np.nan)
+        # Hull-water dihedrals: (name, hull-leg outward normal, edge, edge length); the other leg is the local water surface.
+        corner_specs = [
+            ("starboard", starboard_hat, bow_hat,       self.length_m),
+            ("port",      port_hat,      bow_hat,       self.length_m),
+            ("bow",       bow_hat,       starboard_hat, self.beam_m),
+            ("stern",     stern_hat,     starboard_hat, self.beam_m),
+        ]
 
-        rcs_dihedral_port = diffuse_port + sea_leg * dihedral_rcs(
-            edge_hat=bow_hat,
-            leg_1_normal=port_hat,
-            leg_2_normal=mast_hat,
-            length_edge_m=self.length_m,
-            leg_dimension_m=self.freeboard_m,
-            n_tx2s=n_tx2s,
-            n_s2rx=n_s2rx,
-            wavelength_m=wavelength_m,
-        )
-        rcs_dihedral_port = np.where(valid_axes, rcs_dihedral_port, np.nan)
-
-        rcs_dihedrals_total = (
-            np.where(np.isfinite(rcs_dihedral_stbd), rcs_dihedral_stbd, 0.0)
-            + np.where(np.isfinite(rcs_dihedral_port), rcs_dihedral_port, 0.0)
-        )
+        per_corner_rcs: dict[str, np.ndarray] = {}
+        rcs_dihedrals_total = np.zeros(n_samples, dtype=float)
+        rcs_diffuse_total = np.zeros(n_samples, dtype=float)
+        for name, n_hull, edge_hat, len_edge in corner_specs:
+            diffuse = self._diffuse_corner_rcs(geometry, n_hull, len_edge, wavelength_m)
+            sigma = diffuse + sea_leg * dihedral_rcs(
+                edge_hat=edge_hat,
+                leg_1_normal=n_hull,
+                leg_2_normal=mast_hat,
+                length_edge_m=len_edge,
+                leg_dimension_m=self.freeboard_m,
+                n_tx2s=n_tx2s,
+                n_s2rx=n_s2rx,
+                wavelength_m=wavelength_m,
+            )
+            sigma = np.where(valid_axes, sigma, np.nan)
+            per_corner_rcs[f"rcs_dihedral_{name}_m2"] = sigma
+            rcs_dihedrals_total = rcs_dihedrals_total + np.where(np.isfinite(sigma), sigma, 0.0)
+            rcs_diffuse_total = rcs_diffuse_total + diffuse
 
         rcs_total = rcs_plates_total + rcs_dihedrals_total
         rcs_total = np.where(valid_axes, rcs_total, np.nan)
@@ -181,14 +177,13 @@ class ShipTarget(Target):
             info={
                 "rcs_plates_total_m2": np.where(valid_axes, rcs_plates_total, np.nan),
                 "rcs_dihedrals_total_m2": np.where(valid_axes, rcs_dihedrals_total, np.nan),
-                "rcs_dihedrals_diffuse_m2": np.where(valid_axes, diffuse_stbd + diffuse_port, np.nan),
-                "rcs_dihedral_starboard_m2": rcs_dihedral_stbd,
-                "rcs_dihedral_port_m2": rcs_dihedral_port,
+                "rcs_dihedrals_diffuse_m2": np.where(valid_axes, rcs_diffuse_total, np.nan),
+                **per_corner_rcs,
                 "rcs_per_plate_m2": per_plate_rcs,
             },
         )
 
-    def _diffuse_corner_rcs(self, geometry: BistaticGeometry, hull_hat: np.ndarray, wavelength_m: float) -> np.ndarray:
+    def _diffuse_corner_rcs(self, geometry: BistaticGeometry, hull_hat: np.ndarray, edge_length_m: float, wavelength_m: float) -> np.ndarray:
         """Diffuse hull-sea corner: same-sense sea scatter that reaches Rx through the hull mirror, both path orders."""
         up, to_tx, to_rx = geometry.n_surface, -geometry.n_tx2s, geometry.n_s2rx
         a_hull, b_hull = np.einsum("ij,ij->i", to_tx, hull_hat), np.einsum("ij,ij->i", to_rx, hull_hat)
@@ -207,5 +202,5 @@ class ShipTarget(Target):
             path = build_bistatic_geometry((range_tx * to_tx_path).T, (range_rx * to_rx_path).T, np.zeros_like(hull), up[vis])
             info = self.ocean.compute_rcs(path, wavelength_m).info
             nrcs_rr = info["nrcs"] * info["fresnel_reflectivity_RR_sq"] / info["fresnel_reflectivity_RL_sq"] + info["nrcs_bragg_RR"]   # same-sense GO + Bragg
-            rcs[vis] += nrcs_rr * self.length_m * self.freeboard_m * tan_cos      # sea strip the hull mirrors: L H tan(theta) cos(phi)
+            rcs[vis] += nrcs_rr * edge_length_m * self.freeboard_m * tan_cos      # sea strip the hull mirrors: L_e H tan(theta) cos(phi)
         return rcs

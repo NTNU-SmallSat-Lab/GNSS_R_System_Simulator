@@ -60,7 +60,7 @@ and sums the sea power with the NRCS and the Rx gain (beam steered at the BRP) o
 Finding a ship
 --------------
 
-The ship's own return comes from its flat sides and the corners where its sides meet the sea
+The ship's own return comes from its flat faces and the corners where its sides, bow and stern meet the sea
 (:doc:`../Documentation/object_definitions/ship_target`). Because the ship and the sea
 share the same path here, they can be compared directly. The simulator forms the signal-to-clutter ratio
 and the signal-to-clutter-plus-noise ratio,
