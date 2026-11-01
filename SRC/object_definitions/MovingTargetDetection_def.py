@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pymap3d
 from shapely.errors import GEOSException
-from shapely.geometry import MultiPolygon, Point, Polygon, box
+from shapely.geometry import MultiPoint, MultiPolygon, Point, Polygon, box
 from shapely.ops import unary_union
 from shapely.validation import explain_validity
 from tqdm import tqdm
@@ -580,7 +580,7 @@ class MovingTargetDetection:
                                         self._populate_detection_metrics(possible_target_detection)
                                     elif self.reflection_mode == "specular" and self.ship_dimensions is not None:
                                         # Forward-scatter detection: the ship's signature is the change it induces in the
-                                        # ocean glint by occulting its waterline-area patch (delta_Pr = -shadow power).
+                                        # ocean glint by occulting the sea it hides (delta_Pr = -shadow power).
                                         ship_position_ll = (pos_tgt_i.y, pos_tgt_i.x)
                                         pr_shadow_w, _rcs_shadow_m2, shadow_noise_power_w = self._compute_forward_shadow_delta_pr_at_event(
                                             refl_obj, reflection_index, frequency_hz, tx_eirp_dbw, time_tgt_i, ship_position_ll,
@@ -1009,17 +1009,22 @@ class MovingTargetDetection:
         Forward-scatter shadowing (specular mode): the ocean glint power the ship occults.
 
         Builds the bistatic geometry at the ship position, takes the ocean *incoherent* (diffuse)
-        RCS over the ship's waterline area (length x beam), and runs the bistatic link budget. The
-        result is the glint power that patch of sea would have returned; the detectable forward
-        change is delta_Pr = -pr_shadow. The coherent-glint shadow (calm sea, ship at the specular
-        point) is a non-linear field regime deferred as a refinement; for any non-trivial sea state
-        the forward return is the diffuse term used here. Returns (pr_shadow_w, ocean_rcs_shadow_m2,
-        noise_power_w); all NaN if geometry is invalid.
+        RCS over the sea the box hides (the union of its shadows toward the Tx and toward the Rx: the
+        waterline area plus the strips its freeboard hides), and runs the bistatic link budget. The
+        result is the glint power that sea would have returned; the detectable forward change is
+        delta_Pr = -pr_shadow. The
+        coherent-glint shadow (calm sea, ship at the specular point) is a non-linear field regime
+        deferred as a refinement; for any non-trivial sea state the forward return is the diffuse term
+        used here. Returns (pr_shadow_w, ocean_rcs_shadow_m2, noise_power_w); all NaN if the heading or
+        geometry is invalid.
         """
         nan_result = (float("nan"), float("nan"), float("nan"))
         if self.ship_dimensions is None:
             return nan_result
-        ship_area_m2 = float(self.ship_dimensions["length_m"]) * float(self.ship_dimensions["beam_m"])  # waterline plan area
+        heading_eci = self._compute_ship_heading_eci(detection_time)
+        if heading_eci is None:
+            return nan_result
+        length_m, beam_m, freeboard_m = (float(self.ship_dimensions[key]) for key in ("length_m", "beam_m", "freeboard_m"))
 
         ship_lat, ship_lon = ship_position_ll
         ship_x_ecef, ship_y_ecef, ship_z_ecef = pymap3d.geodetic2ecef(ship_lat, ship_lon, 0.0)
@@ -1044,9 +1049,22 @@ class MovingTargetDetection:
         geometry = lb.build_bistatic_geometry(tx_pos, rx_pos, ship_pos_eci, surface_normal_eci)
         wavelength_m = Constants.SPEED_OF_LIGHT / frequency_hz
 
-        # Ocean diffuse RCS over the ship-sized patch: nrcs * min(glistening_area, ship_area) = nrcs * ship_area.
+        # Sea hidden by the box: the union of its shadows toward Tx and toward Rx. Each is the waterline
+        # rectangle swept H tan(theta) away from that direction, in the local (bow, starboard) plane.
+        up = geometry.n_surface[0]
+        bow = heading_eci - (heading_eci @ up) * up
+        bow /= np.linalg.norm(bow)
+        starboard = np.cross(bow, up)
+        waterline = np.array([[x, y] for x in (-0.5 * length_m, 0.5 * length_m) for y in (-0.5 * beam_m, 0.5 * beam_m)])
+        shadows = []
+        for to_v in (-geometry.n_tx2s[0], geometry.n_s2rx[0]):                         # surface -> Tx, surface -> Rx
+            sweep = -freeboard_m / (to_v @ up) * np.array([to_v @ bow, to_v @ starboard])   # deck-edge shadow offset, |sweep| = H tan(theta)
+            shadows.append(MultiPoint(np.vstack((waterline, waterline + sweep))).convex_hull)
+        shadow_area_m2 = shadows[0].union(shadows[1]).area
+
+        # Ocean diffuse RCS over the hidden sea: nrcs * min(glistening_area, shadow_area) = nrcs * shadow_area.
         ocean_target = OceanTarget.from_settings(self.link_budget_settings)
-        rcs_result = ocean_target.compute_rcs(geometry, wavelength_m, illuminated_area_m2=np.array([ship_area_m2]))
+        rcs_result = ocean_target.compute_rcs(geometry, wavelength_m, illuminated_area_m2=np.array([shadow_area_m2]))
         ocean_rcs_shadow_m2 = float(rcs_result.info["rcs_incoherent_m2"][0])
         if not np.isfinite(ocean_rcs_shadow_m2) or ocean_rcs_shadow_m2 <= 0.0:
             return nan_result

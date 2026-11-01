@@ -45,9 +45,17 @@ has its own carrier frequency and transmit EIRP). The score depends on the mode:
   .. math::
      :label: mtd-shadow
 
-     \Delta P_r = -\,P_\mathrm{ocean}(A_\mathrm{ship}),
+     \Delta P_r = -\,P_\mathrm{ocean}(A_\mathrm{shadow}),\qquad
+     A_\mathrm{shadow} = \left|S_\mathrm{Tx} \cup S_\mathrm{Rx}\right|,
 
-  the ocean glint power over the ship's waterline area (length x beam). It is reported on its own, as a
+  the ocean glint power over the sea the ship hides. For length :math:`L`, beam :math:`W` and freeboard
+  :math:`H`, :math:`S_\mathrm{Tx}` is the :math:`L \times W` waterline rectangle swept by
+  :math:`H\tan\theta_\mathrm{Tx}` away from the transmitter (the sea the hull leaves unlit) and
+  :math:`S_\mathrm{Rx}` the same rectangle swept by :math:`H\tan\theta_\mathrm{Rx}` away from the receiver
+  (the sea the hull hides from it), with :math:`\theta` the angle of each direction from the surface normal.
+  With the transmitter and receiver on opposite sides of the hull the two strips do not overlap, and
+  :math:`A_\mathrm{shadow} = LW + H\sum_{v} \tan\theta_v \left(L|\sin\phi_v| + W|\cos\phi_v|\right)`, with
+  :math:`\phi_v` the azimuth of direction :math:`v` from the bow. It is reported on its own, as a
   fraction of the ocean power in the ship's own delay-Doppler cell (of the footprint glint without the
   cell), and against the noise floor. This signal is faint by design and is
   reported honestly, with no flooring.

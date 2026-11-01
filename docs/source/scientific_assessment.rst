@@ -149,6 +149,12 @@ Corrections made by the audit
        power was 1.6--2.9 dB above the surface integral of the same NRCS on a sphere.
      - Apply the spherical-Earth divergence :math:`D^2` of the coherent term to the glistening area; the
        scalar term is then within 0.1--0.8 dB of that integral (3--15 m/s, 10--50 deg incidence).
+   * - The forward shadow used only the ship's waterline area.
+     - The freeboard also hides sea from the transmitter and from the receiver. For a 330 x 60 x 20 m box
+       the shadow power was 0.3--1.9 dB too small at 25--40 deg incidence, and up to 5 dB at the steep
+       angles seen far from the reflection point.
+     - Use the union of the waterline rectangle swept :math:`H\tan\theta` away from the transmitter and
+       away from the receiver, oriented by the ship heading.
 
 Model maturity and suitable use
 -------------------------------

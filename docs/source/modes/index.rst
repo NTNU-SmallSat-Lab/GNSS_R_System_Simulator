@@ -46,7 +46,7 @@ Side by side
      - Bright: the specular reflection plus the surrounding glistening zone.
      - Weak: small-ripple (Bragg) scatter.
    * - Detection metric
-     - Modelled loss of diffuse ocean return over the ship waterline area (shadow metric).
+     - Modelled loss of diffuse ocean return over the sea the ship hides (shadow metric).
      - Deterministic signal-to-clutter and signal-to-clutter-plus-noise metrics.
    * - INI setting
      - ``reflection_type = "specular"``

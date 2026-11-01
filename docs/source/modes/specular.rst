@@ -68,15 +68,17 @@ Finding a ship
 --------------
 
 In specular mode a ship does **not** add a bright glint of its own (that forward glint is not modelled
-yet). Instead the ship **shadows** the small patch of sea it sits on: the glint that patch would have sent
+yet). Instead the ship **shadows** the small patch of sea it hides: the glint that patch would have sent
 back is removed. So the thing to detect is a small **drop** in received power,
 
 .. math::
    :label: spec-shadow
 
-   \Delta P_r = -\,P_\mathrm{ocean}\left(A_\mathrm{ship}\right),
+   \Delta P_r = -\,P_\mathrm{ocean}\left(A_\mathrm{shadow}\right),
 
-the sea-glint power over the ship's waterline area :math:`A_\mathrm{ship}` (length times beam). This signal
+the sea-glint power over the hidden area :math:`A_\mathrm{shadow}`: the ship's waterline area (length times
+beam) plus the strips its freeboard hides from the transmitter and from the receiver, counted once where
+they overlap (:doc:`../Documentation/object_definitions/moving_target_detection`). This signal
 is faint by design. The simulator reports it on its own, as a fraction of the sea power in the ship's own
 delay-Doppler cell (the shadow dims only that cell; without the cell, of the full-footprint glint), and
 against the thermal-noise floor, with no flooring or inflation.

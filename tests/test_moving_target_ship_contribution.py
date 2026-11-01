@@ -89,11 +89,12 @@ class TestComputeShipHeadingEci:
         np.testing.assert_allclose(np.linalg.norm(heading), 1.0, atol=1e-10)
 
 
-def _build_refl_obj_mock():
+def _build_refl_obj_mock(theta_deg=0.0, rx_side=1.0):
     """One-sample refl_obj with the fields the helper reads from."""
     # The helpers rotate the ship's geodetic position (lat 0, lon 0) into ECI at the detection time,
-    # so the mock applies the same rotation and stacks Tx and Rx radially above the ship for a
-    # genuinely near-zenith forward geometry. The stored reflection point (the steering center) is
+    # so the mock applies the same rotation and places Tx and Rx above the ship at incidence theta_deg
+    # in the north-south plane: Tx south, Rx north (rx_side = 1, mirrored) or south with the Tx
+    # (rx_side = -1); 0 deg = both at zenith. The stored reflection point (the steering center) is
     # offset ~20 km east so tests can tell the center and ship look directions apart.
     detection_time = BASE_TIME + dt.timedelta(minutes=25)
     x_ecef, y_ecef, z_ecef = pymap3d.geodetic2ecef(0.0, 0.0, 0.0)
@@ -104,8 +105,10 @@ def _build_refl_obj_mock():
     east /= np.linalg.norm(east)
     refl_point = ship_eci + 2.0e4 * east                       # steering center ~20 km from the ship
     surf = (radius * refl_point / np.linalg.norm(refl_point)).reshape(1, 3)
-    tx_pos = (ship_eci + 2.0e7 * radial).reshape(3, 1)         # ~ GPS altitude, at zenith
-    rx_pos = (ship_eci + 7.0e5 * radial).reshape(3, 1)         # ~ LEO altitude, at zenith
+    north = np.column_stack(pymap3d.ecef2eci(np.array([0.0]), np.array([0.0]), np.array([1.0]), [detection_time]))[0]   # geodetic north at (0, 0)
+    th = np.radians(theta_deg)
+    tx_pos = (ship_eci + 2.0e7 * (np.cos(th) * radial - np.sin(th) * north)).reshape(3, 1)   # ~ GPS altitude
+    rx_pos = (ship_eci + 7.0e5 * (np.cos(th) * radial + rx_side * np.sin(th) * north)).reshape(3, 1)   # ~ LEO altitude
     rx_vel = (7_500.0 * east).reshape(3, 1)
     tx_vel = (3_900.0 * east).reshape(3, 1)
     return SimpleNamespace(
@@ -244,8 +247,9 @@ class TestForwardShadowDeltaPr:
         assert all(np.isnan(v) for v in result)
 
     def test_returns_finite_shadow_power_for_well_formed_event(self, mtd, detection_time):
-        # The ocean glint power the ship occults over its waterline area; finite and positive.
+        # The ocean glint power the ship occults; finite and positive.
         mtd.ship_dimensions = {"length_m": 100.0, "beam_m": 15.0, "freeboard_m": 5.0}
+        mtd.moving_target_object = _trajectory([(0.0, 0.1 * i) for i in range(5)])
         mtd.link_budget_settings = link_budget_settings()
         mtd.sat_antenna = _constant_gain_antenna()
         refl_obj = _build_refl_obj_mock()
@@ -255,6 +259,24 @@ class TestForwardShadowDeltaPr:
         assert np.isfinite(pr_shadow_w) and pr_shadow_w > 0.0
         assert np.isfinite(rcs_shadow_m2) and rcs_shadow_m2 > 0.0
         assert noise_power_w > 0.0
+
+    @pytest.mark.parametrize("rx_side, n_strips", [(1.0, 2), (-1.0, 1)])
+    def test_shadow_area_is_the_union_of_the_tx_and_rx_shadows(self, mtd, detection_time, rx_side, n_strips):
+        # Tx at 30 deg south of zenith, Rx at 30 deg north (strips on opposite sides, both count) or with the Tx
+        # (the two shadows coincide, one strip). A north-going ship (bow-on) hides strips H tan(theta) W, an
+        # east-going ship (broadside) strips H tan(theta) L.
+        length_m, beam_m, freeboard_m = 100.0, 15.0, 5.0
+        mtd.ship_dimensions = {"length_m": length_m, "beam_m": beam_m, "freeboard_m": freeboard_m}
+        mtd.link_budget_settings = link_budget_settings()
+        mtd.sat_antenna = _constant_gain_antenna()
+        refl_obj = _build_refl_obj_mock(theta_deg=30.0, rx_side=rx_side)
+        rcs = {}
+        for name, points in (("bow_on", [(0.1 * i, 0.0) for i in range(5)]), ("broadside", [(0.0, 0.1 * i) for i in range(5)])):
+            mtd.moving_target_object = _trajectory(points)
+            rcs[name] = mtd._compute_forward_shadow_delta_pr_at_event(refl_obj, 0, 1.57542e9, 27.0, detection_time, (0.0, 0.0))[1]
+        strip = n_strips * freeboard_m * np.tan(np.radians(30.0))
+        expected = (length_m * beam_m + strip * length_m) / (length_m * beam_m + strip * beam_m)
+        np.testing.assert_allclose(rcs["broadside"] / rcs["bow_on"], expected, rtol=1e-9)
 
 
 class TestForwardDetectionMetrics:
