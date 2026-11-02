@@ -150,13 +150,18 @@ Module Assumptions and Limitations
 ----------------------------------
 
 - **Box geometry.** The ship is a rectangular box (plates + waterline dihedrals); superstructure, masts,
-  curved hulls, and material effects are not modelled.
+  curved hulls, and material effects are not modelled. The bow is a flat vertical face of width :math:`B`. A
+  real bow is raked and pointed, so the bow corner overestimates the return of a real ship seen from ahead.
 - **Ideal PEC and scalar response.** Plates are perfectly conducting and use a scalar physical-optics
   form factor. Polarisation matrices, diffraction, creeping waves and edge interactions are omitted.
 - **Simplified corner.** The corner uses a scalar two-path double bounce with a flat metal hull leg and
   binary open-wedge visibility. Its diffuse part uses the ocean NRCS over the mirrored strip, and its two
-  paths add in power. Edge diffraction and the part of the strip that stays lit when the transmitter and the
-  receiver are on opposite sides of the hull are omitted.
+  paths add in power. The sea next to the hull has the open-sea roughness; bow waves and waves reflected from
+  the hull are not modelled. Edge diffraction and the part of the strip that stays lit when the transmitter
+  and the receiver are on opposite sides of the hull are omitted.
+- **Ideal LHCP receiver.** The corner keeps only the same-sense sea reflection, which is exact for an ideal
+  LHCP antenna. A real antenna also receives the opposite-sense corner return, reduced by its cross-polar
+  isolation. At 20 dB isolation, this part exceeds the diffuse corner near broadside.
 - **Non-coherent sum.** Components add in power, not amplitude, so interference between facets is not
   captured.
 - **Above-waterline only.** Only the freeboard (above-water) part contributes; the submerged hull does not
