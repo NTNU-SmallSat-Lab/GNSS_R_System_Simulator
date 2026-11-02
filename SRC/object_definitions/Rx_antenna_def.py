@@ -409,8 +409,8 @@ class RxAntenna:
 
         Theta grid: endpoint-inclusive [0, 180], step = 180 / (n_theta - 1).
         Phi grid: endpoint-exclusive [0, 360), step = 360 / n_phi, with wraparound across the seam (matches the
-        AntennaPatternGenerator convention). Interpolation is in linear power so values near pattern nulls are
-        not biased upward by log-space averaging.
+        AntennaPatternGenerator convention). Interpolation is in linear power; averaging in dB would bias values
+        near pattern nulls low.
 
         INPUTS:
             pattern_db: [np.ndarray, shape (n_theta, n_phi)]   Radiation pattern [dB]

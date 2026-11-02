@@ -63,7 +63,7 @@ def flat_plate_rcs(
     obliquity = 0.5 * (cos_to_tx + cos_to_rx)
 
     # Form factor: bistatic path mismatch projected onto plate edges.
-    delta = n_tx2s - n_s2rx                                 # (n, 3); -bisector*|...|
+    delta = n_tx2s - n_s2rx                                 # (n, 3); -(direction to Tx + direction to Rx)
     u_1 = length_edge_1_m / wavelength_m * np.einsum("ij,ij->i", delta, edge_1)
     u_2 = length_edge_2_m / wavelength_m * np.einsum("ij,ij->i", delta, edge_2)
 

@@ -1012,11 +1012,10 @@ class MovingTargetDetection:
         RCS over the sea the box hides (the union of its shadows toward the Tx and toward the Rx: the
         waterline area plus the strips its freeboard hides), and runs the bistatic link budget. The
         result is the glint power that sea would have returned; the detectable forward change is
-        delta_Pr = -pr_shadow. The
-        coherent-glint shadow (calm sea, ship at the specular point) is a non-linear field regime
-        deferred as a refinement; for any non-trivial sea state the forward return is the diffuse term
-        used here. Returns (pr_shadow_w, ocean_rcs_shadow_m2, noise_power_w); all NaN if the heading or
-        geometry is invalid.
+        delta_Pr = -pr_shadow. The coherent-glint shadow (calm sea, ship at the specular point) is a
+        non-linear field regime deferred as a refinement; for any non-trivial sea state the forward
+        return is the diffuse term used here. Returns (pr_shadow_w, ocean_rcs_shadow_m2, noise_power_w);
+        all NaN if the heading or geometry is invalid.
         """
         nan_result = (float("nan"), float("nan"), float("nan"))
         if self.ship_dimensions is None:
