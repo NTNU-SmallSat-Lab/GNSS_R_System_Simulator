@@ -2,7 +2,7 @@
 
 Reads the per-event powers saved by run_monte_carlo.py (power_events in mc_<mode>_trials.jsonl) and writes
 single-axes figures to the input directory:
-  ch11_forward_shadow_vs_glint.png       forward: ship shadow |dP_r| vs ocean power of the ship's cell, coloured by wind speed
+  ch11_forward_shadow_vs_glint.png       forward: ship shadow |dP_r| vs ocean glint power, coloured by wind speed
   ch11_backscatter_ship_vs_clutter.png   backscatter: ship power vs ocean clutter power, coloured by wind speed
   ch11_scr_vs_distance.png               backscatter: SCR vs distance of the BRP from the ship
   ch11_signal_ratio.png                  ship signature relative to its background, both modes
@@ -30,7 +30,7 @@ DIST_BINS_KM = [0.0, 10.0, 25.0, 50.0, 100.0, np.inf]  # BRP-to-ship distance bi
 
 def read_events(path, field):
     """Return (arrays, n_trials, n_undefined, n_zero): valid events of one mode's JSONL as float arrays."""
-    cols = {"ocean": [], "ref": [], "sig": [], "wind": [], "dist": []}
+    cols = {"ocean": [], "sig": [], "wind": [], "dist": []}
     n_trials = n_undefined = n_zero = 0
     with open(path) as fh:
         for line in fh:
@@ -40,7 +40,9 @@ def read_events(path, field):
             trial = json.loads(line)
             wind = trial.get("wind_speed_m_s")
             for ev in trial.get("power_events") or []:
-                po, ps = ev.get("pr_ocean_w"), ev.get(field)
+                # Reflection-point ocean power: pr_ocean_ref_w when the ship's-cell clutter is on, else pr_ocean_w.
+                ref = ev.get("pr_ocean_ref_w")
+                po, ps = (ev.get("pr_ocean_w") if ref is None else ref), ev.get(field)
                 if po is None or ps is None or po <= 0.0 or ps <= 0.0:
                     n_undefined += 1                      # power not available for this event
                 elif 10.0 * np.log10(ps) < FLOOR_DBW:
@@ -48,8 +50,6 @@ def read_events(path, field):
                 else:
                     dist = ev.get("ship_dist_km")
                     cols["ocean"].append(po)
-                    ref = ev.get("pr_ocean_ref_w")
-                    cols["ref"].append(np.nan if ref is None or ref <= 0.0 else ref)
                     cols["sig"].append(ps)
                     cols["wind"].append(np.nan if wind is None else wind)
                     cols["dist"].append(np.nan if dist is None else dist)
@@ -131,15 +131,15 @@ def main():
     po_f, shadow, po_b, ship = fwd["ocean"], fwd["sig"], bks["ocean"], bks["sig"]
     lab_f = f"Forward ({len(po_f):,} events, {nt_f} trials)"
     lab_b = f"Backscatter ({len(po_b):,} events, {nt_b} trials)"
-    ratio_f, scr_b = dbw(shadow) - dbw(po_f), dbw(ship) - dbw(po_b)  # 10log10(|dP_r|/P_ocean), 10log10(P_ship/P_ocean), ship's cell
+    ratio_f, scr_b = dbw(shadow) - dbw(po_f), dbw(ship) - dbw(po_b)  # 10log10(|dP_r|/P_glint), 10log10(P_ship/P_ocean)
     total_b = po_b + ship                                             # backscatter total = clutter + ship [W]
 
     # Figures 1-2: ship signature vs background per event; identical axis limits so the modes compare directly.
     levels = np.concatenate([dbw(po_f), dbw(shadow), dbw(po_b), dbw(ship)])
     limits = (5.0 * np.floor(levels.min() / 5.0) - 5.0, 5.0 * np.ceil(levels.max() / 5.0) + 5.0)
-    signature_scatter(fwd, limits, r"Ocean power in the ship's cell $P_\mathrm{ocean}$ [dBW]", r"Ship shadow $|\Delta P_\mathrm{r}|$ [dBW]",
+    signature_scatter(fwd, limits, r"Ocean glint power $P_\mathrm{glint}$ [dBW]", r"Ship shadow $|\Delta P_\mathrm{r}|$ [dBW]",
                       os.path.join(out_dir, "ch11_forward_shadow_vs_glint.png"), point_size=4)
-    signature_scatter(bks, limits, r"Ocean clutter in the ship's cell $P_\mathrm{ocean}$ [dBW]", r"Ship power $P_\mathrm{ship}$ [dBW]",
+    signature_scatter(bks, limits, r"Ocean clutter power $P_\mathrm{ocean}$ [dBW]", r"Ship power $P_\mathrm{ship}$ [dBW]",
                       os.path.join(out_dir, "ch11_backscatter_ship_vs_clutter.png"), point_size=8)
 
     # Figure 3: backscatter SCR vs distance of the BRP from the ship.
@@ -148,7 +148,7 @@ def main():
     # Figure 4: ship signature relative to its background (both modes).
     fig, ax = plt.subplots(figsize=(8, 5.5))
     bins = np.histogram_bin_edges(np.concatenate([ratio_f, scr_b]), bins=60)
-    hist_step(ax, ratio_f, bins, C_FWD, "-", lab_f + r": $|\Delta P_\mathrm{r}|/P_\mathrm{ocean}$")
+    hist_step(ax, ratio_f, bins, C_FWD, "-", lab_f + r": $|\Delta P_\mathrm{r}|/P_\mathrm{glint}$")
     hist_step(ax, scr_b, bins, C_BKS, "-", lab_b + r": $P_\mathrm{ship}/P_\mathrm{ocean}$")
     ax.axvline(0.0, color="k", ls="--", lw=1, label="ship signature = background")
     ax.set_xlabel(r"Ship signature relative to background [dB]")
@@ -159,7 +159,7 @@ def main():
 
     # Figure 5: absolute received power (total and ship signature).
     fig, ax = plt.subplots(figsize=(8, 5.5))
-    series = [(dbw(po_f), C_FWD, "-", r"Forward total in the ship's cell $P_\mathrm{ocean}$"),
+    series = [(dbw(po_f), C_FWD, "-", r"Forward total (glint) $P_\mathrm{glint}$"),
               (dbw(shadow), C_FWD, "--", r"Forward ship shadow $|\Delta P_\mathrm{r}|$"),
               (dbw(total_b), C_BKS, "-", r"Backscatter total $P_\mathrm{ocean}+P_\mathrm{ship}$"),
               (dbw(ship), C_BKS, "--", r"Backscatter ship $P_\mathrm{ship}$")]
@@ -174,8 +174,7 @@ def main():
 
     stats = {
         "forward": {"n_events": int(len(po_f)), "n_trials": nt_f, "n_undefined": und_f, "n_numerically_zero": zero_f,
-                    "median_ocean_dbw": float(np.median(dbw(po_f))),
-                    "median_reference_ocean_dbw": float(np.nanmedian(dbw(fwd["ref"]))),
+                    "median_glint_dbw": float(np.median(dbw(po_f))),
                     "median_shadow_dbw": float(np.median(dbw(shadow))),
                     "median_ratio_db": float(np.median(ratio_f)),
                     "ratio_db_p5_p95": [float(x) for x in np.percentile(ratio_f, [5, 95])],
@@ -183,7 +182,6 @@ def main():
         "backscatter": {"n_events": int(len(po_b)), "n_trials": nt_b, "n_undefined": und_b, "n_numerically_zero": zero_b,
                         "median_total_dbw": float(np.median(dbw(total_b))),
                         "median_ocean_dbw": float(np.median(dbw(po_b))),
-                        "median_reference_ocean_dbw": float(np.nanmedian(dbw(bks["ref"]))),
                         "median_ship_dbw": float(np.median(dbw(ship))),
                         "median_scr_db": float(np.median(scr_b)),
                         "scr_db_p5_p95": [float(x) for x in np.percentile(scr_b, [5, 95])],

@@ -103,7 +103,9 @@ def _collect_event_powers(results, mode):
             continue
         contributed = False
         for event in events:
-            ocean = _finite_float(event.get("pr_ocean_w"))
+            # Reflection-point ocean power: pr_ocean_ref_w when the ship's-cell clutter is on, else pr_ocean_w.
+            ref = event.get("pr_ocean_ref_w")
+            ocean = _finite_float(event.get("pr_ocean_w") if ref is None else ref)
             signature = _finite_float(event.get(field))
             if ocean is None or signature is None or ocean <= 0.0 or signature <= 0.0:
                 counts["n_invalid_events"] += 1
