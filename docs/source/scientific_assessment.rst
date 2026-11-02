@@ -151,15 +151,15 @@ Corrections made by the audit
        scalar term is then within 0.1--0.8 dB of that integral (3--15 m/s, 10--50 deg incidence).
    * - The forward shadow used only the ship's waterline area.
      - The freeboard also hides sea from the transmitter and from the receiver. For a 330 x 60 x 20 m box
-       the shadow power was 0.3--1.9 dB too small at 25--40 deg incidence, and up to 5 dB at the steep
-       angles seen far from the reflection point.
+       the shadow power was 0.3--1.9 dB too small at 25--40 deg incidence, and up to 5 dB at the large
+       incidence angles seen far from the reflection point.
      - Use the union of the waterline rectangle swept :math:`H\tan\theta` away from the transmitter and
        away from the receiver, oriented by the ship heading.
    * - The hull-sea corner used a smooth metal sea.
      - Two metal bounces return the transmitted circular sense, which the LHCP receiver rejects, yet the
-       full corner was counted. Seawater returns only its same-sense part (-35 to -27 dB at 25--40 deg
-       incidence), and sea roughness removes the coherent corner. In a rerun of three Ch11 backscatter
-       trials the median ship RCS was 12 dB too high.
+       full corner was counted. Only the same-sense part of the sea reflection reaches the receiver
+       (-35 to -27 dB at 25--40 deg incidence), and sea roughness removes the coherent corner. In a rerun
+       of three Ch11 backscatter trials the median ship RCS was 12 dB too high.
      - Scale each corner by :math:`|R_\mathrm{RR}(\theta_\mathrm{sea})|^2 e^{-\kappa}`, the seawater
        same-sense reflectivity and the Rayleigh roughness loss at the incidence on the sea.
    * - The hull-sea corner had no diffuse part.

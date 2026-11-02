@@ -38,8 +38,9 @@ hull is broken into **five flat plates** (deck, port side, starboard side, bow, 
 hull-water dihedrals** (the right-angle corner where each side, the bow and the stern meet the sea). Each
 plate uses the flat-plate formula and each dihedral the corner formula from :doc:`../functions/helpers`, with
 a seawater sea leg and a diffuse part from the sea scatter that the hull mirrors. The pieces add up without
-phase (non-coherently), and the ``info`` dict keeps the per-piece breakdown. This is an ideal-conductor
-engineering surrogate for aspect studies, not a validated absolute ship-RCS model.
+phase (non-coherently), and the ``info`` dict keeps the per-piece breakdown. The hull is a perfect
+conductor and the sea leg is seawater. This is an engineering surrogate for aspect studies, not a validated
+absolute ship-RCS model.
 
 Interface
 ^^^^^^^^^

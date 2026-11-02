@@ -44,10 +44,10 @@ cross-section
 for plate area :math:`A`, the angles :math:`\theta_i` / :math:`\theta_s` of the directions to Tx / Rx from the
 plate normal, and the edge form-factor arguments :math:`u_i`. The obliquity factor is the projected aperture,
 :math:`(\cos\theta_i + \cos\theta_s)/2 = \cos\alpha\,\cos(\beta/2)`, with :math:`\alpha` the angle between the
-plate normal and the bistatic bisector and :math:`\beta` the bistatic angle. The dihedral double bounce keeps the edge-parallel direction
-component and reverses both leg-normal components. Each of the two paths (leg 2 then leg 1, and leg 1 then
-leg 2) is a geometric-optics first bounce and a physical-optics last bounce, and the two paths add
-coherently,
+plate normal and the bistatic bisector and :math:`\beta` the bistatic angle. The dihedral double bounce
+keeps the edge-parallel direction component and reverses both leg-normal components. Each of the two paths
+(leg 2 then leg 1, and leg 1 then leg 2) is a geometric-optics first bounce and a physical-optics last
+bounce, and the two paths add coherently,
 
 .. math::
    :label: ship-dihedral
@@ -116,8 +116,8 @@ Module Assumptions and Limitations
   is nonzero.
 - **Ship shapes are idealised.** ``ship_physics`` uses perfect conducting plates and a scalar double-bounce
   dihedral with flat, smooth legs and simple visibility. It omits the polarimetric response and interference
-  between components; :doc:`../object_definitions/ship_target` applies the seawater sea leg and the diffuse part of the hull-sea
-  corner.
+  between components; :doc:`../object_definitions/ship_target` applies the seawater sea leg and the diffuse
+  part of the hull-sea corner.
 - **Local ellipsoid approximation.** ``delta_lon/lat_from_distance`` use WGS-84 local radii of curvature.
   They convert a local east/north displacement, not an arbitrary long geodesic.
 
