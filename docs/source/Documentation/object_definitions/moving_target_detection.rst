@@ -180,6 +180,9 @@ Module Assumptions and Limitations
 
 - **Two modes, two meanings.** Backscatter gives a modelled ship-vs-ocean SCR/SINR. Specular gives only
   the forward-shadow change in power; it does not yet add the ship's own forward glint.
+- **Ray-optics shadow.** The shadow strips have sharp edges. Diffraction at the deck edge blurs each edge by
+  about :math:`\sqrt{\lambda H/\cos\theta}`, about 2 m at L1 for :math:`H` = 20 m, while the strips are
+  12--17 m wide at 30--40 deg incidence.
 - **Noise- or clutter-limited depends on settings.** The SINR is formed against a detection-equivalent
   noise sensitivity scale: the detector divides thermal noise by :math:`B\,T_\mathrm{coh}\,\sqrt{M}`. The
   :math:`\sqrt{M}` part is heuristic without an explicit detector statistic and false-alarm probability.
