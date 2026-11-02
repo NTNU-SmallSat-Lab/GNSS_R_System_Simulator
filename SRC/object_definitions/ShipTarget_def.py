@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from functions.link_budget import build_bistatic_geometry
-from functions.ocean_physics import circular_pol_reflectivities, seawater_permittivity
+from functions.ocean_physics import circular_pol_reflectivities, rayleigh_roughness, seawater_permittivity
 from functions.ship_physics import dihedral_rcs, flat_plate_rcs
 from object_definitions.Constants_def import Constants
 from object_definitions.Target_def import Target, TargetRcs
@@ -138,7 +138,7 @@ class ShipTarget(Target):
         cos_sea = np.clip(np.einsum("ij,ij->i", -n_tx2s, mast_hat), 0.0, 1.0)     # incidence cosine on the sea leg, both path orders
         eps_r = seawater_permittivity(Constants.SPEED_OF_LIGHT / wavelength_m, self.ocean.sea_temperature_c, self.ocean.salinity_psu)
         _, R_RR_sq = circular_pol_reflectivities(np.arccos(cos_sea), eps_r)
-        kappa = (4.0 * np.pi * (self.ocean.wave_height_m / 4.0) * cos_sea / wavelength_m) ** 2   # Rayleigh roughness, sigma_h = H_s / 4
+        kappa = rayleigh_roughness(self.ocean.wave_height_m, cos_sea, wavelength_m)           # Rayleigh roughness, sigma_h = H_s / 4
         sea_leg = R_RR_sq * np.exp(-kappa)
 
         # Hull-water dihedrals: (name, hull-leg outward normal, edge, edge length); the other leg is the local water surface.

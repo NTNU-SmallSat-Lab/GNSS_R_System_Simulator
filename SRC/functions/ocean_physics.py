@@ -117,6 +117,12 @@ def circular_pol_reflectivities(theta_inc_rad, eps_r):
     return np.abs(R_RL) ** 2, np.abs(R_RR) ** 2
 
 
+def rayleigh_roughness(wave_height_m, cos_incidence, wavelength_m):
+    """Rayleigh roughness exponent kappa = (4 pi sigma_h cos(theta) / lambda)^2 of a Gaussian sea, sigma_h = H_s / 4."""
+    rms_height_m = wave_height_m / 4.0                                  # H_s ~= 4 sigma_h
+    return (4.0 * np.pi * rms_height_m * cos_incidence / wavelength_m) ** 2
+
+
 def cox_munk_slope_variances(wind_speed_m_s):
     """Cox-Munk (1954) clean-sea slope variances at 10 m wind speed.
 

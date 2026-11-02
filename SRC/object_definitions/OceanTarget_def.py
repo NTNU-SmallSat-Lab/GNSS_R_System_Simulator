@@ -61,6 +61,7 @@ from functions.ocean_physics import (
     circular_pol_reflectivities,
     cox_munk_slope_pdf,
     large_scale_slope_variances,
+    rayleigh_roughness,
     seawater_permittivity,
     two_scale_bistatic_nrcs,
 )
@@ -298,9 +299,7 @@ class OceanTarget(Target):
         # The public sea-state input is significant wave height H_s. For a Gaussian sea,
         # H_s ~= 4 sigma_h, where sigma_h is the RMS height required by the Rayleigh factor.
         rms_surface_height_m = self.wave_height_m / 4.0
-        rayleigh_kappa = (
-            4.0 * np.pi * rms_surface_height_m * np.cos(theta_local_rad) / wavelength_m
-        ) ** 2                                                            # kappa = (4 pi sigma_h cos theta_local / lambda)^2
+        rayleigh_kappa = rayleigh_roughness(self.wave_height_m, np.cos(theta_local_rad), wavelength_m)   # kappa = (4 pi sigma_h cos theta_local / lambda)^2
         coherent_mirror_rcs = 4.0 * np.pi * reduced_range ** 2           # 4 pi (R_t R_r / (R_t + R_r))^2
         slope_mag_sq = s_u ** 2 + s_c ** 2
         at_specular = np.isfinite(slope_mag_sq) & (slope_mag_sq < 1.0e-6) # required facet slope ~ 0
