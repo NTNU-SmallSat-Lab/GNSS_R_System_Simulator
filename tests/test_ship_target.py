@@ -157,14 +157,15 @@ class TestShipTargetComputeRcs:
         metal = dihedral_rcs(bow, stbd, up, 100.0, 5.0, geom.n_tx2s, geom.n_s2rx, WAVELENGTH_M)[0]
         eps_r = seawater_permittivity(Constants.SPEED_OF_LIGHT / WAVELENGTH_M, 15.0, 35.0)
         _, R_RR_sq = circular_pol_reflectivities(np.arccos(cos_sea), eps_r)
-        coherent = lambda info: float(info["rcs_dihedral_starboard_m2"][0] - info["rcs_dihedrals_diffuse_m2"][0])  # noqa: E731
-        calm = coherent(_ship().compute_rcs(geom, WAVELENGTH_M).info)
+        coherent = lambda ship: float(ship.compute_rcs(geom, WAVELENGTH_M).info["rcs_dihedral_starboard_m2"][0]   # noqa: E731
+                                      - ship._diffuse_corner_rcs(geom, stbd, 100.0, WAVELENGTH_M)[0])   # starboard corner minus its own diffuse part
+        calm = coherent(_ship())
         np.testing.assert_allclose(calm, metal * R_RR_sq, rtol=1e-9)
 
         wave_height_m = 0.05
         rough_sea = OceanTarget(wave_height_m=wave_height_m, wind_speed_m_s=5.0, wind_direction_deg=0.0, sea_temperature_c=15.0, salinity_psu=35.0)
         ship = ShipTarget(length_m=100.0, beam_m=15.0, freeboard_m=5.0, heading_eci=_default_heading_along_y(), ocean=rough_sea)
-        rough = coherent(ship.compute_rcs(geom, WAVELENGTH_M).info)
+        rough = coherent(ship)
         np.testing.assert_allclose(rough / calm, np.exp(-((np.pi * wave_height_m * cos_sea / WAVELENGTH_M) ** 2)), rtol=1e-9)
 
     def test_diffuse_corner_is_same_sense_sea_scatter_mirrored_by_the_hull(self):
