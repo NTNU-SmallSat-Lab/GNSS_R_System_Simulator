@@ -1057,6 +1057,8 @@ class MovingTargetDetection:
         waterline = np.array([[x, y] for x in (-0.5 * length_m, 0.5 * length_m) for y in (-0.5 * beam_m, 0.5 * beam_m)])
         shadows = []
         for to_v in (-geometry.n_tx2s[0], geometry.n_s2rx[0]):                         # surface -> Tx, surface -> Rx
+            if to_v @ up <= 0.0:
+                return nan_result                                                    # Tx or Rx below the ship's horizon
             sweep = -freeboard_m / (to_v @ up) * np.array([to_v @ bow, to_v @ starboard])   # deck-edge shadow offset, |sweep| = H tan(theta)
             shadows.append(MultiPoint(np.vstack((waterline, waterline + sweep))).convex_hull)
         shadow_area_m2 = shadows[0].union(shadows[1]).area

@@ -260,6 +260,16 @@ class TestForwardShadowDeltaPr:
         assert np.isfinite(rcs_shadow_m2) and rcs_shadow_m2 > 0.0
         assert noise_power_w > 0.0
 
+    def test_returns_nan_when_tx_and_rx_are_below_the_ship_horizon(self, mtd, detection_time):
+        # Tx and Rx 95 deg from the ship's zenith: the box hides no lit sea, so the shadow is undefined.
+        mtd.ship_dimensions = {"length_m": 100.0, "beam_m": 15.0, "freeboard_m": 5.0}
+        mtd.moving_target_object = _trajectory([(0.0, 0.1 * i) for i in range(5)])
+        mtd.link_budget_settings = link_budget_settings()
+        mtd.sat_antenna = _constant_gain_antenna()
+        refl_obj = _build_refl_obj_mock(theta_deg=95.0)
+        result = mtd._compute_forward_shadow_delta_pr_at_event(refl_obj, 0, 1.57542e9, 27.0, detection_time, (0.0, 0.0))
+        assert all(np.isnan(v) for v in result)
+
     @pytest.mark.parametrize("rx_side, n_strips", [(1.0, 2), (-1.0, 1)])
     def test_shadow_area_is_the_union_of_the_tx_and_rx_shadows(self, mtd, detection_time, rx_side, n_strips):
         # Tx at 30 deg south of zenith, Rx at 30 deg north (strips on opposite sides, both count) or with the Tx
