@@ -17,6 +17,7 @@ authors:
     affiliation: "Norwegian University of Science and Technology (NTNU)"
     orcid: "https://orcid.org/0009-0001-9986-652X"
 version: 1.0.0
+doi: 10.5281/zenodo.23921445
 license: MIT
 repository-code: "https://github.com/NTNU-SmallSat-Lab/GNSS_R_System_Simulator"
 url: "https://ntnu-smallsat-lab.github.io/GNSS_R_System_Simulator/"

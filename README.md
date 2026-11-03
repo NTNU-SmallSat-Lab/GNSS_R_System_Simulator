@@ -1,5 +1,7 @@
 # GNSS-R System Simulator
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23921445.svg)](https://doi.org/10.5281/zenodo.23921445)
+
 Preliminary-design simulator for GNSS-Reflectometry (GNSS-R) LEO mission studies. The code currently supports two analysis modes:
 
 - **Area coverage**: counts contiguous reflection track visits (specular points or backscatter reflection points) over a gridded region.
@@ -162,7 +164,16 @@ Do not commit generated artifacts from `OUTPUT/`, generated Sphinx builds, cache
 
 ## Citation
 
-Each GitHub release is archived on Zenodo with its own DOI. Cite the release you used; the citation metadata is in `CITATION.cff` (GitHub's "Cite this repository" button).
+Each GitHub release is archived on Zenodo with its own DOI:
+
+- All versions (resolves to the latest release): [10.5281/zenodo.23921445](https://doi.org/10.5281/zenodo.23921445)
+- v1.0.0: [10.5281/zenodo.23921446](https://doi.org/10.5281/zenodo.23921446)
+
+Cite the release you used, for example:
+
+> O. Hasler and C. Chiatante, *GNSS-R System Simulator*, v1.0.0, Zenodo, 2026, doi: [10.5281/zenodo.23921446](https://doi.org/10.5281/zenodo.23921446).
+
+The citation metadata is in `CITATION.cff` (GitHub's "Cite this repository" button).
 
 ## License
 

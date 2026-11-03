@@ -9,6 +9,9 @@ so that results can be traced to the exact code version. The citation metadata (
 ORCID, version, licence) is kept in ``CITATION.cff`` in the repository root; GitHub's *Cite this
 repository* button renders it as APA or BibTeX.
 
+- All versions (resolves to the latest release): `10.5281/zenodo.23921445 <https://doi.org/10.5281/zenodo.23921445>`_
+- v1.0.0: `10.5281/zenodo.23921446 <https://doi.org/10.5281/zenodo.23921446>`_
+
 Authors: Oliver Hasler and Corrado Chiatante, Norwegian University of Science and Technology (NTNU).
 
 Licence
